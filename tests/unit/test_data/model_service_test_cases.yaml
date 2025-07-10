@@ -1,0 +1,82 @@
+# Test cases for ModelService functionality
+
+extract_message_content:
+  - name: "string_content"
+    input:
+      content: "Hello, world!"
+    expected: "Hello, world!"
+  
+  - name: "dict_content"
+    input:
+      content:
+        text: "Hello, world!"
+        type: "text"
+    expected: "Hello, world!"
+  
+  - name: "list_content"
+    input:
+      content:
+        - text: "Hello, "
+        - text: "world!"
+    expected: "Hello, world!"
+  
+  - name: "mixed_content"
+    input:
+      content:
+        - "Hello, "
+        - text: "world!"
+        - type: "text"
+    expected: "Hello, world!"
+
+get_model_context_window_size:
+  - name: "claude_3_5_sonnet"
+    input:
+      model_platform: "aws_bedrock"
+      model_name: "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+    expected: 200000
+  
+  - name: "llama_3_2"
+    input:
+      model_platform: "ollama"
+      model_name: "llama3.1:8b"
+    expected: 128000
+  
+  - name: "mistral_small"
+    input:
+      model_platform: "aws_bedrock"
+      model_name: "mistral.mistral-small-2402-v1:0"
+    expected: 32000
+  
+  - name: "unknown_model"
+    input:
+      model_platform: "unknown"
+      model_name: "unknown-model"
+    expected: 32000
+
+model_initialization:
+  - name: "aws_bedrock_model"
+    input:
+      model_id: "claude-3.5-sonnet"
+      model_provider: "aws_bedrock"
+      configurable_fields: ["temperature", "max_tokens"]
+    expected:
+      provider: "bedrock_converse"
+      has_config: true
+      has_rate_limiter: true
+  
+  - name: "ollama_model"
+    input:
+      model_id: "llama3.2:8b"
+      model_provider: "ollama"
+    expected:
+      provider: "ollama"
+      base_url: "http://localhost:11434"
+      has_metadata: true
+  
+  - name: "unknown_provider"
+    input:
+      model_id: "test-model"
+      model_provider: "unknown"
+    expected:
+      provider: "unknown"
+      has_rate_limiter: true 

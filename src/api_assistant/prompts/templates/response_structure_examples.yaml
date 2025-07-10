@@ -1,0 +1,139 @@
+- intent: API use Q&A minimal
+  prompt: How to list users
+  response: |
+    To list users, you need to make a GET request to the `/api/v1/users` endpoint. 
+    This endpoint returns a paginated list of users for the current organization.
+
+    Here's a `curl` example:   
+    ```bash
+    curl -X GET "https://{base_url}/api/v1/users?pageSize=10&offset=0" \
+       -H "Authorization: Bearer <your_access_token>"
+    ```
+    Replace `<your_access_token>` with your actual OAuth 2.0 access token.
+
+    The response will be a JSON object containing a list of users and pagination information. 
+    Here's an example of what the response structure might look like:
+
+    ```json
+    {
+      "pageInfo": {
+        "offset": 0,
+        "pageSize": 10,
+        "totalSize": 50
+      },
+      "items": [
+        {
+          "userId": "123e4567-e89b-12d3-a456-426614174000",
+          "email": "user1@example.com",
+          "givenName": "John",
+          "familyName": "Doe",
+          "status": "active"
+        },
+        {
+          "userId": "223e4567-e89b-12d3-a456-426614174001",
+          "email": "user2@example.com",
+          "givenName": "Jane",
+          "familyName": "Smith",
+          "status": "active"
+        }
+        // ... more users ...
+      ]
+    }
+    ```
+
+    **Authentication Note:**
+    Remember that you need to obtain an access token before making this request.
+    Follow the documentation to learn how to work with appliciaton clients and tokens: https://docs.omniva.com/user/navigating-console/identity_management/.
+
+    Would you like me to to make this API call to list users?
+    Or should I expand this answer with further details?
+
+- intent: API use Q&A expanded
+  prompt: How to list users
+  response: |
+    To list users, you need to make a GET request to the `/api/v1/users` endpoint. 
+    This endpoint returns a paginated list of users for the current organization.
+
+    Here's a `curl` example:   
+    ```bash
+    curl -X GET "https://{base_url}/api/v1/users?pageSize=10&offset=0" \
+       -H "Authorization: Bearer <your_access_token>"
+    ```
+    Replace `<your_access_token>` with your actual OAuth 2.0 access token.
+
+    The response will be a JSON object containing a list of users and pagination information. 
+    Here's an example of what the response structure might look like:
+
+    ```json
+    {
+      "pageInfo": {
+        "offset": 0,
+        "pageSize": 10,
+        "totalSize": 50
+      },
+      "items": [
+        {
+          "userId": "123e4567-e89b-12d3-a456-426614174000",
+          "email": "user1@example.com",
+          "givenName": "John",
+          "familyName": "Doe",
+          "status": "active"
+        },
+        {
+          "userId": "223e4567-e89b-12d3-a456-426614174001",
+          "email": "user2@example.com",
+          "givenName": "Jane",
+          "familyName": "Smith",
+          "status": "active"
+        }
+        // ... more users ...
+      ]
+    }
+    ```
+
+    **API Call Details:**
+
+    1. **Endpoint:** `/api/v1/users`
+    2. **HTTP Method:** GET
+    3. **Authentication:** Required (OAuth 2.0 access token)
+    4. **Headers:**
+       - `Authorization: Bearer <your_access_token>`
+    5. **Query Parameters:**
+       - `pageSize` (optional, default: 100): Number of elements in the result page
+       - `offset` (optional, default: 0): Start element offset for pagination
+
+    **Authentication Note:**
+    Remember that you need to obtain an access token before making this request. To get an access token, you should:
+
+    1. Create application credentials (client_id and client_secret) as described in the documentation: https://docs.omniva.com/user/navigating-console/identity_management/
+    2. Use these credentials to obtain an access token from the OAuth 2.0 token endpoint.
+
+    Would you like me to demonstrate how to make this API call to list users?
+
+- intent: API Call
+  prompt: list users
+  response: |
+    {
+      "pageInfo": {
+        "offset": 0,
+        "pageSize": 10,
+        "totalSize": 50
+      },
+      "items": [
+        {
+          "userId": "123e4567-e89b-12d3-a456-426614174000",
+          "email": "user1@example.com",
+          "givenName": "John",
+          "familyName": "Doe",
+          "status": "active"
+        },
+        {
+          "userId": "223e4567-e89b-12d3-a456-426614174001",
+          "email": "user2@example.com",
+          "givenName": "Jane",
+          "familyName": "Smith",
+          "status": "active"
+        }
+        // ... more users ...
+      ]
+    }

@@ -1,0 +1,184 @@
+# =============================================================================
+# DOCKER IGNORE FILE - AI Gateway Service
+# =============================================================================
+# This file specifies which files and directories should be excluded
+# from the Docker build context to optimize build performance and security.
+
+# =============================================================================
+# VERSION CONTROL
+# =============================================================================
+.git/
+.gitignore
+.gitattributes
+.gitmodules
+
+# =============================================================================
+# DOCUMENTATION
+# =============================================================================
+README.md
+docs/
+*.md
+**/README.md
+**/docs/
+
+# =============================================================================
+# DEVELOPMENT FILES
+# =============================================================================
+Dockerfile.dev
+Makefile
+.env
+.env.example
+.env.local
+.env.*
+!.env.production
+
+# =============================================================================
+# PYTHON CACHE AND BUILD ARTIFACTS
+# =============================================================================
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Build directories
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Package files
+requirements.txt
+*_prod.toml
+
+# =============================================================================
+# VIRTUAL ENVIRONMENTS
+# =============================================================================
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv.bak/
+
+# =============================================================================
+# IDE AND EDITOR FILES
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# =============================================================================
+# OPERATING SYSTEM FILES
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# =============================================================================
+# LOGS AND TEMPORARY FILES
+# =============================================================================
+*.log
+logs/
+*.tmp
+*.temp
+temp/
+tmp/
+.temp-deepeval*
+
+# =============================================================================
+# TESTING AND COVERAGE
+# =============================================================================
+# Test directories and files
+**/tests/
+**/test_*.py
+**/*_test.py
+**/conftest.py
+**/test_data/
+**/fixtures/
+**/mocks/
+
+# Test artifacts
+MagicMock/
+/tmp/test_logs/
+.pytest_cache/
+tests/*/__pycache__/
+tests/__pycache__/
+
+# Test configuration
+**/pytest.ini
+**/.pytest_cache/
+**/test_*.yaml
+**/test_*.yml
+**/test_*.json
+
+# Coverage reports
+.coverage
+**/.coverage
+htmlcov/
+**/htmlcov/
+.tox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# =============================================================================
+# DEVELOPMENT SCRIPTS AND TOOLS
+# =============================================================================
+# Analysis and testing scripts (not used in builds)
+scripts/experimental/build_wheels.py
+scripts/experimental/production_build.sh
+scripts/test/test_dev_workflow_e2e_integration.py
+scripts/test/test_container_runtime.py
+
+# =============================================================================
+# EXAMPLE FILES
+# =============================================================================
+# Exclude all example files
+example/
+
+# =============================================================================
+# DEVELOPMENT TOOLS CACHE
+# =============================================================================
+.ruff_cache
+.mypy_cache/
+**/.mypy_cache/
+.deepeval*
+temp_test_run_data.json
+
+# =============================================================================
+# PACKAGE-SPECIFIC EXCLUSIONS
+# =============================================================================
+# Apply exclusions recursively to all packages
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/
+**/.git/
+**/.gitignore

@@ -1,0 +1,49 @@
+__pycache__
+.pytest_cache
+
+.env
+.env.*
+
+# Poetry generated files
+dist
+out
+### VSCode ###
+.vscode
+
+### VSCode ###
+.vscode
+
+### IntelliJ IDEA ###
+*.iws
+*.iml
+*.ipr
+
+.idea/*
+!.idea/codeStyles
+
+# MacOS generated files
+.DS_Store
+
+# Python virtual environment
+venv
+
+# deepeval tests
+.deepeval*
+.temp-deepeval*
+temp_test_run_data.json
+
+# Test artifacts
+MagicMock/
+/tmp/test_logs/
+.pytest_cache/
+tests/*/__pycache__/
+tests/__pycache__/
+
+# logs
+*.log
+
+.ruff_cache
+
+build.env
+
+.batsrc

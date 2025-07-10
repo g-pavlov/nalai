@@ -1,0 +1,82 @@
+services:
+  api-assistant:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8080"
+    volumes:
+      # Development: Mount source code for hot reload
+      - ./src/api_assistant:/app/api_assistant
+      # Production-like: Mount logs and data
+      - ./logs:/app/logs
+      - ./data:/app/data
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - ollama
+      - ecommerce-mock
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      # Production-like: Persistent model storage
+      - ollama_data:/root/.ollama
+      # Development: Mount host models for faster startup
+      - ./models:/models
+    env_file:
+      - .env
+    # Production-like resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 12G
+          cpus: '10.0'
+        reservations:
+          memory: 8G
+          cpus: '8.0'
+    # Performance optimizations
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  ecommerce-mock:
+    build:
+      context: ./demo
+      dockerfile: Dockerfile
+    container_name: ecommerce-mock
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  default:
+    driver: bridge
+
+volumes:
+  ollama_data:
+    driver: local

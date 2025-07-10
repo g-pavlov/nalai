@@ -1,0 +1,323 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Version increment type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+        - patch
+        - minor
+        - major
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Version Management Job
+  version-management:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should-deploy: ${{ steps.version.outputs.should_deploy }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch all tags
+        run: git fetch --tags
+
+      - name: Version Management
+        id: version
+        run: |
+          # Source the version utilities (adapted for GitHub Actions)
+          source .ci/version_utils_github.sh
+          
+          # Determine version increment type
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            INCREMENT_TYPE="${{ github.event.inputs.version_type }}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            # Manual tag push - extract version from tag
+            MANUAL_VERSION="${GITHUB_REF#refs/tags/v}"
+            echo "Manual version tag detected: $MANUAL_VERSION"
+            
+            # Validate semantic version format
+            if [[ ! "$MANUAL_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Error: Invalid semantic version format: $MANUAL_VERSION"
+              exit 1
+            fi
+            
+            # Check for backward targeting
+            MAIN_BASELINE=$(git tag --sort=-version:refname --merged origin/main | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+            if [ -z "$MAIN_BASELINE" ]; then
+              MAIN_BASELINE="0.0.0"
+            fi
+            
+            if detect_backward_targeting "$MANUAL_VERSION" "$MAIN_BASELINE"; then
+              generate_backward_targeting_message "$MANUAL_VERSION" "$MAIN_BASELINE" "$(git rev-parse --short HEAD)"
+              exit 1
+            fi
+            
+            INCREMENTED_VERSION="$MANUAL_VERSION"
+            echo "version=$INCREMENTED_VERSION" >> $GITHUB_OUTPUT
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            exit 0
+          else
+            # Main branch push - check for manual version bumps first
+            if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+              echo "Main branch push detected, checking for manual version bumps..."
+              
+              # Get current latest version
+              CURRENT_VERSION=$(get_or_create_version)
+              echo "Current latest version: $CURRENT_VERSION"
+              
+              # Check if there are any newer manual version tags on this branch
+              # This handles the case where a feature branch has manual version bumps
+              NEWER_TAGS=$(git tag --sort=-version:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n5)
+              
+              # Find the highest version tag that's newer than current
+              HIGHEST_VERSION=""
+              for tag in $NEWER_TAGS; do
+                if [ "$(compare_versions "$tag" "$CURRENT_VERSION")" = "greater" ]; then
+                  HIGHEST_VERSION="$tag"
+                  break
+                fi
+              done
+              
+              if [ -n "$HIGHEST_VERSION" ]; then
+                # Check for backward targeting (manual version < main baseline)
+                MAIN_BASELINE=$(git tag --sort=-version:refname --merged origin/main | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+                if [ -z "$MAIN_BASELINE" ]; then
+                  MAIN_BASELINE="0.0.0"
+                fi
+                
+                if detect_backward_targeting "$HIGHEST_VERSION" "$MAIN_BASELINE"; then
+                  generate_backward_targeting_message "$HIGHEST_VERSION" "$MAIN_BASELINE" "$(git rev-parse --short HEAD)"
+                  exit 1
+                fi
+                
+                echo "Found valid manual version tag: $HIGHEST_VERSION (manual version wins)"
+                INCREMENTED_VERSION="$HIGHEST_VERSION"
+              else
+                echo "No manual version tags found, auto-incrementing patch version..."
+                # Auto-increment from current version
+                INCREMENTED_VERSION=$(increment_patch_version "$CURRENT_VERSION")
+              fi
+            else
+              # Should not happen for main branch workflow
+              echo "Error: Unexpected branch for main workflow: ${{ github.ref }}"
+              exit 1
+            fi
+          fi
+          
+          echo "Final version: $INCREMENTED_VERSION"
+          
+          # Determine if we should deploy
+          SHOULD_DEPLOY="false"
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            SHOULD_DEPLOY="true"
+          fi
+          
+          echo "version=$INCREMENTED_VERSION" >> $GITHUB_OUTPUT
+          echo "should_deploy=$SHOULD_DEPLOY" >> $GITHUB_OUTPUT
+
+      - name: Create version tag
+        if: steps.version.outputs.should_deploy == 'true'
+        run: |
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
+
+  # Lint and Test Job
+  lint-and-test:
+    runs-on: ubuntu-latest
+    needs: version-management
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 2.1.3
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v3
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --with=testing
+
+      - name: Lint with ruff
+        run: |
+          poetry run ruff check src/ tests/
+          poetry run ruff format --check src/ tests/
+
+      - name: Run tests
+        run: |
+          poetry run pytest tests/ -v --cov=src --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+
+  # Build and Push Docker Image
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: [version-management, lint-and-test]
+    if: needs.version-management.outputs.should-deploy == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ needs.version-management.outputs.version }}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            GITLAB_PASSWORD=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify image
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
+          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }} --help
+
+  # Security Scan
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: needs.version-management.outputs.should-deploy == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+
+
+
+
+  # Create Release
+  create-release:
+    runs-on: ubuntu-latest
+    needs: [version-management, build-and-push, security-scan]
+    if: needs.version-management.outputs.should-deploy == 'true'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Generate changelog from git commits
+          CHANGELOG=$(git log --oneline --no-merges $(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)..HEAD | head -20)
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ needs.version-management.outputs.version }}
+          release_name: Release v${{ needs.version-management.outputs.version }}
+          body: |
+            ## Changes in this release
+            
+            ${{ steps.changelog.outputs.changelog }}
+            
+            ## Published Docker Image
+            
+            The Docker image has been published to GitHub Container Registry:
+            
+            ```bash
+            # Pull the specific version
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${{ needs.version-management.outputs.version }}
+            
+            # Pull the latest version
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            
+            # Pull by commit SHA
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ```
+            
+            ## Usage
+            
+            ```bash
+            docker run -p 8080:8080 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${{ needs.version-management.outputs.version }}
+            ```
+          draft: false
+          prerelease: false 

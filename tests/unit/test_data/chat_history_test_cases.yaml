@@ -1,0 +1,100 @@
+# Test cases for chat history functionality
+
+token_counting:
+  - name: "simple_text"
+    input:
+      text: "Hello world"
+      model_name: "gpt-2"
+    expected:
+      token_count: 2
+  
+  - name: "complex_text"
+    input:
+      text: "This is a more complex sentence with multiple words."
+      model_name: "gpt-2"
+    expected:
+      token_count: 9
+  
+  - name: "simplistic_counting"
+    input:
+      text: "Hello world"
+      use_simplistic: true
+    expected:
+      token_count: 2
+
+conversation_trimming:
+  - name: "within_limits"
+    input:
+      messages:
+        - content: "Hello"
+        - content: "How are you?"
+        - content: "I'm fine, thanks"
+      context_window: 1000
+      trim_trigger_percentage: 95
+    expected:
+      should_trim: false
+      message_count: 3
+  
+  - name: "exceeds_limits"
+    input:
+      messages:
+        - content: "Very long message repeated many times"
+        - content: "Another long message repeated many times"
+        - content: "Final message"
+      context_window: 1000
+      trim_trigger_percentage: 95
+    expected:
+      should_trim: true
+      message_count: 1
+  
+  - name: "preserves_system_messages"
+    input:
+      messages:
+        - content: "System message"
+        - content: "Very long message repeated many times"
+        - content: "Final message"
+      context_window: 1000
+      trim_trigger_percentage: 95
+    expected:
+      should_trim: true
+      has_system_message: true
+      message_count: 2
+
+conversation_compression:
+  - name: "within_limits"
+    input:
+      messages:
+        - content: "Hello"
+        - content: "How are you?"
+        - content: "I'm fine, thanks"
+      context_window: 1000
+      compression_trigger_percentage: 95
+    expected:
+      should_compress: false
+      message_count: 3
+      removed_messages: null
+  
+  - name: "exceeds_limits"
+    input:
+      messages:
+        - content: "Very long message repeated many times"
+        - content: "Another long message repeated many times"
+        - content: "Final human message"
+      context_window: 1000
+      compression_trigger_percentage: 95
+    expected:
+      should_compress: true
+      message_count: 2
+      has_summary: true
+      has_human_message: true
+  
+  - name: "no_human_message"
+    input:
+      messages:
+        - content: "AI message 1"
+        - content: "AI message 2"
+      context_window: 1000
+      compression_trigger_percentage: 95
+    expected:
+      should_compress: false
+      message_count: 2 

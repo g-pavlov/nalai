@@ -1,0 +1,12 @@
+- title: Ecommerce API
+  description: >
+    A simple ecommerce API for managing products, orders, and users. Perfect for testing with small language models.
+    Products: Endpoints allow creating, retrieving, updating, deleting, and listing products with pagination and category filtering.
+    Orders: Enable creating and retrieving orders with items, shipping addresses, and status tracking.
+    Users: Handle user profile management including viewing and updating profile information.
+    Authentication: Uses Bearer token authentication (JWT) for protected endpoints.
+  methods: ["get", "post", "put", "delete"]
+  version: 1.0
+  openapi_file: ecommerce_api.yaml
+
+

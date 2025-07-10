@@ -1,0 +1,53 @@
+version: 1
+
+disable_existing_loggers: False
+
+# Formatters and handlers will be dynamically configured in Python
+# to support rich console output and structured file logging
+
+formatters:
+  rich:
+    format: "%(message)s"
+
+handlers:
+  console:
+    class: rich.logging.RichHandler
+    rich_tracebacks: true
+    show_time: true
+    show_path: false
+    markup: true
+    formatter: rich
+
+loggers:
+  api-assistant:
+    level: DEBUG
+    handlers: [console]
+    propagate: False
+  api_assistant:
+    level: DEBUG
+    handlers: [console]
+    propagate: False
+  models:
+    level: DEBUG
+    handlers: [console]
+    propagate: False
+  config:
+    level: DEBUG
+    handlers: [console]
+    propagate: False
+  ddtrace.llmobs:
+    level: WARNING
+    handlers: [console]
+    propagate: False
+  uvicorn:
+    level: INFO
+    handlers: [console]
+    propagate: False
+  fastapi:
+    level: INFO
+    handlers: [console]
+    propagate: False
+
+root:
+  level: INFO
+  handlers: [console]
