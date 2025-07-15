@@ -3,114 +3,223 @@ Middleware functions for API Assistant server.
 
 This module contains FastAPI middleware for logging, authentication,
 and user context management.
-
-Usage Examples:
-
-# Define excluded paths based on your actual routes
-EXCLUDED_PATHS = create_middleware_config(
-    additional_excluded_paths={"/metrics", "/status"}
-)
-
-# Register middleware with explicit excluded paths
-app.add_middleware(create_log_request_middleware(excluded_paths=EXCLUDED_PATHS))
-app.add_middleware(create_user_context_middleware(excluded_paths=EXCLUDED_PATHS))
 """
 
 import json
 import logging
 from collections.abc import Callable
+from datetime import datetime
 
-import jwt
-from fastapi import Request
-from jwt.exceptions import InvalidTokenError
+from fastapi import Request, HTTPException
 
 from ..config import settings
+from ..server.models.identity import UserContext
 
 logger = logging.getLogger("api-assistant")
 
 
 def is_request_processable(request: Request, excluded_paths: set[str] = None) -> bool:
+    """Check if request should be processed by middleware."""
     if excluded_paths is None:
         excluded_paths = set()
-
     return request.url.path not in excluded_paths
 
 
-def create_log_request_middleware(
-    excluded_paths: set[str] = None,
-    log_methods: set[str] = None,
-    include_body: bool = True,
-):
-    if log_methods is None:
-        log_methods = {"POST", "PUT", "PATCH"}
-
-    async def log_request(request: Request, call_next: Callable):
+def create_log_request_middleware(excluded_paths: set[str] = None):
+    """Create middleware that logs request and response details."""
+    async def log_request_middleware(request: Request, call_next: Callable):
+        start_time = datetime.now()
+        
         if is_request_processable(request, excluded_paths):
-            user_info = await extract_user_info_from_token(request)
-            email = user_info.get("email") if user_info else None
-            request.state.user_email = email
-            request_body = "No body logged"
-            if include_body and request.method in log_methods:
-                try:
-                    request_body = await request.json()
-                except json.JSONDecodeError:
-                    request_body = "Invalid JSON body"
-            logger.debug(
-                f"User with email: {email} called request: '{request.method} {request.url.path}' with body: {request_body}"
+            # Log request to console for real-time visibility
+            logger.info(
+                f"Request: {request.method} {request.url.path} "
+                f"from {request.client.host if request.client else 'unknown'}"
             )
-        return await call_next(request)
+            
+            # Log structured access event
+            access_logger = logging.getLogger("api_assistant.access")
+            user_context = getattr(request.state, "user_context", None)
+            user_id = user_context.user_id if user_context else "anonymous"
+            
+            access_data = {
+                "action": "request_start",
+                "method": request.method,
+                "path": request.url.path,
+                "remote_addr": request.client.host if request.client else None,
+                "user_agent": request.headers.get("User-Agent"),
+                "user_id": user_id,
+                "request_id": request.headers.get("X-Request-ID"),
+                "session_id": request.headers.get("X-Session-ID"),
+            }
+            access_logger.info(json.dumps(access_data))
 
-    return log_request
+        response = await call_next(request)
+
+        if is_request_processable(request, excluded_paths):
+            duration = (datetime.now() - start_time).total_seconds()
+            
+            # Log response to console for real-time visibility
+            logger.info(
+                f"Response: {response.status_code} for {request.method} {request.url.path}"
+            )
+            
+            # Log structured access completion
+            access_logger = logging.getLogger("api_assistant.access")
+            user_context = getattr(request.state, "user_context", None)
+            user_id = user_context.user_id if user_context else "anonymous"
+            
+            access_data = {
+                "action": "request_complete",
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "response_time_ms": int(duration * 1000),
+                "remote_addr": request.client.host if request.client else None,
+                "user_agent": request.headers.get("User-Agent"),
+                "user_id": user_id,
+                "request_id": request.headers.get("X-Request-ID"),
+                "session_id": request.headers.get("X-Session-ID"),
+            }
+            access_logger.info(json.dumps(access_data))
+
+        return response
+
+    return log_request_middleware
+
+
+def create_auth_middleware(excluded_paths: set[str] = None):
+    """Create middleware that authenticates requests using the auth service."""
+    async def auth_middleware(request: Request, call_next: Callable):
+        if is_request_processable(request, excluded_paths):
+            try:
+                from ..services.auth_service import get_auth_service
+                
+                auth_service = get_auth_service()
+                identity = await auth_service.authenticate_request(request)
+                
+                setattr(request.state, "identity", identity)
+                logger.debug(f"Authenticated user: {identity.user_id}")
+                
+            except Exception as e:
+                logger.warning(f"Authentication failed: {e}")
+                raise HTTPException(status_code=401, detail="Authentication required")
+        
+        return await call_next(request)
+    
+    return auth_middleware
+
+
+def create_audit_middleware(excluded_paths: set[str] = None):
+    """Create middleware that logs audit events for all requests."""
+    async def audit_middleware(request: Request, call_next: Callable):
+        start_time = datetime.now()
+        
+        user_context = getattr(request.state, "user_context", None)
+        user_id = user_context.user_id if user_context else "anonymous"
+        
+        # Log request start
+        if is_request_processable(request, excluded_paths):
+            try:
+                from ..services.audit_service import get_audit_service
+                
+                audit_service = get_audit_service()
+                await audit_service.log_request_start(
+                    user_id=user_id,
+                    method=request.method,
+                    path=request.url.path,
+                    ip_address=request.client.host if request.client else None,
+                    user_agent=request.headers.get("User-Agent"),
+                    session_id=request.headers.get("X-Session-ID"),
+                    request_id=request.headers.get("X-Request-ID")
+                )
+            except Exception as e:
+                logger.error(f"Failed to log audit event: {e}")
+        
+        # Process request
+        response = await call_next(request)
+        
+        # Log request completion
+        if is_request_processable(request, excluded_paths):
+            try:
+                from ..services.audit_service import get_audit_service
+                
+                audit_service = get_audit_service()
+                duration = (datetime.now() - start_time).total_seconds()
+                
+                await audit_service.log_request_complete(
+                    user_id=user_id,
+                    method=request.method,
+                    path=request.url.path,
+                    status_code=response.status_code,
+                    duration=duration,
+                    ip_address=request.client.host if request.client else None,
+                    user_agent=request.headers.get("User-Agent"),
+                    session_id=request.headers.get("X-Session-ID"),
+                    request_id=request.headers.get("X-Request-ID")
+                )
+            except Exception as e:
+                logger.error(f"Failed to log audit completion: {e}")
+        
+        return response
+    
+    return audit_middleware
 
 
 def create_user_context_middleware(
     excluded_paths: set[str] = None, context_key: str = "user_context"
 ):
+    """Create middleware that extracts and injects user context."""
     async def add_user_context(request: Request, call_next: Callable):
         if is_request_processable(request, excluded_paths):
-            user_context = await extract_user_info_from_token(request)
-            setattr(request.state, context_key, user_context or {})
+            try:
+                # Get identity that was already extracted by auth middleware
+                identity = getattr(request.state, "identity", None)
+                
+                if identity is None:
+                    # Fallback: extract user context if identity not available
+                    user_context = await extract_user_context(request)
+                else:
+                    # Create user context from the already authenticated identity
+                    user_context = UserContext(
+                        identity=identity,
+                        session_id=request.headers.get("X-Session-ID"),
+                        request_id=request.headers.get("X-Request-ID"),
+                        ip_address=request.client.host if request.client else None,
+                        user_agent=request.headers.get("User-Agent"),
+                        timestamp=datetime.now()
+                    )
+                
+                setattr(request.state, context_key, user_context)
+            except Exception as e:
+                logger.warning(f"Failed to extract user context: {e}")
+                setattr(request.state, context_key, None)
+        
         return await call_next(request)
 
     return add_user_context
 
 
-async def extract_user_info_from_token(request: Request):
-    if settings.disable_auth:
-        return {
-            "sub": "dev-user",
-            "email": "dev@example.com",
-            "given_name": "Development",
-            "family_name": "User",
-        }
-
-    # Try ID token first
-    id_token = request.headers.get("X-Id-Token")
-    if id_token:
-        try:
-            payload = jwt.decode(id_token, options={"verify_signature": False})
-            return extract_standard_claims(payload)
-        except InvalidTokenError:
-            logger.warning("Invalid ID token format")
-
-    # Try Authorization header
-    auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Bearer "):
-        access_token = auth_header.replace("Bearer ", "", 1)
-        try:
-            payload = jwt.decode(access_token, options={"verify_signature": False})
-            return extract_standard_claims(payload)
-        except InvalidTokenError:
-            logger.warning("Invalid access token format")
-
-    # No valid token found
-    return {}
+def get_user_context(request: Request, context_key: str = "user_context") -> UserContext:
+    """Get user context from request state."""
+    user_context = getattr(request.state, context_key, None)
+    if user_context is None:
+        raise ValueError("User context not found in request state")
+    return user_context
 
 
-def extract_standard_claims(token_payload: dict) -> dict:
-    return {
-        "sub": token_payload.get("sub"),
-        "email": token_payload.get("email"),
-        "given_name": token_payload.get("given_name"),
-        "family_name": token_payload.get("family_name"),
-    }
+async def extract_user_context(request: Request) -> UserContext:
+    """Extract user context from request using authentication service."""
+    from ..services.auth_service import get_auth_service
+    
+    auth_service = get_auth_service()
+    identity = await auth_service.authenticate_request(request)
+    
+    return UserContext(
+        identity=identity,
+        session_id=request.headers.get("X-Session-ID"),
+        request_id=request.headers.get("X-Request-ID"),
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("User-Agent"),
+        timestamp=datetime.now()
+    )

@@ -139,10 +139,179 @@ class Settings(BaseSettings):
         description="Directory for log file output",
     )
 
+    # ===== ACCESS CONTROL CONFIGURATION =====
+    
+    # Auth settings
+    auth_enabled: bool = Field(
+        alias="AUTH_ENABLED", 
+        default=True,
+        description="Enable authentication and access control"
+    )
+    auth_provider: str = Field(
+        alias="AUTH_PROVIDER", 
+        default="standard",
+        description="Authentication provider (standard, auth0, keycloak, etc.)"
+    )
+    auth_mode: str = Field(
+        alias="AUTH_MODE", 
+        default="client_credentials",
+        description="Authentication mode (client_credentials or delegation)"
+    )
+    auth_validate_tokens: bool = Field(
+        alias="AUTH_VALIDATE_TOKENS", 
+        default=True,
+        description="Enable token validation (can be disabled for externalized auth)"
+    )
+    auth_audit_enabled: bool = Field(
+        alias="AUTH_AUDIT_ENABLED", 
+        default=True,
+        description="Enable access audit logging"
+    )
+    
+    # OIDC settings
+    auth_oidc_issuer: str = Field(
+        alias="AUTH_OIDC_ISSUER", 
+        default="",
+        description="OIDC issuer URL (e.g., https://your-domain.auth0.com/)"
+    )
+    auth_oidc_audience: str = Field(
+        alias="AUTH_OIDC_AUDIENCE", 
+        default="",
+        description="OIDC audience (API identifier)"
+    )
+    
+    # Client credentials (individual environment variables)
+    auth_cc_service_a_client_id: str = Field(
+        alias="AUTH_CC_SERVICE_A_CLIENT_ID", 
+        default="",
+        description="Client ID for service A"
+    )
+    auth_cc_service_a_client_secret: str = Field(
+        alias="AUTH_CC_SERVICE_A_CLIENT_SECRET", 
+        default="",
+        description="Client secret for service A"
+    )
+    auth_cc_service_b_client_id: str = Field(
+        alias="AUTH_CC_SERVICE_B_CLIENT_ID", 
+        default="",
+        description="Client ID for service B"
+    )
+    auth_cc_service_b_client_secret: str = Field(
+        alias="AUTH_CC_SERVICE_B_CLIENT_SECRET", 
+        default="",
+        description="Client secret for service B"
+    )
+    
+    # Cache settings
+    cache_backend: str = Field(
+        alias="CACHE_BACKEND", 
+        default="memory",
+        description="Cache backend (memory, redis)"
+    )
+    cache_max_size: int = Field(
+        alias="CACHE_MAX_SIZE", 
+        default=1000,
+        description="Maximum number of cache entries"
+    )
+    cache_ttl_hours: int = Field(
+        alias="CACHE_TTL_HOURS", 
+        default=1,
+        description="Cache TTL in hours"
+    )
+    cache_redis_url: str = Field(
+        alias="CACHE_REDIS_URL", 
+        default="",
+        description="Redis URL for cache backend"
+    )
+    
+    # Checkpointing settings
+    checkpointing_backend: str = Field(
+        alias="CHECKPOINTING_BACKEND", 
+        default="memory",
+        description="Checkpointing backend (memory, file, postgres, redis)"
+    )
+    checkpointing_file_path: str = Field(
+        alias="CHECKPOINTING_FILE_PATH", 
+        default="./checkpoints",
+        description="File path for file-based checkpointing"
+    )
+    checkpointing_postgres_url: str = Field(
+        alias="CHECKPOINTING_POSTGRES_URL", 
+        default="",
+        description="PostgreSQL URL for checkpointing backend"
+    )
+    checkpointing_redis_url: str = Field(
+        alias="CHECKPOINTING_REDIS_URL", 
+        default="",
+        description="Redis URL for checkpointing backend"
+    )
+    
+    # Audit settings
+    audit_backend: str = Field(
+        alias="AUDIT_BACKEND", 
+        default="memory",
+        description="Audit backend (memory, external)"
+    )
+    audit_max_entries: int = Field(
+        alias="AUDIT_MAX_ENTRIES", 
+        default=10000,
+        description="Maximum number of audit log entries"
+    )
+    audit_external_url: str = Field(
+        alias="AUDIT_EXTERNAL_URL", 
+        default="",
+        description="External audit service URL"
+    )
+    
+    # PII Protection settings
+    audit_mask_pii: bool = Field(
+        alias="AUDIT_MASK_PII", 
+        default=True,
+        description="Enable PII masking in audit logs"
+    )
+    audit_mask_emails: bool = Field(
+        alias="AUDIT_MASK_EMAILS", 
+        default=True,
+        description="Mask email addresses in audit logs"
+    )
+    audit_mask_names: bool = Field(
+        alias="AUDIT_MASK_NAMES", 
+        default=True,
+        description="Mask personal names in audit logs"
+    )
+    audit_mask_ip_addresses: bool = Field(
+        alias="AUDIT_MASK_IP_ADDRESSES", 
+        default=False,
+        description="Mask IP addresses in audit logs (disabled by default for security)"
+    )
+    
+    # Thread access control settings
+    thread_access_control_backend: str = Field(
+        alias="THREAD_ACCESS_CONTROL_BACKEND", 
+        default="memory",
+        description="Thread access control backend (memory, redis)"
+    )
+
     class Config:
         env_file = dotenv.find_dotenv()
         env_file_encoding = "utf-8"
         extra = "allow"  # Allow extra environment variables
+
+    @property
+    def client_credentials(self) -> dict[str, dict]:
+        """Build client credentials from individual env vars (transparent configuration)"""
+        creds = {}
+        if self.auth_cc_service_a_client_id:
+            creds["service_a"] = {
+                "client_id": self.auth_cc_service_a_client_id,
+                "client_secret": self.auth_cc_service_a_client_secret
+            }
+        if self.auth_cc_service_b_client_id:
+            creds["service_b"] = {
+                "client_id": self.auth_cc_service_b_client_id,
+                "client_secret": self.auth_cc_service_b_client_secret
+            }
+        return creds
 
 
 settings = Settings()
@@ -179,6 +348,6 @@ if __name__ == "__main__":
 
     try:
         settings = Settings()
-        print(settings.dict())
+        print(settings.model_dump_json(indent=4))
     except ValidationError as e:
         print(f"Configuration error: {e}")
