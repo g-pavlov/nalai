@@ -69,7 +69,10 @@ class TestHTTPTool:
         assert tool.method == "GET"
         assert hasattr(tool, "_run")
         assert tool.name == "get_http_requests"
-        assert tool.description == "Handles GET requests to retrieve data from the specified URL. Use this for reading information without modifying any data."
+        assert (
+            tool.description
+            == "Handles GET requests to retrieve data from the specified URL. Use this for reading information without modifying any data."
+        )
 
     @pytest.mark.parametrize(
         "test_case", ["valid_base_url", "invalid_base_url", "subdomain_allowed"]
@@ -303,7 +306,10 @@ class TestHTTPToolClasses:
         tool = GetTool()
         assert tool.method == "GET"
         assert tool.name == "get_http_requests"
-        assert tool.description == "Handles GET requests to retrieve data from the specified URL. Use this for reading information without modifying any data."
+        assert (
+            tool.description
+            == "Handles GET requests to retrieve data from the specified URL. Use this for reading information without modifying any data."
+        )
         assert tool.is_safe is True
 
     def test_post_tool(self):
@@ -311,7 +317,10 @@ class TestHTTPToolClasses:
         tool = PostTool()
         assert tool.method == "POST"
         assert tool.name == "post_http_requests"
-        assert tool.description == "Handles POST requests to create new resources or submit data to the specified URL. Use this for creating new items or submitting forms."
+        assert (
+            tool.description
+            == "Handles POST requests to create new resources or submit data to the specified URL. Use this for creating new items or submitting forms."
+        )
         assert tool.is_safe is False
 
     def test_put_tool(self):
@@ -319,7 +328,10 @@ class TestHTTPToolClasses:
         tool = PutTool()
         assert tool.method == "PUT"
         assert tool.name == "put_http_requests"
-        assert tool.description == "Handles PUT requests to update or replace existing resources at the specified URL. Use this for completely replacing an existing item."
+        assert (
+            tool.description
+            == "Handles PUT requests to update or replace existing resources at the specified URL. Use this for completely replacing an existing item."
+        )
         assert tool.is_safe is False
 
     def test_delete_tool(self):
@@ -327,7 +339,10 @@ class TestHTTPToolClasses:
         tool = DeleteTool()
         assert tool.method == "DELETE"
         assert tool.name == "delete_http_requests"
-        assert tool.description == "Handles DELETE requests to remove resources at the specified URL. Use this for deleting items or resources."
+        assert (
+            tool.description
+            == "Handles DELETE requests to remove resources at the specified URL. Use this for deleting items or resources."
+        )
         assert tool.is_safe is False
 
     def test_head_tool(self):

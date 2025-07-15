@@ -178,9 +178,13 @@ class TestProcessHumanReview:
             result = process_human_review(mock_state, mock_config)
 
         # Verify warning was logged
-        assert any(
-            "Unknown review action 'unknown_action' received" in record.message
+        warning_found = any(
+            "unknown review action" in record.message.lower()
+            and record.levelname == "WARNING"
             for record in caplog.records
+        )
+        assert warning_found, (
+            f"No warning found for unknown action. Log records: {[r.message for r in caplog.records]}"
         )
 
         # Should still return continue action
@@ -318,5 +322,3 @@ class TestProcessHumanReview:
         assert isinstance(tool_msg, ToolMessage)
         assert tool_msg.tool_call_id == mock_tool_call["id"]
         assert tool_msg.content == feedback
-
-
