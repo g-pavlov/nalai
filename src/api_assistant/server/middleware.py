@@ -10,9 +10,8 @@ import logging
 from collections.abc import Callable
 from datetime import datetime
 
-from fastapi import Request, HTTPException
+from fastapi import HTTPException, Request
 
-from ..config import settings
 from ..server.models.identity import UserContext
 
 logger = logging.getLogger("api-assistant")
@@ -27,21 +26,22 @@ def is_request_processable(request: Request, excluded_paths: set[str] = None) ->
 
 def create_log_request_middleware(excluded_paths: set[str] = None):
     """Create middleware that logs request and response details."""
+
     async def log_request_middleware(request: Request, call_next: Callable):
         start_time = datetime.now()
-        
+
         if is_request_processable(request, excluded_paths):
             # Log request to console for real-time visibility
             logger.info(
                 f"Request: {request.method} {request.url.path} "
                 f"from {request.client.host if request.client else 'unknown'}"
             )
-            
+
             # Log structured access event
             access_logger = logging.getLogger("api_assistant.access")
             user_context = getattr(request.state, "user_context", None)
             user_id = user_context.user_id if user_context else "anonymous"
-            
+
             access_data = {
                 "action": "request_start",
                 "method": request.method,
@@ -58,17 +58,17 @@ def create_log_request_middleware(excluded_paths: set[str] = None):
 
         if is_request_processable(request, excluded_paths):
             duration = (datetime.now() - start_time).total_seconds()
-            
+
             # Log response to console for real-time visibility
             logger.info(
                 f"Response: {response.status_code} for {request.method} {request.url.path}"
             )
-            
+
             # Log structured access completion
             access_logger = logging.getLogger("api_assistant.access")
             user_context = getattr(request.state, "user_context", None)
             user_id = user_context.user_id if user_context else "anonymous"
-            
+
             access_data = {
                 "action": "request_complete",
                 "method": request.method,
@@ -90,39 +90,43 @@ def create_log_request_middleware(excluded_paths: set[str] = None):
 
 def create_auth_middleware(excluded_paths: set[str] = None):
     """Create middleware that authenticates requests using the auth service."""
+
     async def auth_middleware(request: Request, call_next: Callable):
         if is_request_processable(request, excluded_paths):
             try:
                 from ..services.auth_service import get_auth_service
-                
+
                 auth_service = get_auth_service()
                 identity = await auth_service.authenticate_request(request)
-                
-                setattr(request.state, "identity", identity)
+
+                request.state.identity = identity
                 logger.debug(f"Authenticated user: {identity.user_id}")
-                
+
             except Exception as e:
                 logger.warning(f"Authentication failed: {e}")
-                raise HTTPException(status_code=401, detail="Authentication required")
-        
+                raise HTTPException(
+                    status_code=401, detail="Authentication required"
+                ) from e
+
         return await call_next(request)
-    
+
     return auth_middleware
 
 
 def create_audit_middleware(excluded_paths: set[str] = None):
     """Create middleware that logs audit events for all requests."""
+
     async def audit_middleware(request: Request, call_next: Callable):
         start_time = datetime.now()
-        
+
         user_context = getattr(request.state, "user_context", None)
         user_id = user_context.user_id if user_context else "anonymous"
-        
+
         # Log request start
         if is_request_processable(request, excluded_paths):
             try:
                 from ..services.audit_service import get_audit_service
-                
+
                 audit_service = get_audit_service()
                 await audit_service.log_request_start(
                     user_id=user_id,
@@ -131,22 +135,22 @@ def create_audit_middleware(excluded_paths: set[str] = None):
                     ip_address=request.client.host if request.client else None,
                     user_agent=request.headers.get("User-Agent"),
                     session_id=request.headers.get("X-Session-ID"),
-                    request_id=request.headers.get("X-Request-ID")
+                    request_id=request.headers.get("X-Request-ID"),
                 )
             except Exception as e:
                 logger.error(f"Failed to log audit event: {e}")
-        
+
         # Process request
         response = await call_next(request)
-        
+
         # Log request completion
         if is_request_processable(request, excluded_paths):
             try:
                 from ..services.audit_service import get_audit_service
-                
+
                 audit_service = get_audit_service()
                 duration = (datetime.now() - start_time).total_seconds()
-                
+
                 await audit_service.log_request_complete(
                     user_id=user_id,
                     method=request.method,
@@ -156,13 +160,13 @@ def create_audit_middleware(excluded_paths: set[str] = None):
                     ip_address=request.client.host if request.client else None,
                     user_agent=request.headers.get("User-Agent"),
                     session_id=request.headers.get("X-Session-ID"),
-                    request_id=request.headers.get("X-Request-ID")
+                    request_id=request.headers.get("X-Request-ID"),
                 )
             except Exception as e:
                 logger.error(f"Failed to log audit completion: {e}")
-        
+
         return response
-    
+
     return audit_middleware
 
 
@@ -170,12 +174,13 @@ def create_user_context_middleware(
     excluded_paths: set[str] = None, context_key: str = "user_context"
 ):
     """Create middleware that extracts and injects user context."""
+
     async def add_user_context(request: Request, call_next: Callable):
         if is_request_processable(request, excluded_paths):
             try:
                 # Get identity that was already extracted by auth middleware
                 identity = getattr(request.state, "identity", None)
-                
+
                 if identity is None:
                     # Fallback: extract user context if identity not available
                     user_context = await extract_user_context(request)
@@ -187,20 +192,22 @@ def create_user_context_middleware(
                         request_id=request.headers.get("X-Request-ID"),
                         ip_address=request.client.host if request.client else None,
                         user_agent=request.headers.get("User-Agent"),
-                        timestamp=datetime.now()
+                        timestamp=datetime.now(),
                     )
-                
+
                 setattr(request.state, context_key, user_context)
             except Exception as e:
                 logger.warning(f"Failed to extract user context: {e}")
                 setattr(request.state, context_key, None)
-        
+
         return await call_next(request)
 
     return add_user_context
 
 
-def get_user_context(request: Request, context_key: str = "user_context") -> UserContext:
+def get_user_context(
+    request: Request, context_key: str = "user_context"
+) -> UserContext:
     """Get user context from request state."""
     user_context = getattr(request.state, context_key, None)
     if user_context is None:
@@ -211,15 +218,15 @@ def get_user_context(request: Request, context_key: str = "user_context") -> Use
 async def extract_user_context(request: Request) -> UserContext:
     """Extract user context from request using authentication service."""
     from ..services.auth_service import get_auth_service
-    
+
     auth_service = get_auth_service()
     identity = await auth_service.authenticate_request(request)
-    
+
     return UserContext(
         identity=identity,
         session_id=request.headers.get("X-Session-ID"),
         request_id=request.headers.get("X-Request-ID"),
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("User-Agent"),
-        timestamp=datetime.now()
+        timestamp=datetime.now(),
     )

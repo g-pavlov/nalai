@@ -12,10 +12,11 @@ from collections.abc import Callable
 from fastapi import HTTPException, Request
 
 from ..config import BaseRuntimeConfiguration, settings
-from ..services.thread_access_control import get_thread_access_control, create_user_scoped_thread_id
-from ..services.audit_utils import log_thread_access_event
-from ..utils.pii_masking import mask_pii
 from ..server.middleware import get_user_context
+from ..services.audit_utils import log_thread_access_event
+from ..services.thread_access_control import (
+    get_thread_access_control,
+)
 from .models.validation import validate_runtime_config
 
 logger = logging.getLogger("api-assistant")
@@ -52,7 +53,7 @@ def ensure_thread_id_exists(
     """
     config = _ensure_config_dict(config)
     configurable = _ensure_configurable(config)
-    
+
     thread_id = configurable.get("thread_id")
 
     if thread_id:
@@ -115,20 +116,22 @@ def add_user_context_to_config(config: dict | None, req: Request) -> dict:
     return config
 
 
-async def validate_thread_access_and_scope(config: dict | None, req: Request) -> tuple[dict, str]:
+async def validate_thread_access_and_scope(
+    config: dict | None, req: Request
+) -> tuple[dict, str]:
     """
     Validate thread access and create user-scoped thread ID.
-    
+
     This function:
     1. If no thread_id provided: Creates a new thread for the user
     2. If thread_id provided: Validates that the user has access to the thread
     3. Creates a user-scoped thread ID for LangGraph
     4. Logs the access event for audit purposes
-    
+
     Args:
         config: Configuration dictionary or Pydantic model
         req: FastAPI request object
-        
+
     Returns:
         Tuple of (updated_config, user_scoped_thread_id)
     """
@@ -138,23 +141,23 @@ async def validate_thread_access_and_scope(config: dict | None, req: Request) ->
         user_id = user_context.user_id
     except Exception as e:
         logger.error(f"Failed to get user context: {e}")
-        raise HTTPException(status_code=401, detail="Authentication required")
-    
+        raise HTTPException(status_code=401, detail="Authentication required") from e
+
     # Check if thread_id was provided in the original config
     original_config = _ensure_config_dict(config)
     original_configurable = original_config.get("configurable", {})
     thread_id_provided = "thread_id" in original_configurable
-    
+
     # Ensure thread_id exists (generates new one if not provided)
     config, thread_id = ensure_thread_id_exists(config)
-    
+
     # Get access control service
     access_control = get_thread_access_control()
-    
+
     if thread_id_provided:
         # Thread ID was provided by client - validate access to existing thread
         has_access = await access_control.validate_thread_access(user_id, thread_id)
-        
+
         if not has_access:
             # Log failed access attempt
             await log_thread_access_event(
@@ -165,31 +168,35 @@ async def validate_thread_access_and_scope(config: dict | None, req: Request) ->
                 ip_address=user_context.ip_address,
                 user_agent=user_context.user_agent,
                 session_id=user_context.session_id,
-                request_id=user_context.request_id
+                request_id=user_context.request_id,
             )
             raise HTTPException(status_code=403, detail="Access denied to thread")
-        
+
         logger.debug(f"User {user_id} granted access to existing thread {thread_id}")
-        
+
     else:
         # No thread ID provided - create new thread for user
         try:
             # Create the thread in the access control system using our generated thread_id
             await access_control.create_thread(user_id, thread_id)
-            
+
             logger.debug(f"Created new thread {thread_id} for user {user_id}")
-            
+
         except Exception as e:
             logger.error(f"Failed to create thread for user {user_id}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to create thread")
-    
+            raise HTTPException(
+                status_code=500, detail="Failed to create thread"
+            ) from e
+
     # Create user-scoped thread ID for LangGraph
-    user_scoped_thread_id = await access_control.create_user_scoped_thread_id(user_id, thread_id)
-    
+    user_scoped_thread_id = await access_control.create_user_scoped_thread_id(
+        user_id, thread_id
+    )
+
     # Update config with user-scoped thread ID
     configurable = _ensure_configurable(config)
     configurable["thread_id"] = user_scoped_thread_id
-    
+
     # Log successful access/creation
     action = "thread_created" if not thread_id_provided else "access_granted"
     await log_thread_access_event(
@@ -200,11 +207,13 @@ async def validate_thread_access_and_scope(config: dict | None, req: Request) ->
         ip_address=user_context.ip_address,
         user_agent=user_context.user_agent,
         session_id=user_context.session_id,
-        request_id=user_context.request_id
+        request_id=user_context.request_id,
     )
-    
-    logger.debug(f"User {user_id} {'created' if not thread_id_provided else 'granted access to'} thread {thread_id} (scoped: {user_scoped_thread_id})")
-    
+
+    logger.debug(
+        f"User {user_id} {'created' if not thread_id_provided else 'granted access to'} thread {thread_id} (scoped: {user_scoped_thread_id})"
+    )
+
     return config, user_scoped_thread_id
 
 
@@ -212,10 +221,10 @@ def default_modify_runtime_config(config: dict | None, req: Request) -> dict:
     """Default runtime configuration modification function."""
     # Add auth token
     config = add_auth_token_to_config(config, req)
-    
+
     # Add user context
     config = add_user_context_to_config(config, req)
-    
+
     return config
 
 
@@ -224,14 +233,16 @@ def default_validate_runtime_config(config: dict) -> BaseRuntimeConfiguration:
     return validate_runtime_config(config)
 
 
-async def default_modify_runtime_config_with_access_control(config: dict | None, req: Request) -> tuple[dict, str]:
+async def default_modify_runtime_config_with_access_control(
+    config: dict | None, req: Request
+) -> tuple[dict, str]:
     """Default runtime configuration modification with access control."""
     # Add auth token and user context
     config = default_modify_runtime_config(config, req)
-    
+
     # Validate thread access and create user-scoped thread ID
     config, user_scoped_thread_id = await validate_thread_access_and_scope(config, req)
-    
+
     return config, user_scoped_thread_id
 
 

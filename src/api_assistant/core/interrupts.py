@@ -114,11 +114,13 @@ def process_human_review(
         return Command(goto=NODE_CALL_API, update={})
 
 
-def log_human_review_action(review_action: str, config: BaseRuntimeConfiguration, tool_call: dict):
+def log_human_review_action(
+    review_action: str, config: BaseRuntimeConfiguration, tool_call: dict
+):
     """Log human review actions for audit and debugging.
     Records review decisions with user context and tool call details
     for compliance and troubleshooting purposes.
-    
+
     Args:
         review_action: Action taken by human reviewer
         config: Runtime configuration with user context
@@ -132,12 +134,14 @@ def log_human_review_action(review_action: str, config: BaseRuntimeConfiguration
     thread_id = configurable.get("thread_id", "unknown")
     org_unit_id = configurable.get("org_unit_id", "unknown")
     user_id = configurable.get("user_id", "unknown")
-    user_email = configurable.get("user_email", "unknown")
+    # user_email = configurable.get("user_email", "unknown")  # Unused
     timestamp = datetime.now(UTC).isoformat()
 
     # Mask PII for logging - use user_id instead of email for privacy
     masked_user_id = mask_pii(user_id, "user_id")
-    masked_org_unit_id = mask_pii(org_unit_id, "user_id") if org_unit_id != "unknown" else org_unit_id
+    masked_org_unit_id = (
+        mask_pii(org_unit_id, "user_id") if org_unit_id != "unknown" else org_unit_id
+    )
 
     logger.info(
         f"Human review action: *{review_action}* is triggered by user: {masked_user_id} "

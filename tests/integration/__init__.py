@@ -1,1 +1,1 @@
-"""Integration tests for the API Assistant.""" 
+"""Integration tests for the API Assistant."""

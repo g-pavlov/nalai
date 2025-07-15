@@ -5,25 +5,28 @@ This module contains models for user identity, authentication context,
 and access control data structures.
 """
 
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
 class IdentityContext(BaseModel):
     """User identity context extracted from authentication tokens."""
-    
+
     user_id: str = Field(..., description="Unique user identifier (sub claim)")
-    email: Optional[str] = Field(None, description="User email address")
-    given_name: Optional[str] = Field(None, description="User's given name")
-    family_name: Optional[str] = Field(None, description="User's family name")
-    org_unit_id: Optional[str] = Field(None, description="Organization unit identifier")
+    email: str | None = Field(None, description="User email address")
+    given_name: str | None = Field(None, description="User's given name")
+    family_name: str | None = Field(None, description="User's family name")
+    org_unit_id: str | None = Field(None, description="Organization unit identifier")
     roles: list[str] = Field(default_factory=list, description="User roles")
     permissions: list[str] = Field(default_factory=list, description="User permissions")
     token_type: str = Field(..., description="Type of token (access_token, id_token)")
-    token_expires_at: Optional[datetime] = Field(None, description="Token expiration time")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional identity metadata")
-    
+    token_expires_at: datetime | None = Field(None, description="Token expiration time")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Additional identity metadata"
+    )
+
     @property
     def full_name(self) -> str:
         """Get user's full name."""
@@ -35,12 +38,12 @@ class IdentityContext(BaseModel):
             return self.family_name
         else:
             return self.user_id
-    
+
     @property
     def is_authenticated(self) -> bool:
         """Check if user is properly authenticated."""
         return bool(self.user_id and self.user_id != "anonymous")
-    
+
     @property
     def is_token_expired(self) -> bool:
         """Check if the authentication token has expired."""
@@ -52,24 +55,26 @@ class IdentityContext(BaseModel):
 
 class UserContext(BaseModel):
     """User context for request processing."""
-    
+
     identity: IdentityContext = Field(..., description="User identity context")
-    session_id: Optional[str] = Field(None, description="Session identifier")
-    request_id: Optional[str] = Field(None, description="Request identifier for tracing")
-    ip_address: Optional[str] = Field(None, description="Client IP address")
-    user_agent: Optional[str] = Field(None, description="Client user agent")
-    timestamp: datetime = Field(default_factory=datetime.now, description="Request timestamp")
-    
+    session_id: str | None = Field(None, description="Session identifier")
+    request_id: str | None = Field(None, description="Request identifier for tracing")
+    ip_address: str | None = Field(None, description="Client IP address")
+    user_agent: str | None = Field(None, description="Client user agent")
+    timestamp: datetime = Field(
+        default_factory=datetime.now, description="Request timestamp"
+    )
+
     @property
     def user_id(self) -> str:
         """Get user ID from identity context."""
         return self.identity.user_id
-    
+
     @property
-    def email(self) -> Optional[str]:
+    def email(self) -> str | None:
         """Get user email from identity context."""
         return self.identity.email
-    
+
     @property
     def is_authenticated(self) -> bool:
         """Check if user is authenticated."""
@@ -78,29 +83,40 @@ class UserContext(BaseModel):
 
 class ThreadOwnership(BaseModel):
     """Thread ownership record for access control."""
-    
+
     thread_id: str = Field(..., description="Thread identifier")
     user_id: str = Field(..., description="Owner user identifier")
-    created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
-    last_accessed: datetime = Field(default_factory=datetime.now, description="Last access timestamp")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+    created_at: datetime = Field(
+        default_factory=datetime.now, description="Creation timestamp"
+    )
+    last_accessed: datetime = Field(
+        default_factory=datetime.now, description="Last access timestamp"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Additional metadata"
+    )
 
 
 class AccessEvent(BaseModel):
     """Access control event for audit logging."""
-    
+
     user_id: str = Field(..., description="User identifier")
     resource: str = Field(..., description="Resource being accessed")
     action: str = Field(..., description="Action being performed")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Event timestamp")
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        description="Event timestamp",
+    )
     success: bool = Field(..., description="Whether access was successful")
-    ip_address: Optional[str] = Field(None, description="Client IP address")
-    user_agent: Optional[str] = Field(None, description="Client user agent")
-    session_id: Optional[str] = Field(None, description="Session identifier")
-    request_id: Optional[str] = Field(None, description="Request identifier")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional event metadata")
-    
-    def to_audit_entry(self) -> Dict[str, Any]:
+    ip_address: str | None = Field(None, description="Client IP address")
+    user_agent: str | None = Field(None, description="Client user agent")
+    session_id: str | None = Field(None, description="Session identifier")
+    request_id: str | None = Field(None, description="Request identifier")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Additional event metadata"
+    )
+
+    def to_audit_entry(self) -> dict[str, Any]:
         """Convert to audit log entry format."""
         return {
             "user_id": self.user_id,
@@ -112,24 +128,28 @@ class AccessEvent(BaseModel):
             "user_agent": self.user_agent,
             "session_id": self.session_id,
             "request_id": self.request_id,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
 
 class APITokenRequest(BaseModel):
     """Request for API token retrieval."""
-    
+
     service: str = Field(..., description="Service identifier for token")
     scopes: list[str] = Field(default_factory=list, description="Required scopes")
-    audience: Optional[str] = Field(None, description="Token audience")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional request metadata")
+    audience: str | None = Field(None, description="Token audience")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Additional request metadata"
+    )
 
 
 class APITokenResponse(BaseModel):
     """Response containing API token."""
-    
+
     token: str = Field(..., description="API access token")
     token_type: str = Field(default="Bearer", description="Token type")
-    expires_at: Optional[datetime] = Field(None, description="Token expiration time")
+    expires_at: datetime | None = Field(None, description="Token expiration time")
     scopes: list[str] = Field(default_factory=list, description="Token scopes")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional token metadata") 
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Additional token metadata"
+    )

@@ -7,9 +7,7 @@ API selection, workflow actions, and model response generation.
 
 import os
 import sys
-import json
-import logging
-from unittest.mock import ANY, MagicMock, mock_open, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 import yaml
@@ -25,10 +23,7 @@ sys.path.insert(
 
 from api_assistant.core.agent import APIAssistant
 from api_assistant.core.constants import (
-    NODE_CALL_API,
     NODE_CALL_MODEL,
-    NODE_HUMAN_REVIEW,
-    NODE_LOAD_API_SPECS,
     NODE_SELECT_RELEVANT_APIS,
 )
 from api_assistant.core.schemas import AgentState, SelectApi, SelectedApis

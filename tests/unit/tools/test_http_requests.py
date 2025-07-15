@@ -283,7 +283,7 @@ class TestHTTPTool:
             tool = GetTool()
             tool.name = "test_tool"
 
-            with pytest.raises(Exception):
+            with pytest.raises(Exception):  # noqa: B017
                 tool._run(
                     url="https://api.example.com/test",
                     config=mock_config,

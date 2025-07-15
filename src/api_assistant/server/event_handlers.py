@@ -42,7 +42,7 @@ def serialize_event_default(event: object) -> object:
                 return {
                     k: serialize_event_default(v) for k, v in event.__dict__.items()
                 }
-        elif isinstance(event, (list, tuple)):
+        elif isinstance(event, list | tuple):
             return [serialize_event_default(item) for item in event]
         else:
             # Try to convert to string for other types
