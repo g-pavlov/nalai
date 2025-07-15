@@ -46,6 +46,8 @@ tiktoken = "^0.7.0"
 pyyaml = "^6.0.1"
 pydantic-settings = "^2.10.1"
 grandalf = "^0.8"
+aiohttp = "^3.12.14"
+requests = "^2.32.4"
 
 [tool.poetry.group.llm]
 optional = true
@@ -70,6 +72,8 @@ optional = true
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.12.1"
 pytest = "^8.3.2"
+pytest-asyncio = "^1.0.0"
+aiohttp = "^3.12.14"
 
 [build-system]
 requires = ["poetry-core"]
@@ -92,6 +96,7 @@ addopts = [
 
 # Markers
 markers = [
+    "asyncio: mark test to be run with asyncio",
     "production: marks tests as production-related",
     "development: marks tests as development-related",
     "docker: marks tests as docker-related",

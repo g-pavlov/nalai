@@ -8,6 +8,8 @@ disable_existing_loggers: False
 formatters:
   rich:
     format: "%(message)s"
+  audit:
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 handlers:
   console:
@@ -17,22 +19,32 @@ handlers:
     show_path: false
     markup: true
     formatter: rich
+  audit_file:
+    class: logging.handlers.RotatingFileHandler
+    filename: logs/audit.log
+    maxBytes: 10485760  # 10MB
+    backupCount: 10
+    formatter: audit
 
 loggers:
   api-assistant:
-    level: DEBUG
+    level: INFO
     handlers: [console]
     propagate: False
   api_assistant:
-    level: DEBUG
+    level: INFO
     handlers: [console]
     propagate: False
+  api_assistant.audit:
+    level: INFO
+    handlers: [audit_file]
+    propagate: False
   models:
-    level: DEBUG
+    level: INFO
     handlers: [console]
     propagate: False
   config:
-    level: DEBUG
+    level: INFO
     handlers: [console]
     propagate: False
   ddtrace.llmobs:
