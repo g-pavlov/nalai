@@ -96,7 +96,7 @@ class TestCacheWithMockedLLM(unittest.TestCase):
 
     def _make_request(self, prompt: str) -> dict[str, Any]:
         payload = {"input": {"messages": [{"content": prompt, "type": "human"}]}}
-        response = self.client.post("/api-assistant/invoke", json=payload)
+        response = self.client.post("/nalai/invoke", json=payload)
         return response.json()
 
     @patch(

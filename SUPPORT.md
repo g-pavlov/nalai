@@ -29,7 +29,7 @@ Use our [feature request template](.github/ISSUE_TEMPLATE/feature_request.md)
 
 ### 🔒 Security Issues
 - **DO NOT** create public issues
-- **Email**: [security@api-assistant.org](mailto:security@api-assistant.org)
+- **Email**: [security@nalai.org](mailto:security@nalai.org)
 - **See**: [Security Overview](docs/security.md)
 
 ### 💬 General Questions
@@ -81,7 +81,7 @@ poetry run pytest tests/unit/test_specific_file.py -v -s
 ### Quick Diagnostics
 ```bash
 curl http://localhost:8080/healthz
-docker-compose logs api-assistant
+docker-compose logs nalai
 ```
 
 ### Performance
@@ -104,7 +104,7 @@ curl -H "Authorization: Bearer your-token" http://localhost:8080/api/agent/invok
 
 ## Professional Support
 
-- **Email**: [enterprise@api-assistant.org](mailto:enterprise@api-assistant.org)
+- **Email**: [enterprise@nalai.org](mailto:enterprise@nalai.org)
 - **Security**: [Security Overview](docs/security.md)
 
 ## Stay Updated

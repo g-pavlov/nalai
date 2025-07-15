@@ -40,4 +40,4 @@
 
 # Configure environment variables
 --env REGISTRY=ghcr.io
---env IMAGE_NAME=api-assistant 
+--env IMAGE_NAME=nalai 

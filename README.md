@@ -1,105 +1,188 @@
-# API Assistant
+# nalAI
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](https://github.com/your-org/api-assistant/actions)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](https://github.com/your-org/nalai/actions)
 
-Query Talk your APIs.
+**✨ nalAI (`/næli/`) is like ChatGPT for APIs**:
 
-**API Assistant** is an open-source conversational AI agent for rapid API integration, testing, and exploration. Instantly chat with your APIs, validate endpoints, and automate integration flows—all powered by modern LLMs.
+- **Ask, Don’t Search** – Skip the docs. nalAI understands your APIs. Just ask.
+- **Describe, Don’t Code** – Explain your goal, get results. No coding required.  
+- **Stay in Control** – Step in on demand. Approve critical actions before they run.  
+- **Automate Repetitive Tasks** – Offload routine API work to an autonomous LLM agent.
 
----
+**💬 Your chat with nalAI is a universal control panel** for Stripe, Shopify, AWS,  Kubernetes, and more.
+
+<br>
 
 ## 🚀 Quick Start
 
-### 🎯 Fast-Track UI Demo (Recommended)
+Run nalAI locally with a mock eCommerce API in **3 steps**.
+> ⚙️ **Prerequisites for Quick Start**
+>   
+> **Python 3.12+** → [Download](https://www.python.org/downloads/)  
+> **Docker & Docker Compose** → [Install Guide](https://docs.docker.com/get-docker/)  
+> **An LLM API key** (OpenAI, Anthropic, or Amazon Bedrock)
+
+
+### 1. Clone the Repository 
 ```bash
-# 1. Clone the repository
-git clone <repository-url>
-cd api-assistant
+git clone https://github.com/g-pavlov/nalai.git
+cd nalai
+````
 
-# 2. Run the one-liner (handles everything on-demand)
-./quick-start.sh
+✅ **Result:** Local copy of nalAI source ready to run.
 
-# 3. Open your browser to http://localhost:3001
+
+### 2. Launch the Demo Environment
+
+```bash
+make ui-run
 ```
 
-**Alternative**: Use `make ui-run` directly for the same on-demand setup
+* Select your **LLM provider** when prompted
+* Provide your **API key**
 
-**Requirements**: Python 3.8+, Docker, OpenAI API key
+✅ **Result:**
 
-### Option 1: Local Development
+* **Web UI:** [http://localhost:3001](http://localhost:3001)
+* **Backend API:** [http://localhost:8000](http://localhost:8000)
+
+
+### 3. Chat with nalAI
+
+Open **[http://localhost:3001](http://localhost:3001)** in your browser and try:
+
+💬 **"List products"** – Returns mock eCommerce product items  
+💬 **"Show me how to create an order"** –  Provides instructions and an example code   
+💬 **"What is the Products API security schema?"** – Explains the security configuration defined in the API OpenAPi specification.
+
+> ⚠️ *Current demo UI does not support interactive approval for write operations (human‑in‑the‑loop). You can try this with API*
+
+![UI Demo](docs/nalAI.gif)
+
+
+### 🌐 Optional: Use the HTTP API Directly
+
 ```bash
-# 1. Install Poetry if needed
-pip install poetry
-
-# 2. Clone & install dependencies
-git clone <repository-url>
-cd api-assistant
-poetry install
-
-# 3. Configure environment
-cp .env.example .env  # Edit as needed
-
-# 4. Run the agent (example)
-poetry run python -m api_assistant.server
+curl -s --location 'http://localhost:8000/nalai/invoke' \
+--header 'Content-Type: application/json' \
+--data '{
+    "input": { "messages": [ { "content": "list products", "type": "human" } ] },
+    "config": { "model": { "name": "gpt-4.1", "platform": "openai" } }
+}'
 ```
 
-### Option 2: Docker with Ollama
-```bash
-# 1. Clone the repository
-git clone <repository-url>
-cd api-assistant
+✅ **Result:** JSON response with nalAI’s reply and any executed API calls.
 
-# 2. Set up Ollama with llama3.1:8b
-./scripts/setup_ollama_advanced.sh
+<br>
 
-# 3. Start the API Assistant with Docker
-docker compose up -d
+## 🔗 Onboarding Your APIs
 
-# 4. Access the service
-curl http://localhost:8080/health
-```
+nalAI learns **directly from your API specifications**, not generic knowledge:
 
-For detailed Ollama setup instructions, see [docs/ollama-setup.md](docs/ollama-setup.md).
+* **Understands Endpoints** – Reads available operations, requests, and responses
+* **Executes Safely** – Handles authentication and formats real API calls correctly
+* **Handles Errors Gracefully** – Interprets API errors and adapts automatically
 
----
+**How to contribute APIs**
+
+1. Add **OpenAPI 3.x YAML files** to `data/api_specs`
+2. Add an **entry** in `data/api_specs/api_summaries.yaml`
+3. nalAI will **discover and use** new APIs immediately
+
+> 💡 *See the [Hosting Guide](docs/platform-independent-installation.md) for self‑hosting and enterprise integration.*
+
+<br>
+
+## 💬 Example Prompts
+
+> ⚠️ **These examples require onboarding APIs that are not bundled with nalAI.**   
+> To try them, provide OpenAPI specs for your own systems (e.g., SAP, Auth0, AWS).
+
+Try nalAI with natural‑language requests like:
+
+💬 **"What's our revenue this month?"** — Pulls live data from SAP/ERP  
+💬 **"Generate Python code to create a new user in Auth0"** — Returns ready‑to‑run snippet  
+💬 **"Scale the nginx Kubernetes deployment"** — Executes a safe, human‑approved API call  
+💬 **"What are the most requested API features?"** — Aggregates insights from Zendesk & Intercom
+
+
+💡 *See more in [docs/examples.md](docs/examples.md)*
+
+<br>
+
+## 🎯 Key Use Cases
+
+**📊 Instant Business Intelligence & Operations**  
+Query ERPs, CRMs, and eCommerce platforms in plain language.  
+Retrieve insights or trigger actions instantly—no dashboards required.
+
+⎯⎯⎯⎯⎯
+
+**💻 Frictionless Developer & DevOps Productivity**  
+Generate API code snippets, debug integrations, and manage infrastructure from natural‑language requests.
+
+⎯⎯⎯⎯⎯
+
+**🤖 Autonomous Automation with Human‑in‑the‑Loop**  
+The LLM decides which APIs to call and in what sequence.  
+Automate tasks and orchestrate workflows while approving critical actions for security.
+
+⎯⎯⎯⎯⎯
+
+**⚡ Rapid Integration & Adoption**  
+Provision an OpenAPI spec to nalAI and the API becomes **instantly available** for queries and actions.
+
+⎯⎯⎯⎯⎯
+
+**🏢 Organizational Deployment & Integration**  
+Host nalAI yourself and integrate its API into **internal portals, dashboards, or chat apps** for org‑wide access.
+
+<br>
 
 ## ✨ Features
-- **Conversational API Testing**: Chat with your API, get instant feedback
-- **OpenAPI/Swagger Support**: Import specs for deep understanding
-- **Multi-Model**: Anthropic Claude, Llama, Phi-4, and more
-- **Built-in HTTP Tools**: Make real API calls from chat
-- **Automated Evaluation**: Integrated test and eval suite
-- **Interactive UI Demo**: Beautiful web interface with streaming responses
-- **Real-time Tool Execution**: Watch API calls happen live in the UI
-- **Markdown Rendering**: Rich formatting for responses and documentation
 
----
+**🎯 Goal‑Oriented Control**
 
-## 🛠 Example Usage
+* Natural‑Language Goals
+* Zero Learning Curve
 
-```python
-from api_assistant.agent.api_assistant_agent import APIAssistant
-agent = APIAssistant()
-response = agent.chat("Test the /users endpoint")
-print(response)
-```
+⎯⎯⎯⎯⎯
 
----
+**⚡ Real‑Time Autonomous Execution**
 
-## 🧩 Project Structure
+* Auto-Orchestrated Tool Use
+* Human‑in‑the‑Loop Control
+* Secure API Calls
 
-- `src/api_assistant/` – Core agent, models, tools, config
-- `tests/` – Unit & evaluation tests
-- `docs/` – Documentation & guides
+⎯⎯⎯⎯⎯
 
----
+**🧠 OpenAPI‑Driven Intelligence**
+
+* Learns from API Specs
+* Handles Errors Gracefully
+* Maintains Context in Workflows
+
+⎯⎯⎯⎯⎯
+
+**🛡 Enterprise‑Ready & Secure**
+
+* Complete Audit Trail
+* Compliance‑Friendly (SOC 2, GDPR, ISO 27001)
+* Flexible Self‑Hosting & Integration
+
+<br>
+
+## 📚 Next Steps
+
+* [Operations Guide](docs/observability.md) – Monitoring & logging
+* [Development Guide](docs/development.md) – Setup & architecture
+* [Security Guide](docs/security.md) – Auth, compliance & audit
+* [Integration Guide](docs/platform-independent-installation.md) – Hosting & deployment
+
+<br>
 
 ## 🤝 Contributing
-We welcome issues and PRs! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
----
-
-## 📄 License
-MIT. See [LICENSE](LICENSE). # Test commit signing
+We welcome issues and PRs! See [CONTRIBUTING.md](CONTRIBUTING.md).

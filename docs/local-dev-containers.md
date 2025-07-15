@@ -35,7 +35,7 @@ The project uses Docker Compose to provide a complete local development environm
 
 ### Services
 
-- **api-assistant**: Main application server
+- **nalai**: Main application server
   - Port: 8080
   - Environment: Development with hot reload
   - Volumes: Source code mounted for live updates
@@ -79,7 +79,7 @@ The containers are configured with production-like settings for a realistic deve
 docker-compose up -d
 
 # View logs
-docker-compose logs -f api-assistant
+docker-compose logs -f nalai
 
 # Stop services
 docker-compose down
@@ -111,11 +111,11 @@ docker-compose exec ollama ollama rm llama2:7b
 
 ```bash
 # Run tests in container
-docker-compose exec api-assistant make test
+docker-compose exec nalai make test
 
 # Run specific test suites
-docker-compose exec api-assistant make test-unit
-docker-compose exec api-assistant make test-integration
+docker-compose exec nalai make test-unit
+docker-compose exec nalai make test-integration
 ```
 
 ## Development Environment Containers Overview
@@ -228,13 +228,13 @@ All applicable from project configuration.
 #### **Operations**
 ```bash
 # Start only API Assistant
-docker-compose up -d api-assistant
+docker-compose up -d nalai
 
 # Stop only API Assistant
-docker-compose stop api-assistant
+docker-compose stop nalai
 
 # View logs
-docker-compose logs api-assistant
+docker-compose logs nalai
 
 # Check if running
 curl http://localhost:8080/healthz
@@ -281,7 +281,7 @@ OLLAMA_MODELS = {
 2. **Container won't start:**
    ```bash
    # Check container logs
-   docker-compose logs api-assistant
+   docker-compose logs nalai
    docker-compose logs ollama
    ```
 
@@ -355,7 +355,7 @@ docker-compose build
 docker-compose logs -f
 
 # Execute commands in containers
-docker-compose exec api-assistant bash
+docker-compose exec nalai bash
 docker-compose exec ollama ollama list
 ```
 

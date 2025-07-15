@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "api-assistant"
+name = "nalai"
 version = "0.1.0"
-description = "A conversational AI agent for API integration and testing"
+description = "A conversational AI agent for API exploration, integration and automation"
 authors = ["John Doe <john.doe@example.com>"]
 packages = [
     { include = "api_assistant", from = "src" }

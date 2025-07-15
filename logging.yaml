@@ -27,7 +27,7 @@ handlers:
     formatter: audit
 
 loggers:
-  api-assistant:
+  nalai:
     level: INFO
     handlers: [console]
     propagate: False

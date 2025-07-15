@@ -35,7 +35,7 @@ load_dotenv()
 setup_logging(settings.logging_config_path)
 logging.captureWarnings(True)
 
-logger = logging.getLogger("api-assistant")
+logger = logging.getLogger("nalai")
 
 # Public endpoints that don't require authentication
 PUBLIC_ENDPOINTS = {"/healthz", "/docs", "/"}

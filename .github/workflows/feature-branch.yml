@@ -71,13 +71,13 @@ jobs:
           context: .
           file: ./Dockerfile
           push: false
-          tags: api-assistant:${{ github.sha }}
+          tags: nalai:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Test Docker image
         run: |
-          docker run --rm api-assistant:${{ github.sha }} --help
+          docker run --rm nalai:${{ github.sha }} --help
 
   # Security check
   security-check:

@@ -52,7 +52,7 @@ def mock_pyproject_toml():
     """Create a mock pyproject.toml for testing"""
     pyproject_content = """
 [tool.poetry]
-name = "api-assistant"
+name = "nalai"
 version = "1.0.0"
 description = "AI Gateway - Lean Facade for All Operations"
 authors = ["Your Name <your.email@example.com>"]
@@ -156,9 +156,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create non-root user
-RUN useradd -m -u 1000 api-assistant && \\
-    chown -R api-assistant:api-assistant /app
-USER api-assistant
+RUN useradd -m -u 1000 nalai && \\
+    chown -R nalai:nalai /app
+USER nalai
 
 # Expose port
 EXPOSE 8080
@@ -191,9 +191,9 @@ def mock_docker_output():
     """Create mock Docker command output for testing"""
     docker_output = """
 REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
-api-assistant          analysis            abc123def456        2 minutes ago       1.2GB
-api-assistant          prod                def456ghi789        5 minutes ago       1.1GB
-api-assistant          dev                 ghi789jkl012        10 minutes ago       1.5GB
+nalai          analysis            abc123def456        2 minutes ago       1.2GB
+nalai          prod                def456ghi789        5 minutes ago       1.1GB
+nalai          dev                 ghi789jkl012        10 minutes ago       1.5GB
 """
     return docker_output
 
@@ -232,10 +232,10 @@ def mock_docker_build_output():
 #9 [5/8] COPY . .
 #9 DONE 0.0s
 
-#10 [6/8] RUN useradd -m -u 1000 api-assistant
+#10 [6/8] RUN useradd -m -u 1000 nalai
 #10 DONE 0.0s
 
-#11 [7/8] USER api-assistant
+#11 [7/8] USER nalai
 #11 DONE 0.0s
 
 #12 [8/8] EXPOSE map[8080/tcp:{}]
@@ -244,7 +244,7 @@ def mock_docker_build_output():
 #13 exporting to image
 #13 => => exporting layers
 #13 => => writing image sha256:def456
-#13 => => naming to api-assistant:analysis
+#13 => => naming to nalai:analysis
 
 Use 'docker run' to run this container.
 """

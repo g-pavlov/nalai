@@ -187,7 +187,7 @@ Create a `.actrc` file for persistent configuration:
 
 --secret GITHUB_TOKEN=dummy-token
 --env REGISTRY=ghcr.io
---env IMAGE_NAME=api-assistant
+--env IMAGE_NAME=nalai
 ```
 
 ### 3. Makefile Simulation - Quick Local Testing
