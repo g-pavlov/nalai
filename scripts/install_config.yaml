@@ -1,0 +1,186 @@
+# Tool Installation Configuration
+# This file defines versions and installation settings for all tools
+
+# Global settings
+global:
+  # Default installation directory for tools that don't use package managers
+  install_dir: "/usr/local/bin"
+  # Whether to force reinstall even if tool exists
+  force_reinstall: false
+  # Whether to show verbose output during installation
+  verbose: false
+
+# Tool-specific configurations
+tools:
+  gh:
+    # GitHub CLI
+    name: "GitHub CLI"
+    version: "2.45.0"
+    package_names:
+      brew: "gh"
+      apt: "gh"
+      yum: "gh"
+      dnf: "gh"
+      pacman: "github-cli"
+      zypper: "gh"
+      winget: "GitHub.cli"
+      choco: "gh"
+      scoop: "gh"
+    # Special installation methods (override package manager)
+    special_install:
+      linux:
+        apt:
+          method: "repository"
+          repository_url: "https://cli.github.com/packages"
+          key_url: "https://cli.github.com/packages/githubcli-archive-keyring.gpg"
+      windows:
+        winget:
+          method: "winget"
+          package_id: "GitHub.cli"
+    # Minimum required version
+    min_version: "2.0.0"
+    # Check if version is compatible
+    version_check: "gh --version | head -1 | grep -o '[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+'"
+
+  act:
+    # GitHub Actions local runner
+    name: "act"
+    version: "0.2.55"
+    package_names:
+      brew: "act"
+      apt: "act"
+      yum: "act"
+      dnf: "act"
+      pacman: "act"
+      zypper: "act"
+      winget: "nektos.act"
+      choco: "act-cli"
+      scoop: "act"
+    # Special installation methods
+    special_install:
+      linux:
+        all:
+          method: "official_script"
+          script_url: "https://raw.githubusercontent.com/nektos/act/master/install.sh"
+      windows:
+        choco:
+          method: "choco"
+          package_name: "act-cli"
+    min_version: "0.2.0"
+    version_check: "act --version | grep -o '[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+'"
+
+  poetry:
+    # Python package manager
+    name: "Poetry"
+    version: "1.8.3"
+    package_names:
+      brew: "poetry"
+      apt: "python3-poetry"
+      yum: "python3-poetry"
+      dnf: "python3-poetry"
+      pacman: "poetry"
+      zypper: "python3-poetry"
+      winget: "Python.Poetry"
+      choco: "poetry"
+      scoop: "poetry"
+    # Special installation methods
+    special_install:
+      all:
+        all:
+          method: "official_installer"
+          installer_url: "https://install.python-poetry.org"
+          installer_command: "curl -sSL https://install.python-poetry.org | python3 -"
+    min_version: "1.0.0"
+    version_check: "poetry --version | grep -o '[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+'"
+
+  trivy:
+    # Security scanner
+    name: "Trivy"
+    version: "0.50.4"
+    package_names:
+      brew: "trivy"
+      apt: "trivy"
+      yum: "trivy"
+      dnf: "trivy"
+      pacman: "trivy"
+      zypper: "trivy"
+      winget: "AquaSecurity.Trivy"
+      choco: "trivy"
+      scoop: "trivy"
+    # Special installation methods
+    special_install:
+      all:
+        all:
+          method: "official_installer"
+          installer_url: "https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh"
+          installer_command: "curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin"
+    min_version: "0.20.0"
+    version_check: "trivy --version | head -1 | grep -o '[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+'"
+
+  docker:
+    # Docker
+    name: "Docker"
+    version: "latest"  # Docker version is managed by package managers
+    package_names:
+      brew: "docker"
+      apt: "docker-ce"
+      yum: "docker-ce"
+      dnf: "docker-ce"
+      pacman: "docker"
+      zypper: "docker"
+      winget: "Docker.DockerDesktop"
+      choco: "docker-desktop"
+      scoop: "docker"
+    # Special installation methods
+    special_install:
+      macos:
+        brew:
+          method: "brew_cask"
+          package_name: "docker"
+      linux:
+        apt:
+          method: "repository"
+          repository_url: "https://download.docker.com/linux/ubuntu"
+          key_url: "https://download.docker.com/linux/ubuntu/gpg"
+          packages: ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"]
+        yum:
+          method: "repository"
+          repository_url: "https://download.docker.com/linux/fedora/docker-ce.repo"
+          packages: ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"]
+        dnf:
+          method: "repository"
+          repository_url: "https://download.docker.com/linux/fedora/docker-ce.repo"
+          packages: ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"]
+      windows:
+        winget:
+          method: "winget"
+          package_id: "Docker.DockerDesktop"
+        choco:
+          method: "choco"
+          package_name: "docker-desktop"
+    min_version: "20.0.0"
+    version_check: "docker --version | grep -o '[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+'"
+
+# Platform-specific overrides
+platform_overrides:
+  macos:
+    install_dir: "/usr/local/bin"
+    # macOS-specific settings
+  linux:
+    install_dir: "/usr/local/bin"
+    # Linux-specific settings
+  windows:
+    install_dir: "C:\\Program Files\\Tools"
+    # Windows-specific settings
+
+# Environment-specific configurations
+environments:
+  development:
+    force_reinstall: false
+    verbose: true
+  ci:
+    force_reinstall: false
+    verbose: false
+  production:
+    force_reinstall: false
+    verbose: false 
