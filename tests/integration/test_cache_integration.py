@@ -50,7 +50,7 @@ def test_cache_integration():
         payload = {"input": {"messages": [{"content": prompt, "type": "human"}]}}
 
         response = requests.post(
-            f"{base_url}/api-assistant/invoke",
+            f"{base_url}/nalai/invoke",
             json=payload,
             headers={"Content-Type": "application/json"},
         )

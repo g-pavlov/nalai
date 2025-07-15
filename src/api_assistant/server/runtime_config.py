@@ -19,7 +19,7 @@ from ..services.thread_access_control import (
 )
 from .models.validation import validate_runtime_config
 
-logger = logging.getLogger("api-assistant")
+logger = logging.getLogger("nalai")
 
 
 def _ensure_config_dict(config: dict | None) -> dict:

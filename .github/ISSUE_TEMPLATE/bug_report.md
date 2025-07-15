@@ -29,7 +29,7 @@ A clear and concise description of what actually happened.
 
 - **OS**: [e.g., Ubuntu 20.04, macOS 14.0, Windows 11]
 - **Python Version**: [e.g., 3.12.8]
-- **Package Version**: [e.g., api-assistant 1.0.0]
+- **Package Version**: [e.g., nalai 1.0.0]
 - **Docker Version**: [e.g., 24.0.0] (if using Docker)
 - **Browser**: [e.g., Chrome 120.0] (if applicable)
 
@@ -55,7 +55,7 @@ If applicable, please include relevant logs:
 
 ```bash
 # Application logs
-docker-compose logs api-assistant
+docker-compose logs nalai
 
 # Error logs
 tail -f logs/error.log

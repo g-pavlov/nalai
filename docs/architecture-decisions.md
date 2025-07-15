@@ -39,17 +39,17 @@ API_SPECS_PATH=./custom_specs python -m api_assistant.server
 #### **Production Deployment**
 ```bash
 # Docker with volume mount
-docker run -v /host/api-specs:/var/lib/api-assistant/api_specs api-assistant
+docker run -v /host/api-specs:/var/lib/nalai/api_specs nalai
 
 # Kubernetes: Mount ConfigMaps as data volumes
-# Use ConfigMaps to store API specifications and mount them to /var/lib/api-assistant/api_specs
+# Use ConfigMaps to store API specifications and mount them to /var/lib/nalai/api_specs
 ```
 
 #### **Configuration**
 | Environment | Data Location | Purpose |
 |-------------|---------------|---------|
 | **Development** | `./data/api_specs/` | Local customization |
-| **Production** | `/var/lib/api-assistant/api_specs` | External management |
+| **Production** | `/var/lib/nalai/api_specs` | External management |
 | **Container** | Mounted volume | Orchestration ready |
 
 ### **Best Practices & Troubleshooting**
@@ -62,7 +62,7 @@ docker run -v /host/api-specs:/var/lib/api-assistant/api_specs api-assistant
 curl http://localhost:8080/healthz
 
 # Verify data loading
-docker exec container ls -la /var/lib/api-assistant/api_specs
+docker exec container ls -la /var/lib/nalai/api_specs
 
 # Test data format
 python -c "import yaml; yaml.safe_load(open('data/api_specs/api_summaries.yaml'))"

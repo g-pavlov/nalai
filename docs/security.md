@@ -192,7 +192,7 @@ CHECKPOINTING_POSTGRES_URL=postgresql://user:pass@postgres:5432/db
 
 # File System
 CHECKPOINTING_BACKEND=file
-CHECKPOINTING_FILE_PATH=/var/lib/api-assistant/checkpoints
+CHECKPOINTING_FILE_PATH=/var/lib/nalai/checkpoints
 
 # Redis
 CHECKPOINTING_BACKEND=redis

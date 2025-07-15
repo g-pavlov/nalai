@@ -1,5 +1,5 @@
 services:
-  api-assistant:
+  nalai:
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -77,9 +77,9 @@ services:
       retries: 3
       start_period: 10s
 
-  api-assistant-ui:
+  nalai-ui:
     image: nginx:alpine
-    container_name: api-assistant-ui
+    container_name: nalai-ui
     ports:
       - "3001:80"
     volumes:

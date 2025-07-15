@@ -12,7 +12,7 @@ from collections.abc import AsyncGenerator, Callable
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-logger = logging.getLogger("api-assistant")
+logger = logging.getLogger("nalai")
 
 
 def serialize_event_default(event: object) -> object:

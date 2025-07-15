@@ -22,7 +22,7 @@ secrets:
 # Configure environment variables
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: api-assistant
+  IMAGE_NAME: nalai
 
 # Use specific Docker images for actions
 -P uses: actions/checkout@v4

@@ -381,7 +381,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🤖 API Assistant</h1>
+            <h1>🤖 nalAI</h1>
             <p></p>
         </div>
         
@@ -408,7 +408,7 @@
         </div>
         <div class="chat-container" id="chatContainer">
             <div class="message assistant-message">
-                Hello! I'm your API Assistant. I can help you with API integration, data processing, and more. What would you like to work on?
+                Hello! I'm nalAI. I can help you with API integration, data processing, and more. What would you like to work on?
             </div>
         </div>
         
@@ -442,7 +442,7 @@
         
         // Load thread ID from localStorage on page load
         window.addEventListener('load', function() {
-            currentThreadId = localStorage.getItem('api_assistant_thread_id');
+            currentThreadId = localStorage.getItem('nalai_thread_id');
             if (currentThreadId) {
                 console.log('Resumed conversation with thread:', currentThreadId);
                 // Add a subtle indicator that we're continuing a conversation
@@ -510,7 +510,7 @@
             let fullMessageContent = '';
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api-assistant/${endpoint}`, {
+                const response = await fetch(`${API_BASE_URL}/nalai/${endpoint}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -539,7 +539,7 @@
                 const threadId = response.headers.get('X-Thread-ID');
                 if (threadId && threadId !== currentThreadId) {
                     currentThreadId = threadId;
-                    localStorage.setItem('api_assistant_thread_id', threadId);
+                    localStorage.setItem('nalai_thread_id', threadId);
                     console.log('New conversation thread started:', threadId);
                 }
 
@@ -659,13 +659,13 @@
         function startNewConversation() {
             // Clear current thread ID
             currentThreadId = null;
-            localStorage.removeItem('api_assistant_thread_id');
+            localStorage.removeItem('nalai_thread_id');
             
             // Clear chat container
             chatContainer.innerHTML = '';
             
             // Add welcome message
-            addMessage('Hello! I\'m your API Assistant. I can help you with API integration, data processing, and more. What would you like to work on?', 'assistant');
+            addMessage('Hello! I\'m nalAI. I can help you with API integration, data processing, and more. What would you like to work on?', 'assistant');
             
             console.log('Started new conversation');
         }

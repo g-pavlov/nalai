@@ -73,7 +73,7 @@ class TestAgentInvoke:
             "api_assistant.server.routes.setup_runtime_config_with_access_control",
             new=AsyncMock(return_value=({}, "tid")),
         ):
-            response = client.post("/api-assistant/invoke", json=payload)
+            response = client.post("/nalai/invoke", json=payload)
         if expected_status == 200:
             assert response.status_code == 200
             assert "output" in response.json()
@@ -107,7 +107,7 @@ class TestAgentStreamEvents:
             "api_assistant.server.routes.setup_runtime_config_with_access_control",
             new=AsyncMock(return_value=({}, str(uuid.uuid4()))),
         ):
-            response = client.post("/api-assistant/stream_events", json=payload)
+            response = client.post("/nalai/stream_events", json=payload)
         if expected_status == 200:
             assert response.status_code == 200
             assert response.headers["content-type"].startswith("text/event-stream")
@@ -148,7 +148,7 @@ class TestHumanReview:
                 new=fake_stream_interruptable_events,
             ):
                 response = client.post(
-                    "/api-assistant/human-review",
+                    "/nalai/human-review",
                     content=json.dumps(payload),
                     headers={"content-type": "text/plain"},
                 )
@@ -179,7 +179,7 @@ class TestHumanReview:
             ):
                 with pytest.raises(Exception) as exc_info:
                     client.post(
-                        "/api-assistant/human-review",
+                        "/nalai/human-review",
                         content=json.dumps(payload),
                         headers={"content-type": "text/plain"},
                     )

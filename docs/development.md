@@ -54,7 +54,7 @@ grep -E "(AUTH0)" .env
 make docker-build 2>&1 | tee build.log
 
 # 3. Check Docker images
-docker images | grep api-assistant
+docker images | grep nalai
 ```
 
 ### Scenario 4: Testing Production Build
@@ -64,7 +64,7 @@ make docker-build
 
 # 2. Run production container (choose one)
 make serve-prod               # Using Makefile
-docker run --rm -p 8080:8080 api-assistant:latest  # Direct Docker
+docker run --rm -p 8080:8080 nalai:latest  # Direct Docker
 
 # 3. Test with production config
 curl http://localhost:8080/health
@@ -115,7 +115,7 @@ docker-compose build          # Build development image
 docker-compose build --no-cache  # Force rebuild
 
 # Check image details
-docker images | grep api-assistant
+docker images | grep nalai
 ```
 
 ## 🔍 Troubleshooting Scenarios
@@ -166,13 +166,13 @@ docker builder prune  # Clean build cache if needed
 **Solution**:
 ```bash
 # 1. Find running container
-docker ps | grep api-assistant
+docker ps | grep nalai
 
 # 2. Access container shell (if running)
 docker exec -it <container_id> /bin/bash
 
 # 3. Or start container with shell access
-docker run --rm -it --entrypoint /bin/bash -p 8080:8080 api-assistant:latest
+docker run --rm -it --entrypoint /bin/bash -p 8080:8080 nalai:latest
 
 # 4. Check logs
 docker logs <container_id>
@@ -220,10 +220,10 @@ poetry env info
 poetry show
 
 # Check Docker images
-docker images | grep api-assistant
+docker images | grep nalai
 
 # Check running containers
-docker ps | grep api-assistant
+docker ps | grep nalai
 
 # Check build cache
 docker builder du

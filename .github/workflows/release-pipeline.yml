@@ -366,7 +366,7 @@ jobs:
             
             # Or add to your pyproject.toml
             [tool.poetry.dependencies]
-            api-assistant = { version = "${{ needs.version-management.outputs.version }}", source = "github" }
+            nalai = { version = "${{ needs.version-management.outputs.version }}", source = "github" }
             
             [[tool.poetry.source]]
             name = "github"

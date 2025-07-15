@@ -14,7 +14,7 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from ...config import BaseRuntimeConfiguration
 from .input import MessageInput
 
-logger = logging.getLogger("api-assistant")
+logger = logging.getLogger("nalai")
 
 
 def validate_agent_input(messages: list, max_size: int = 100 * 1024) -> None:

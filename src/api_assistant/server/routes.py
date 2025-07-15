@@ -38,7 +38,7 @@ from .runtime_config import (
     setup_runtime_config_with_access_control,
 )
 
-logger = logging.getLogger("api-assistant")
+logger = logging.getLogger("nalai")
 
 
 def create_basic_routes(app: FastAPI) -> None:
@@ -82,7 +82,7 @@ def create_agent_routes(
         [dict, Request], dict
     ] = default_modify_runtime_config_with_access_control,
     format_sse_event: Callable[[str, str], str] = format_sse_event_default,
-    agent_name: str = "api-assistant",
+    agent_name: str = "nalai",
     tool_node=None,
 ) -> None:
     """Create agent endpoint routes with access control."""

@@ -38,7 +38,7 @@ class RichFormatter(logging.Formatter):
 
         # Color mapping for different loggers
         self.logger_colors = {
-            "api-assistant": "blue",
+            "nalai": "blue",
             "api_assistant": "green",
             "models": "magenta",
             "config": "cyan",
@@ -306,7 +306,7 @@ def setup_logging(config_path: str = "logging.yaml") -> None:
         if "loggers" in config:
             for logger_name, logger_config in config["loggers"].items():
                 if logger_name in [
-                    "api-assistant",
+                    "nalai",
                     "api_assistant",
                     "models",
                     "config",
@@ -371,7 +371,7 @@ def setup_logging(config_path: str = "logging.yaml") -> None:
         logging.config.dictConfig(config)
 
         # Get the root logger to log the configuration
-        logger = logging.getLogger("api-assistant")
+        logger = logging.getLogger("nalai")
         logger.debug(f"Logging configured with level: {current_log_level}")
 
     except Exception as error:

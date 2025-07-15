@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 
 # Environment variables
-IMAGE_NAME ?= api-assistant
+IMAGE_NAME ?= nalai
 VERSION ?= latest
 
 # Setup Commands
@@ -146,11 +146,11 @@ docker-build-prod: install
 
 # Run Docker container
 docker-run: docker-build
-	docker run -p 8080:8080 --env-file .env -v $(PWD)/data:/var/lib/api-assistant/data $(IMAGE_NAME):latest
+	docker run -p 8080:8080 --env-file .env -v $(PWD)/data:/var/lib/nalai/data $(IMAGE_NAME):latest
 
 # Run production Docker container
 docker-run-prod: docker-build-prod
-	docker run -p 8080:8080 --env-file .env -v $(PWD)/data:/var/lib/api-assistant/data $(IMAGE_NAME):prod
+	docker run -p 8080:8080 --env-file .env -v $(PWD)/data:/var/lib/nalai/data $(IMAGE_NAME):prod
 
 # Development Server Commands
 # ==========================

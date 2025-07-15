@@ -8,7 +8,7 @@ This project adheres to the [Contributor Covenant Code of Conduct](CODE_OF_CONDU
 
 ## Security
 
-For security issues, please see our [Security Overview](docs/security.md) and report vulnerabilities privately to [security@api-assistant.org](mailto:security@api-assistant.org).
+For security issues, please see our [Security Overview](docs/security.md) and report vulnerabilities privately to [security@nalai.org](mailto:security@nalai.org).
 
 ## Quick Start
 
@@ -30,7 +30,7 @@ make test-unit              # Unit tests only
 make lint                   # Code linting
 
 # View logs
-docker-compose logs -f api-assistant
+docker-compose logs -f nalai
 ```
 
 ## Making Changes

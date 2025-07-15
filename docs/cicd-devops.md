@@ -162,8 +162,8 @@ gh workflow run ci-cd.yml -f version_type=patch
 - ✅ **Minimal attack surface**: No unnecessary files, directories, or development tools
 
 ### **Standard File System Layout**
-- ✅ **Configuration**: `/etc/api-assistant/` (follows Linux FHS)
-- ✅ **Logs**: `/var/log/api-assistant/` (standard system log location)
+- ✅ **Configuration**: `/etc/nalai/` (follows Linux FHS)
+- ✅ **Logs**: `/var/log/nalai/` (standard system log location)
 - ✅ **Application**: Python site-packages (standard Python location)
 - ✅ **Clear separation**: Build stage uses `/build`, runtime has no working directory
 

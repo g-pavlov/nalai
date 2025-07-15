@@ -100,7 +100,7 @@ handlers:
     class: logging.StreamHandler
     formatter: simple
 loggers:
-  api-assistant:
+  nalai:
     level: INFO
     handlers: [console]
     propagate: False
@@ -133,7 +133,7 @@ root:
                 setup_logging(config_path)
 
                 # Check that loggers are created
-                loggers = ["api-assistant", "api_assistant", "models", "config"]
+                loggers = ["nalai", "api_assistant", "models", "config"]
 
                 for logger_name in loggers:
                     logger = logging.getLogger(logger_name)
@@ -149,7 +149,7 @@ root:
             f.write("""
 version: 1
 loggers:
-  api-assistant:
+  nalai:
     level: INFO
 root:
   level: INFO
@@ -165,7 +165,7 @@ root:
                 mock_settings.logging_directory = "/tmp/test_logs"
                 setup_logging(config_path)
 
-                logger = logging.getLogger("api-assistant")
+                logger = logging.getLogger("nalai")
                 assert logger.level == logging.DEBUG
 
         finally:
@@ -180,7 +180,7 @@ root:
                 ) as f:
                     f.write("""
 loggers:
-  api-assistant:
+  nalai:
     level: INFO
 root:
   level: INFO
@@ -200,7 +200,7 @@ root:
             f.write("""
 version: 1
 loggers:
-  api-assistant:
+  nalai:
     level: INFO
 root:
   level: INFO
@@ -216,8 +216,8 @@ root:
                 mock_settings.logging_directory = "/tmp/test_logs"
                 setup_logging(config_path)
 
-                # Should default to DEBUG for api-assistant logger
-                logger = logging.getLogger("api-assistant")
+                # Should default to DEBUG for nalai logger
+                logger = logging.getLogger("nalai")
                 assert logger.level == logging.DEBUG
 
         finally:

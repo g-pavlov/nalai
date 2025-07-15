@@ -32,12 +32,12 @@ The API Assistant implements a comprehensive observability system designed for p
 # datadog.yaml configuration
 logs:
   - type: file
-    path: /var/log/api-assistant/audit.log
-    service: api-assistant
+    path: /var/log/nalai/audit.log
+    service: nalai
     source: python
   - type: file
-    path: /var/log/api-assistant/access.log
-    service: api-assistant
+    path: /var/log/nalai/access.log
+    service: nalai
     source: python
 ```
 
@@ -50,12 +50,12 @@ logs:
 ```yaml
 # promtail-config.yaml
 scrape_configs:
-  - job_name: api-assistant
+  - job_name: nalai
     static_configs:
       - targets: [localhost]
         labels:
-          job: api-assistant
-          __path__: /var/log/api-assistant/*.log
+          job: nalai
+          __path__: /var/log/nalai/*.log
 ```
 
 **Benefits:**
@@ -74,7 +74,7 @@ All log formats are compatible with Elasticsearch, Logstash, and Kibana.
 LANGCHAIN_TRACING_V2=true
 LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
 LANGCHAIN_API_KEY=your-api-key
-LANGCHAIN_PROJECT=api-assistant
+LANGCHAIN_PROJECT=nalai
 ```
 
 **Current Capabilities:**
@@ -120,10 +120,10 @@ LANGCHAIN_TRACING_V2=true
 ```bash
 # Production observability
 LOGGING_LEVEL=INFO
-LOGGING_DIRECTORY=/var/log/api-assistant
+LOGGING_DIRECTORY=/var/log/nalai
 LANGCHAIN_TRACING_V2=true
 DD_ENV=production
-DD_SERVICE=api-assistant
+DD_SERVICE=nalai
 ```
 
 ## Future Enhancement Plans

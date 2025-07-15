@@ -64,21 +64,21 @@ RUN pip install --no-cache-dir uv && \
     rm -f /tmp/requirements.txt /tmp/pyproject.toml /tmp/poetry.lock
 
 # Copy config files to system location
-COPY logging.yaml /etc/api-assistant/logging.yaml
+COPY logging.yaml /etc/nalai/logging.yaml
 
 # Create data directories with appropriate permissions
-RUN mkdir -p /var/lib/api-assistant/api_specs /var/log/api-assistant && \
-    chmod 755 /var/log/api-assistant /var/lib/api-assistant/api_specs
+RUN mkdir -p /var/lib/nalai/api_specs /var/log/nalai && \
+    chmod 755 /var/log/nalai /var/lib/nalai/api_specs
 
 # Create non-root user for running the application
-RUN useradd --system --no-create-home --shell /bin/false api-assistant && \
-    chown -R api-assistant:api-assistant /var/log/api-assistant /var/lib/api-assistant
+RUN useradd --system --no-create-home --shell /bin/false nalai && \
+    chown -R nalai:nalai /var/log/nalai /var/lib/nalai
 
 # Set environment variables for container runtime
-ENV LOG_CONFIG_PATH=/etc/api-assistant/logging.yaml
-ENV LOG_DIR=/var/log/api-assistant
+ENV LOG_CONFIG_PATH=/etc/nalai/logging.yaml
+ENV LOG_DIR=/var/log/nalai
 
-USER api-assistant
+USER nalai
 
 EXPOSE 8080
 

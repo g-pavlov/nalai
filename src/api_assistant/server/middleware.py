@@ -14,7 +14,7 @@ from fastapi import HTTPException, Request
 
 from ..server.models.identity import UserContext
 
-logger = logging.getLogger("api-assistant")
+logger = logging.getLogger("nalai")
 
 
 def is_request_processable(request: Request, excluded_paths: set[str] = None) -> bool:
