@@ -37,12 +37,26 @@ def format_sse_event_default(event_type: str, data: str) -> str:
 
 def process_and_format_event(
     event: dict,
-    allowed_events: list,
+    allowed_events: list[str],
     serialize_event: Callable[[object], object],
     format_sse_event: Callable[[str, str], str],
 ) -> str | None:
-    """Process a single event and return formatted SSE data if applicable."""
+    """
+    Process a single event and return formatted SSE data if applicable.
+    
+    Args:
+        event: Event dictionary from LangGraph
+        allowed_events: List of allowed event types to process
+        serialize_event: Function to serialize event data
+        format_sse_event: Function to format SSE event
+        
+    Returns:
+        Formatted SSE event string or None if event should be filtered out
+    """
     event_type = event.get("event")
+    
+    if not event_type:
+        return None
 
     # For on_chain_stream events, only include if they contain __interrupt__ in the data chunk
     if event_type == "on_chain_stream":
@@ -64,42 +78,66 @@ async def stream_interruptable_events(
     *,
     serialize_event: Callable[[object], object] = serialize_event_default,
     format_sse_event: Callable[[str, str], str] = format_sse_event_default,
+    allowed_events: list[str] | None = None,
 ) -> AsyncGenerator[str, None]:
     """
     Special event stream handler used by the /human-review endpoint.
 
     Events are instances of StreamEvent (Union[StandardStreamEvent, CustomStreamEvent]),
     which are TypedDict types that behave like dictionaries.
+    
+    Args:
+        agent: Compiled LangGraph agent
+        resume_input: Input for resuming the workflow
+        config: Runtime configuration with user context
+        serialize_event: Function to serialize event data
+        format_sse_event: Function to format SSE event
+        allowed_events: List of allowed event types (defaults to human review events)
+        
+    Yields:
+        Formatted SSE event strings
     """
+    # Default allowed events for human review
+    if allowed_events is None:
+        allowed_events = ["on_chat_model_stream", "on_tool_end"]
+    
     try:
         async for event in agent.astream_events(
             Command(resume=resume_input), config, stream_mode="values"
         ):
             # Handle both StandardStreamEvent and CustomStreamEvent
             if isinstance(event, dict):
-                event_type = event.get("event")
-                if event_type in ("on_chat_model_stream", "on_tool_end"):
-                    yield format_sse_event("data", json.dumps(serialize_event(event)))
+                formatted_event = process_and_format_event(
+                    event, allowed_events, serialize_event, format_sse_event
+                )
+                if formatted_event:
+                    yield formatted_event
 
+        # Check for interrupts in the final state
         snapshot = agent.get_state(config)
-        if len(snapshot) and len(snapshot[-1]) > 0:
-            interrupt = snapshot[-1][0].interrupts[0]
-            interruption_data = {
-                "event": "on_chain_stream",
-                "data": {
-                    "chunk": {
-                        "__interrupt__": [
-                            {
-                                "value": interrupt.value,
-                                "resumable": interrupt.resumable,
-                                "ns": interrupt.ns,
-                                "when": interrupt.when,
-                            }
-                        ]
-                    }
-                },
-            }
-            yield format_sse_event("data", json.dumps(interruption_data))
+        if snapshot and len(snapshot) > 0 and len(snapshot[-1]) > 0:
+            try:
+                interrupt = snapshot[-1][0].interrupts[0]
+                interruption_data = {
+                    "event": "on_chain_stream",
+                    "data": {
+                        "chunk": {
+                            "__interrupt__": [
+                                {
+                                    "value": interrupt.value,
+                                    "resumable": interrupt.resumable,
+                                    "ns": interrupt.ns,
+                                    "when": interrupt.when,
+                                }
+                            ]
+                        }
+                    },
+                }
+                yield format_sse_event("data", json.dumps(interruption_data))
+            except (IndexError, AttributeError) as e:
+                logger.debug(f"No interrupt found in snapshot: {e}")
+                # No interrupt found, which is normal for completed workflows
+                
     except Exception as e:
         logger.error(f"Error in event stream: {str(e)}")
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield format_sse_event("error", json.dumps({"error": str(e)}))

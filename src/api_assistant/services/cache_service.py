@@ -193,7 +193,7 @@ class CacheService:
         self.default_ttl_hours = default_ttl_hours
         self.similarity_matcher = TokenSimilarityMatcher()
         
-        logger.info(f"Cache service initialized with max_size={max_size}, ttl={default_ttl_hours}h")
+        logger.debug(f"Cache service initialized with max_size={max_size}, ttl={default_ttl_hours}h")
     
     def get(self, messages: List[BaseMessage]) -> Optional[Tuple[str, List[Dict[str, Any]]]]:
         """

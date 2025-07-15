@@ -1,18 +1,18 @@
 """
 Route handlers for API Assistant server.
 
-This module contains FastAPI route handlers for basic endpoints,
-agent endpoints, and custom router endpoints.
+This module contains FastAPI route handlers for basic endpoints
+and agent endpoints with access control integration.
 """
 
 import logging
 from collections.abc import Callable
 
-from fastapi import Body, FastAPI, Request
+from fastapi import Body, FastAPI, Request, HTTPException, Depends
 from fastapi.responses import RedirectResponse, StreamingResponse
 from langgraph.graph.state import CompiledStateGraph
 
-from ..config import BaseRuntimeConfiguration
+from ..config import BaseRuntimeConfiguration, settings
 from .event_handlers import (
     format_sse_event_default,
     process_and_format_event,
@@ -33,7 +33,8 @@ from .models.validation import (
 from .runtime_config import (
     default_modify_runtime_config,
     default_validate_runtime_config,
-    setup_runtime_config,
+    setup_runtime_config_with_access_control,
+    default_modify_runtime_config_with_access_control,
 )
 
 logger = logging.getLogger("api-assistant")
@@ -70,25 +71,25 @@ def create_agent_routes(
     format_sse_event: Callable[[str, str], str] = format_sse_event_default,
     agent_name: str = "api-assistant",
 ) -> None:
-    """Create agent endpoint routes."""
+    """Create agent endpoint routes with access control."""
 
     @app.post(f"/{agent_name}/invoke", response_model=AgentInvokeResponse)
     async def handle_agent_invoke(
         request: AgentInvokeRequest, req: Request
     ) -> AgentInvokeResponse:
-        """Invoke the agent synchronously."""
+        """Invoke the agent synchronously with access control."""
         # Validate input content
         validate_agent_input(request.input.messages)
 
-        # Set up runtime configuration
-        agent_config, _ = setup_runtime_config(
-            request.config, req, modify_runtime_config, validate_runtime_config
+        # Set up runtime configuration with access control
+        agent_config, user_scoped_thread_id = await setup_runtime_config_with_access_control(
+            request.config, req, default_modify_runtime_config_with_access_control, validate_runtime_config
         )
 
         # Convert structured input to dict for agent (using LangGraph format)
         agent_input = request.input.model_dump()
 
-        # Use the processed config that has thread_id properly set
+        # Use the processed config that has user-scoped thread_id properly set
         final_config = agent_config
 
         # Invoke the agent
@@ -100,13 +101,13 @@ def create_agent_routes(
     async def handle_agent_stream_events(
         request: AgentStreamEventsRequest, req: Request
     ) -> StreamingResponse:
-        """Stream events from the agent with optional filtering."""
+        """Stream events from the agent with optional filtering and access control."""
         # Validate input content
         validate_agent_input(request.input.messages)
 
-        # Set up runtime configuration
-        agent_config, _ = setup_runtime_config(
-            request.config, req, modify_runtime_config, validate_runtime_config
+        # Set up runtime configuration with access control
+        agent_config, user_scoped_thread_id = await setup_runtime_config_with_access_control(
+            request.config, req, default_modify_runtime_config_with_access_control, validate_runtime_config
         )
 
         async def generate():
@@ -138,7 +139,7 @@ def create_agent_routes(
     async def handle_human_review(
         req: Request, raw_body: str = Body(..., media_type="application/json")
     ) -> StreamingResponse:
-        """Handle human review requests."""
+        """Handle human review requests with access control."""
         parsed_body = validate_json_body(raw_body)
         request = HumanReviewRequest(**parsed_body)
         validate_human_review_action(request.action)
@@ -162,7 +163,10 @@ def create_agent_routes(
                 request_payload["configurable"] = {}
             request_payload["configurable"]["thread_id"] = request.thread_id
 
-        agent_config = modify_runtime_config(request_payload, req)
+        # Set up runtime configuration with access control
+        agent_config, user_scoped_thread_id = await setup_runtime_config_with_access_control(
+            request_payload, req, default_modify_runtime_config_with_access_control, validate_runtime_config
+        )
 
         return StreamingResponse(
             stream_interruptable_events(

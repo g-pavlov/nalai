@@ -6,6 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command, interrupt
 
 from ..config import BaseRuntimeConfiguration
+from ..utils.pii_masking import mask_pii
 from .constants import NODE_CALL_API, NODE_CALL_MODEL
 from .schemas import AgentState
 
@@ -117,6 +118,7 @@ def log_human_review_action(review_action: str, config: BaseRuntimeConfiguration
     """Log human review actions for audit and debugging.
     Records review decisions with user context and tool call details
     for compliance and troubleshooting purposes.
+    
     Args:
         review_action: Action taken by human reviewer
         config: Runtime configuration with user context
@@ -129,10 +131,16 @@ def log_human_review_action(review_action: str, config: BaseRuntimeConfiguration
     configurable = config.get("configurable", {})
     thread_id = configurable.get("thread_id", "unknown")
     org_unit_id = configurable.get("org_unit_id", "unknown")
+    user_id = configurable.get("user_id", "unknown")
     user_email = configurable.get("user_email", "unknown")
     timestamp = datetime.now(UTC).isoformat()
 
+    # Mask PII for logging - use user_id instead of email for privacy
+    masked_user_id = mask_pii(user_id, "user_id")
+    masked_org_unit_id = mask_pii(org_unit_id, "user_id") if org_unit_id != "unknown" else org_unit_id
+
     logger.info(
-        f"Human review action: *{review_action}* is triggered by user: {user_email} for threadId: {thread_id} in org_unit_id: {org_unit_id}. Planned API to be executed: "
-        f"tool_call: {tool_call}. Timestamp: {timestamp}"
+        f"Human review action: *{review_action}* is triggered by user: {masked_user_id} "
+        f"for threadId: {thread_id} in org_unit_id: {masked_org_unit_id}. "
+        f"Planned API to be executed: tool_call: {tool_call}. Timestamp: {timestamp}"
     )
