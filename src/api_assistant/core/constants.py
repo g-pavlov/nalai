@@ -1,11 +1,6 @@
-"""
-Shared constants for the API Assistant package.
+"""Constants for the API Assistant workflow."""
 
-This module defines constants used across the package to ensure consistency
-and prevent typos in node names, workflow actions, and other shared values.
-"""
-
-# Workflow node names (used for all node-related operations)
+# Node names
 NODE_CHECK_CACHE = "check_cache"
 NODE_LOAD_API_SUMMARIES = "load_api_summaries"
 NODE_SELECT_RELEVANT_APIS = "select_relevant_apis"

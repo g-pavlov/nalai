@@ -5,54 +5,36 @@ from datetime import UTC, datetime
 import requests
 from langchain.callbacks.manager import CallbackManagerForToolRun
 from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import BaseTool, BaseToolkit
-from pydantic import Field
+from langchain_core.tools import BaseToolkit, StructuredTool
+from pydantic import BaseModel, Field
 
 from ..config import settings
 
 logger = logging.getLogger(__name__)
 
 
-class HTTPTool(BaseTool):
-    """Base class for HTTP tools.
+class HTTPToolArgs(BaseModel):
+    """Base schema for HTTP tool arguments."""
 
-    Attributes:
-        method (str): The HTTP method handled by this tool.
-    """
-
-    method: str = Field(
-        default="GET", description="The HTTP method handled by this tool"
+    url: str = Field(..., description="The target URL for the HTTP request")
+    input_data: dict | None = Field(
+        default=None,
+        description="Data to be sent with the request (query parameters for GET, JSON payload for POST/PUT/PATCH)",
     )
 
-    def _run(
-        self,
+
+def http_request_tool(method: str, is_safe: bool, name: str, description: str):
+    def _http_request(
         url: str,
-        config: RunnableConfig,
-        run_manager: CallbackManagerForToolRun | None = None,
         input_data: dict | None = None,
+        config: RunnableConfig | None = None,
+        run_manager: CallbackManagerForToolRun | None = None,
     ) -> dict:
-        """Executes an HTTP request using the specified method.
-
-        Args:
-            url (str): The target URL for the HTTP request.
-            config (RunnableConfig): Configuration object containing runtime parameters.
-            run_manager (Optional[CallbackManagerForToolRun], optional): Manager for handling callbacks during the tool run. Defaults to None.
-            input_data (Optional[dict], optional): Data to be sent with the request, either as query parameters or JSON payload, depending on the HTTP method. Defaults to None.
-
-        Returns:
-            dict: The JSON response from the HTTP request.
-
-        Raises:
-            requests.HTTPError: If the HTTP request returns an unsuccessful status code.
-        """
-        logger.debug("sending HTTP request: %s %s", self.method, url)
-
+        logger.debug("sending HTTP request: %s %s", method, url)
         configurable = config.get("configurable", {}) if config else {}
         internal_headers = {}
-
         if auth_token := configurable.get("auth_token"):
             internal_headers["Authorization"] = f"Bearer {auth_token}"
-
         # Extract user-supplied headers, excluding internal ones
         llm_supplied_headers = {}
         if input_data:
@@ -62,22 +44,16 @@ class HTTPTool(BaseTool):
                 for key, value in user_headers.items()
                 if key.lower() not in {k.lower() for k in internal_headers}
             }
-
-        # Merge headers (internal overrides user-supplied)
         headers = {**llm_supplied_headers, **internal_headers}
-
-        # Decide payload or query params
-        is_body_method = self.method in ["POST", "PUT", "PATCH"]
+        is_body_method = method in ["POST", "PUT", "PATCH"]
         request_kwargs = {
             "headers": headers,
             "params": input_data if not is_body_method else None,
             "json": input_data if is_body_method else None,
         }
-
-        # Create error context
         error_context = {
-            "tool_name": getattr(self, "name", "unknown_tool"),
-            "method": self.method,
+            "tool_name": name,
+            "method": method,
             "url": url,
             "timestamp": datetime.now(UTC).isoformat(),
             "user_context": {
@@ -86,42 +62,34 @@ class HTTPTool(BaseTool):
             },
             "thread_id": configurable.get("thread_id", "unknown"),
         }
+        # Check if URL is allowed by checking against all allowed URLs
+        allowed_urls = settings.api_calls_allowed_urls_list
+        url_allowed = any(url.startswith(allowed_url) for allowed_url in allowed_urls)
 
-        api_calls_base_url = settings.api_calls_base_url
-        if api_calls_base_url not in url:
+        if not url_allowed:
             error = ValueError(
-                f"HTTP requests are restricted to {api_calls_base_url}. Attempted to access: {url}"
+                f"HTTP requests are restricted to {', '.join(allowed_urls)}. Attempted to access: {url}"
             )
-            error_context.update(
-                {
-                    "error_message": str(error),
-                }
-            )
+            error_context.update({"error_message": str(error)})
             logger.error(
                 f"Unexpected error during HTTP request. Error context: {error_context}"
             )
             if run_manager:
                 run_manager.on_tool_error(error)
             raise error
-
         try:
-            response = requests.request(self.method, url, **request_kwargs)
+            response = requests.request(method, url, **request_kwargs)
             response.raise_for_status()
-
             logger.info(
-                f"Received HTTP response: {self.method} {url}, status code: {response.status_code}"
+                f"Received HTTP response: {method} {url}, status code: {response.status_code}"
             )
-
             if response.ok and not response.text.strip():
                 if run_manager:
                     run_manager.on_tool_end(output={})
                 return {}
-
             if run_manager:
                 run_manager.on_tool_end(output=response.json())
-
             return response.json()
-
         except requests.HTTPError as e:
             error_context.update(
                 {
@@ -150,138 +118,82 @@ class HTTPTool(BaseTool):
                 run_manager.on_tool_error(error=e)
             raise
 
-
-class GetTool(HTTPTool):
-    """Tool for handling GET requests."""
-
-    method: str = Field(
-        default="GET", description="The HTTP method handled by this tool"
+    return StructuredTool.from_function(
+        func=_http_request,
+        name=name,
+        description=description,
+        args_schema=HTTPToolArgs,
+        return_type=dict,
     )
-    name: str = "get_http_requests"
-    description: str = "Handles GET requests to retrieve data from the specified URL. Use this for reading information without modifying any data."
-    is_safe: bool = True
-
-
-class PostTool(HTTPTool):
-    """Tool for handling POST requests."""
-
-    method: str = Field(
-        default="POST", description="The HTTP method handled by this tool"
-    )
-    name: str = "post_http_requests"
-    description: str = "Handles POST requests to create new resources or submit data to the specified URL. Use this for creating new items or submitting forms."
-    is_safe: bool = False
-
-
-class PutTool(HTTPTool):
-    """Tool for handling PUT requests."""
-
-    method: str = Field(
-        default="PUT", description="The HTTP method handled by this tool"
-    )
-    name: str = "put_http_requests"
-    description: str = "Handles PUT requests to update or replace existing resources at the specified URL. Use this for completely replacing an existing item."
-    is_safe: bool = False
-
-
-class DeleteTool(HTTPTool):
-    """Tool for handling DELETE requests."""
-
-    method: str = Field(
-        default="DELETE", description="The HTTP method handled by this tool"
-    )
-    name: str = "delete_http_requests"
-    description: str = "Handles DELETE requests to remove resources at the specified URL. Use this for deleting items or resources."
-    is_safe: bool = False
-
-
-class HeadTool(HTTPTool):
-    """Tool for handling HEAD requests."""
-
-    method: str = Field(
-        default="HEAD", description="The HTTP method handled by this tool"
-    )
-    name: str = "head_http_requests"
-    description: str = "Handles HEAD requests"
-    is_safe: bool = True
-
-
-class OptionsTool(HTTPTool):
-    """Tool for handling OPTIONS requests."""
-
-    method: str = Field(
-        default="OPTIONS", description="The HTTP method handled by this tool"
-    )
-    name: str = "options_http_requests"
-    description: str = "Handles OPTIONS requests"
-    is_safe: bool = True
-
-
-class PatchTool(HTTPTool):
-    """Tool for handling PATCH requests."""
-
-    method: str = Field(
-        default="PATCH", description="The HTTP method handled by this tool"
-    )
-    name: str = "patch_http_requests"
-    description: str = "Handles PATCH requests"
-    is_safe: bool = False
-
-
-class TraceTool(HTTPTool):
-    """Tool for handling TRACE requests."""
-
-    method: str = Field(
-        default="TRACE", description="The HTTP method handled by this tool"
-    )
-    name: str = "trace_http_requests"
-    description: str = "Handles TRACE requests"
-    is_safe: bool = True
-
-    def _run(
-        self,
-        url: str,
-        config: RunnableConfig,
-        run_manager: CallbackManagerForToolRun | None = None,
-        input_data: dict | None = None,
-    ) -> dict:
-        """Executes a TRACE HTTP request.
-
-        The TRACE method performs a message loop-back test along the path to the target resource.
-        Input data is typically not used with TRACE requests.
-
-        Args:
-            url (str): The target URL for the HTTP request.
-            config (RunnableConfig): Configuration object containing runtime parameters.
-            run_manager (Optional[CallbackManagerForToolRun], optional): Manager for handling callbacks during the tool run. Defaults to None.
-            input_data (Optional[dict], optional): Not used in TRACE requests. Defaults to None.
-
-        Returns:
-            dict: The JSON response from the HTTP request.
-
-        Raises:
-            requests.HTTPError: If the HTTP request returns an unsuccessful status code.
-        """
-        headers = {}
-        if config and "auth_token" in config.get("configurable", {}):
-            headers["Authorization"] = f"Bearer {config['configurable']['auth_token']}"
-
-        response = requests.request(self.method, url, headers=headers)
-        response.raise_for_status()
-        return response.json()
 
 
 class HttpRequestsToolkit(BaseToolkit):
     """Toolkit containing various HTTP tools for different request methods."""
 
-    get_tool: GetTool = Field(default_factory=GetTool)
-    post_tool: PostTool = Field(default_factory=PostTool)
-    put_tool: PutTool = Field(default_factory=PutTool)
-    delete_tool: DeleteTool = Field(default_factory=DeleteTool)
-    head_tool: HeadTool = Field(default_factory=HeadTool)
-    options_tool: OptionsTool = Field(default_factory=OptionsTool)
-    patch_tool: PatchTool = Field(default_factory=PatchTool)
-    trace_tool: TraceTool = Field(default_factory=TraceTool)
+    get_tool: StructuredTool = Field(
+        default_factory=lambda: http_request_tool(
+            method="GET",
+            is_safe=True,
+            name="get_http_requests",
+            description="Handles GET requests to retrieve data from the specified URL. Use this for reading information without modifying any data.",
+        )
+    )
+    post_tool: StructuredTool = Field(
+        default_factory=lambda: http_request_tool(
+            method="POST",
+            is_safe=False,
+            name="post_http_requests",
+            description="Handles POST requests to create new resources or submit data to the specified URL. Use this for creating new items or submitting forms.",
+        )
+    )
+    put_tool: StructuredTool = Field(
+        default_factory=lambda: http_request_tool(
+            method="PUT",
+            is_safe=False,
+            name="put_http_requests",
+            description="Handles PUT requests to update or replace existing resources at the specified URL. Use this for completely replacing an existing item.",
+        )
+    )
+    delete_tool: StructuredTool = Field(
+        default_factory=lambda: http_request_tool(
+            method="DELETE",
+            is_safe=False,
+            name="delete_http_requests",
+            description="Handles DELETE requests to remove resources at the specified URL. Use this for deleting items or resources.",
+        )
+    )
+    head_tool: StructuredTool = Field(
+        default_factory=lambda: http_request_tool(
+            method="HEAD",
+            is_safe=True,
+            name="head_http_requests",
+            description="Handles HEAD requests",
+        )
+    )
+    options_tool: StructuredTool = Field(
+        default_factory=lambda: http_request_tool(
+            method="OPTIONS",
+            is_safe=True,
+            name="options_http_requests",
+            description="Handles OPTIONS requests",
+        )
+    )
+    patch_tool: StructuredTool = Field(
+        default_factory=lambda: http_request_tool(
+            method="PATCH",
+            is_safe=False,
+            name="patch_http_requests",
+            description="Handles PATCH requests",
+        )
+    )
+    trace_tool: StructuredTool = Field(
+        default_factory=lambda: http_request_tool(
+            method="TRACE",
+            is_safe=True,
+            name="trace_http_requests",
+            description="Handles TRACE requests",
+        )
+    )
 
     def get_tools(self):
         """Returns a list of all HTTP tools in the toolkit.
@@ -304,7 +216,11 @@ class HttpRequestsToolkit(BaseToolkit):
         """
         Returns True if the tool with the given name is marked as safe.
         """
-        for tool in self.get_tools():
-            if tool.name == tool_name:
-                return tool.is_safe
-        return False
+        # Define safe tools explicitly since the is_safe attribute is not set on StructuredTool
+        safe_tools = {
+            "get_http_requests",
+            "head_http_requests",
+            "options_http_requests",
+            "trace_http_requests",
+        }
+        return tool_name in safe_tools

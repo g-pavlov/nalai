@@ -55,6 +55,7 @@ optional = true
 [tool.poetry.group.llm.dependencies]
 langchain-aws = "^0.2.1"
 langchain-ollama = "^0.3.4"
+langchain-openai = "^0.3.28"
 
 [tool.poetry.group.testing]
 optional = true

@@ -22,7 +22,7 @@ class ModelConfig(BaseModel):
         min_length=1,
         max_length=100,
     )
-    platform: Literal["ollama", "aws_bedrock"] = Field(
+    platform: Literal["ollama", "aws_bedrock", "openai"] = Field(
         ..., description="Model platform"
     )
 
@@ -40,7 +40,10 @@ class AgentConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    model: ModelConfig | None = Field(None, description="Model configuration (optional, can be provided in configurable.model)")
+    model: ModelConfig | None = Field(
+        None,
+        description="Model configuration (optional, can be provided in configurable.model)",
+    )
     configurable: dict[str, Any] | None = Field(
         None, description="Additional configurable options"
     )

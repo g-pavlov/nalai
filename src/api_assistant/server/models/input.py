@@ -161,6 +161,9 @@ class AgentStreamEventsRequest(BaseModel):
         description="List of event types to allow, None means default events",
         max_length=50,
     )
+    debug: bool = Field(
+        False, description="Enable debug mode to bypass event filtering"
+    )
 
     @field_validator("allowed_events")
     @classmethod
@@ -169,9 +172,12 @@ class AgentStreamEventsRequest(BaseModel):
         if allowed_events is not None:
             valid_event_types = {
                 "on_chat_model_stream",
+                "on_chat_model_start",
+                "on_chat_model_end",
+                "on_tool_start",
+                "on_tool_stream",
                 "on_tool_end",
                 "on_chain_stream",
-                "on_tool_start",
                 "on_chain_start",
                 "on_chain_end",
             }

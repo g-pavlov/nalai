@@ -7,10 +7,10 @@ info:
     name: API Support
     email: support@ecommerce-api.com
 servers:
-  - url: http://localhost:8000
-    description: Development server
-  - url: https://api.ecommerce.com
-    description: Production server
+  - url: http://ecommerce-mock:8000
+    description: Docker network mock API server
+  - url: http://localhost:8001
+    description: Localhost mock API server (for local dev)
 
 security:
   - bearerAuth: []

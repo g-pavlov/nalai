@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     ports:
-      - "8080:8080"
+      - "8000:8080"
     volumes:
       # Development: Mount source code for hot reload
       - ./src/api_assistant:/app/api_assistant
@@ -13,6 +13,8 @@ services:
       - ./data:/app/data
     env_file:
       - .env
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
@@ -24,11 +26,13 @@ services:
       - ollama
       - ecommerce-mock
 
+
+
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
     ports:
-      - "${OLLAMA_PORT:-11434}:11434"
+      - "${OLLAMA_PORT:-11435}:11434"
     volumes:
       # Production-like: Persistent model storage
       - ollama_data:/root/.ollama
@@ -64,7 +68,7 @@ services:
       dockerfile: Dockerfile
     container_name: ecommerce-mock
     ports:
-      - "8000:8000"
+      - "8001:8000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -72,6 +76,15 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+
+  api-assistant-ui:
+    image: nginx:alpine
+    container_name: api-assistant-ui
+    ports:
+      - "3001:80"
+    volumes:
+      - ./demo/simple_ui.html:/usr/share/nginx/html/index.html:ro
+    restart: unless-stopped
 
 networks:
   default:

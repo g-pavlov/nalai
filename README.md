@@ -4,11 +4,29 @@
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](https://github.com/your-org/api-assistant/actions)
 
+Query Talk your APIs.
+
 **API Assistant** is an open-source conversational AI agent for rapid API integration, testing, and exploration. Instantly chat with your APIs, validate endpoints, and automate integration flows—all powered by modern LLMs.
 
 ---
 
 ## 🚀 Quick Start
+
+### 🎯 Fast-Track UI Demo (Recommended)
+```bash
+# 1. Clone the repository
+git clone <repository-url>
+cd api-assistant
+
+# 2. Run the one-liner (handles everything on-demand)
+./quick-start.sh
+
+# 3. Open your browser to http://localhost:3001
+```
+
+**Alternative**: Use `make ui-run` directly for the same on-demand setup
+
+**Requirements**: Python 3.8+, Docker, OpenAI API key
 
 ### Option 1: Local Development
 ```bash
@@ -27,7 +45,7 @@ cp .env.example .env  # Edit as needed
 poetry run python -m api_assistant.server
 ```
 
-### Option 2: Docker with Ollama (Recommended)
+### Option 2: Docker with Ollama
 ```bash
 # 1. Clone the repository
 git clone <repository-url>
@@ -53,6 +71,9 @@ For detailed Ollama setup instructions, see [docs/ollama-setup.md](docs/ollama-s
 - **Multi-Model**: Anthropic Claude, Llama, Phi-4, and more
 - **Built-in HTTP Tools**: Make real API calls from chat
 - **Automated Evaluation**: Integrated test and eval suite
+- **Interactive UI Demo**: Beautiful web interface with streaming responses
+- **Real-time Tool Execution**: Watch API calls happen live in the UI
+- **Markdown Rendering**: Rich formatting for responses and documentation
 
 ---
 

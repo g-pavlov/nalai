@@ -11,7 +11,6 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import END
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.prebuilt import ToolNode
 
 from ..config import BaseRuntimeConfiguration
 from ..services.api_docs_service import APIService
@@ -19,14 +18,15 @@ from .agent import APIAssistant
 from .constants import (
     NODE_CALL_API,
     NODE_CALL_MODEL,
+    NODE_CHECK_CACHE,
     NODE_HUMAN_REVIEW,
     NODE_LOAD_API_SPECS,
     NODE_LOAD_API_SUMMARIES,
     NODE_SELECT_RELEVANT_APIS,
-    NODE_CHECK_CACHE,
 )
 from .interrupts import process_human_review
 from .schemas import AgentState, InputSchema, OutputSchema
+from .tool_node import create_chunk_accumulating_tool_node
 
 
 def create_and_compile_workflow(
@@ -47,7 +47,10 @@ def create_and_compile_workflow(
     """
     if available_tools is None or NODE_CALL_API not in available_tools:
         available_tools = available_tools or {}
-        available_tools[NODE_CALL_API] = ToolNode(agent.http_toolkit.get_tools())
+        # Use custom tool node with delayed execution for better streaming support
+        available_tools[NODE_CALL_API] = create_chunk_accumulating_tool_node(
+            agent.http_toolkit.get_tools()
+        )
 
     workflow_graph = StateGraph(
         AgentState,
@@ -70,7 +73,7 @@ def create_and_compile_workflow(
     workflow_graph.add_conditional_edges(
         NODE_CHECK_CACHE,
         agent.determine_cache_action,
-        [NODE_LOAD_API_SUMMARIES, END],
+        [NODE_LOAD_API_SUMMARIES, NODE_CALL_MODEL],
     )
     workflow_graph.add_edge(NODE_LOAD_API_SUMMARIES, NODE_SELECT_RELEVANT_APIS)
     workflow_graph.add_conditional_edges(

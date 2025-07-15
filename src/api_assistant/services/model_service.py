@@ -20,6 +20,7 @@ from .rate_limiting.factory import create_model_rate_limiter
 
 AWS_BEDROCK_PLATFORM = "aws_bedrock"
 OLLAMA_PLATFORM = "ollama"
+OPENAI_PLATFORM = "openai"
 CLAUDE_SONNET_3_5 = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
 
 logger = logging.getLogger(__name__)
@@ -80,10 +81,10 @@ class ModelService:
             based on provider-specific requirements.
         """
         model_platform = model_provider
-        
+
         # Create a copy of kwargs for provider-specific modifications
         provider_kwargs = kwargs.copy()
-        
+
         # AWS Bedrock configuration
         if model_provider == AWS_BEDROCK_PLATFORM:
             model_provider = "bedrock_converse"
@@ -99,8 +100,19 @@ class ModelService:
         elif model_provider == OLLAMA_PLATFORM:
             model_provider = "ollama"
             # Use environment variable for Ollama base URL, fallback to localhost
-            ollama_base_url = getattr(settings, 'ollama_base_url', 'http://localhost:11434')
+            ollama_base_url = getattr(
+                settings, "ollama_base_url", "http://localhost:11434"
+            )
             provider_kwargs["base_url"] = ollama_base_url
+        # OpenAI configuration
+        elif model_provider == OPENAI_PLATFORM:
+            model_provider = "openai"
+            # Disable streaming for OpenAI models if requested to prevent tool calling issues
+            if kwargs.get("disable_streaming"):
+                provider_kwargs["streaming"] = False
+                logger.debug(
+                    "Disabled streaming for OpenAI model to prevent tool calling issues"
+                )
 
         # Apply rate limiting for API calls
         rate_limiter = create_model_rate_limiter(model_platform, model_id)
@@ -112,9 +124,9 @@ class ModelService:
         # These parameters are used by our application logic but not by LangChain model providers
         application_params = {
             "configurable_fields",  # Used by LangChain's _ConfigurableModel wrapper
-            "model_provider",       # Used internally by our service
+            "model_provider",  # Used internally by our service
         }
-        
+
         # Remove application-specific parameters from provider_kwargs
         for param in application_params:
             provider_kwargs.pop(param, None)

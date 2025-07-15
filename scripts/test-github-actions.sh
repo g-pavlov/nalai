@@ -1,207 +1,163 @@
 #!/bin/bash
-
-# GitHub Actions Local Testing Script
-# This script helps test GitHub Actions workflows locally
-
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+echo "🚀 Setting up GitHub Actions local testing tools..."
 
-# Function to print colored output
-print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Check if required tools are installed
-check_requirements() {
-    print_status "Checking requirements..."
+# Function to install gh CLI
+install_gh() {
+    echo "📦 Installing GitHub CLI (gh)..."
     
-    # Source the base installation functions
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    source "$SCRIPT_DIR/install_base.sh"
-    
-    # Check and install GitHub CLI if needed (on-demand)
-    if ! command -v gh >/dev/null 2>&1; then
-        print_warning "GitHub CLI (gh) is not installed"
-        echo "Installing GitHub CLI on demand..."
-        source "$SCRIPT_DIR/install_gh.sh"
-    else
-        print_success "GitHub CLI already installed: $(gh --version | head -1)"
+    if command -v gh >/dev/null 2>&1; then
+        echo "✅ GitHub CLI already installed: $(gh --version)"
+        return 0
     fi
     
-    # Check and install act if needed (on-demand)
-    if ! command -v act >/dev/null 2>&1; then
-        print_warning "act is not installed - will only use gh CLI"
-        echo "Installing act on demand..."
-        source "$SCRIPT_DIR/install_act.sh"
+    # Detect OS and install
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        if command -v brew >/dev/null 2>&1; then
+            brew install gh
+        else
+            echo "❌ Homebrew not found. Please install Homebrew first:"
+            echo "   https://brew.sh/"
+            exit 1
+        fi
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        # Linux
+        if command -v apt-get >/dev/null 2>&1; then
+            # Ubuntu/Debian
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt-get update
+            sudo apt-get install gh
+        elif command -v yum >/dev/null 2>&1; then
+            # RHEL/CentOS
+            sudo yum install gh
+        elif command -v dnf >/dev/null 2>&1; then
+            # Fedora
+            sudo dnf install gh
+        else
+            echo "❌ Unsupported Linux distribution. Please install gh manually:"
+            echo "   https://github.com/cli/cli#installation"
+            exit 1
+        fi
     else
-        print_success "act already installed: $(act --version)"
+        echo "❌ Unsupported OS: $OSTYPE"
+        echo "   Please install gh manually: https://github.com/cli/cli#installation"
+        exit 1
     fi
     
-    # Check Docker for act (optional, but recommended)
+    echo "✅ GitHub CLI installed: $(gh --version)"
+}
+
+# Function to install act
+install_act() {
+    echo "📦 Installing act (GitHub Actions local runner)..."
+    
+    if command -v act >/dev/null 2>&1; then
+        echo "✅ act already installed: $(act --version)"
+        return 0
+    fi
+    
+    # Detect OS and install
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        if command -v brew >/dev/null 2>&1; then
+            brew install act
+        else
+            echo "❌ Homebrew not found. Please install Homebrew first:"
+            echo "   https://brew.sh/"
+            exit 1
+        fi
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        # Linux
+        curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+    else
+        echo "❌ Unsupported OS: $OSTYPE"
+        echo "   Please install act manually: https://nektosact.com/installation/"
+        exit 1
+    fi
+    
+    echo "✅ act installed: $(act --version)"
+}
+
+# Function to check Docker
+check_docker() {
+    echo "🐳 Checking Docker..."
+    
     if ! command -v docker >/dev/null 2>&1; then
-        print_warning "Docker is not installed - act will not work"
-        echo "Docker is optional but recommended for full workflow testing"
-        echo "Install Docker for full local testing capabilities:"
-        echo "  https://docs.docker.com/get-docker/"
-    else
-        print_success "Docker available: $(docker --version)"
+        echo "❌ Docker not found. Please install Docker first:"
+        echo "   https://docs.docker.com/get-docker/"
+        exit 1
     fi
     
-    print_success "Requirements check completed"
-}
-
-# List available workflows
-list_workflows() {
-    print_status "Available workflows:"
-    echo "1. pr-check.yml - Pull Request Checks"
-    echo "2. feature-branch.yml - Feature Branch Pipeline"
-    echo "3. release-pipeline.yml - Release Pipeline"
-    echo ""
-}
-
-# Test with GitHub CLI
-test_with_gh() {
-    print_status "Testing with GitHub CLI..."
+    if ! docker info >/dev/null 2>&1; then
+        echo "❌ Docker is not running. Please start Docker and try again."
+        exit 1
+    fi
     
-    # Check if we're authenticated
+    echo "✅ Docker is running: $(docker --version)"
+}
+
+# Function to test GitHub CLI
+test_gh() {
+    echo "🔍 Testing GitHub CLI..."
+    
     if ! gh auth status >/dev/null 2>&1; then
-        print_warning "Not authenticated with GitHub CLI"
-        echo "Authentication is optional for local testing."
-        echo "To monitor real workflow runs, run: gh auth login"
+        echo "⚠️  GitHub CLI not authenticated. Please run:"
+        echo "   gh auth login"
         echo ""
-        print_status "Available gh commands (when authenticated):"
-        echo "  gh run list                    - List recent workflow runs"
-        echo "  gh run list --workflow=pr-check.yml - List runs for specific workflow"
-        echo "  gh run watch                   - Watch the latest run"
-        echo "  gh run watch <run-id>          - Watch a specific run"
-        echo "  gh run download                - Download artifacts from latest run"
-        echo "  gh run rerun                   - Re-run the latest failed workflow"
-        echo "  gh run rerun <run-id>          - Re-run a specific workflow"
-        echo "  gh run rerun --debug           - Re-run with debug logging"
-        echo ""
-        print_status "For local testing without authentication, use:"
-        echo "  make ci-local                  - Full CI pipeline simulation"
-        echo "  act -l                         - List available workflows (if Docker available)"
+        echo "This will allow you to monitor GitHub Actions runs."
     else
-        # List recent runs
-        print_status "Recent workflow runs:"
-        gh run list --limit 5
-        
+        echo "✅ GitHub CLI authenticated"
+        echo "   Current user: $(gh api user --jq .login)"
+    fi
+}
+
+# Function to test act
+test_act() {
+    echo "🔍 Testing act..."
+    
+    if [ -d ".github/workflows" ]; then
+        echo "📋 Available workflows:"
+        act -l
         echo ""
-        print_status "Available gh commands:"
-        echo "  gh run list                    - List recent workflow runs"
-        echo "  gh run list --workflow=pr-check.yml - List runs for specific workflow"
-        echo "  gh run watch                   - Watch the latest run"
-        echo "  gh run watch <run-id>          - Watch a specific run"
-        echo "  gh run download                - Download artifacts from latest run"
-        echo "  gh run rerun                   - Re-run the latest failed workflow"
-        echo "  gh run rerun <run-id>          - Re-run a specific workflow"
-        echo "  gh run rerun --debug           - Re-run with debug logging"
+        echo "✅ act is ready to test workflows locally"
+        echo ""
+        echo "Example usage:"
+        echo "  act pull_request    # Test PR workflow"
+        echo "  act push           # Test push workflow"
+        echo "  act -n             # Dry run (see what would happen)"
+    else
+        echo "⚠️  No .github/workflows directory found"
+        echo "   Create workflow files to test with act"
     fi
 }
 
-# Test with act (if available)
-test_with_act() {
-    if ! command -v act >/dev/null 2>&1; then
-        print_warning "act not available - skipping act tests"
-        return
-    fi
-    
-    if ! command -v docker >/dev/null 2>&1; then
-        print_warning "Docker not available - act requires Docker"
-        return
-    fi
-    
-    print_status "Testing with act..."
-    
-    # List available workflows
-    print_status "Available workflows in act:"
-    act -l
-    
-    echo ""
-    print_status "Available act commands:"
-    echo "  act -l                         - List available workflows"
-    echo "  act pull_request               - Run PR check workflow"
-    echo "  act push                       - Run feature branch workflow"
-    echo "  act -n                         - Dry run (see what would happen)"
-    echo "  act --list                     - List all workflows"
-    echo "  act --verbose                  - Verbose output"
-    echo "  act --secret GITHUB_TOKEN=dummy - Set secrets"
-    echo "  act --env-file .env            - Use environment file"
-}
-
-# Simulate CI locally using Makefile
-test_with_make() {
-    print_status "Testing with Makefile (simulates CI locally)..."
-    
-    echo ""
-    print_status "Available make commands for CI simulation:"
-    echo "  make ci-local                  - Full CI pipeline simulation"
-    echo "  make check                     - All checks (CI-safe)"
-    echo "  make check-local               - All checks with auto-fix"
-    echo "  make lint                      - Linting (CI-safe)"
-    echo "  make lint-fix                  - Linting with auto-fix"
-    echo "  make test-coverage             - Tests with coverage"
-    echo "  make security                  - Security scan"
-    echo "  make validate-deps             - Dependency validation"
-    echo ""
-    
-    read -p "Run full CI simulation? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        print_status "Running full CI simulation..."
-        make ci-local
-        print_success "CI simulation completed"
-    fi
-}
-
-# Main function
+# Main execution
 main() {
-    echo "🔧 GitHub Actions Local Testing Tool"
-    echo "===================================="
+    echo "🔧 Setting up GitHub Actions local testing environment..."
     echo ""
     
-    check_requirements
-    echo ""
+    # Install tools
+    install_gh
+    install_act
+    check_docker
     
-    list_workflows
     echo ""
+    echo "🧪 Testing tools..."
+    test_gh
+    test_act
     
-    # Test with different tools
-    test_with_gh
     echo ""
-    
-    test_with_act
+    echo "✅ GitHub Actions local testing setup complete!"
     echo ""
-    
-    test_with_make
+    echo "📚 Next steps:"
+    echo "  1. Authenticate with GitHub: gh auth login"
+    echo "  2. Test workflows locally: act pull_request"
+    echo "  3. Monitor real runs: gh run watch"
     echo ""
-    
-    print_success "Local testing setup complete!"
-    echo ""
-    echo "💡 Tips:"
-    echo "  - Use 'make ci-local' for quick CI simulation (no auth required)"
-    echo "  - Use 'act' for full workflow testing (requires Docker, no auth required)"
-    echo "  - Use 'gh auth login' then 'gh run watch' to monitor real workflow runs"
-    echo "  - Use 'gh run rerun' to re-run failed workflows (requires auth)"
+    echo "📖 For more information, see: docs/github-actions-testing.md"
 }
 
 # Run main function

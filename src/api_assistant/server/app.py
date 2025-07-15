@@ -9,17 +9,19 @@ import logging
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from ..config import settings
 from ..core.agent import APIAssistant
+from ..core.tool_node import create_chunk_accumulating_tool_node
 from ..core.workflow import create_and_compile_workflow
-from ..utils.logging import setup_logging
 from ..services.checkpointing_service import get_checkpointer
+from ..utils.logging import setup_logging
 from .middleware import (
+    create_audit_middleware,
+    create_auth_middleware,
     create_log_request_middleware,
     create_user_context_middleware,
-    create_auth_middleware,
-    create_audit_middleware,
 )
 from .routes import (
     create_agent_routes,
@@ -41,7 +43,9 @@ PUBLIC_ENDPOINTS = {"/healthz", "/docs", "/"}
 # Pre-create middleware functions for efficiency
 log_middleware = create_log_request_middleware(excluded_paths=PUBLIC_ENDPOINTS)
 auth_middleware = create_auth_middleware(excluded_paths=PUBLIC_ENDPOINTS)
-user_context_middleware = create_user_context_middleware(excluded_paths=PUBLIC_ENDPOINTS)
+user_context_middleware = create_user_context_middleware(
+    excluded_paths=PUBLIC_ENDPOINTS
+)
 audit_middleware = create_audit_middleware(excluded_paths=PUBLIC_ENDPOINTS)
 
 
@@ -49,7 +53,19 @@ audit_middleware = create_audit_middleware(excluded_paths=PUBLIC_ENDPOINTS)
 app = FastAPI(
     title="API Assistant Server",
     version="1.0",
-    description="API Assistant powered by LangGraph"
+    description="API Assistant powered by LangGraph",
+)
+
+# Configure CORS from environment variable
+allowed_origins = settings.cors_origins_list
+
+# Add CORS middleware for custom UI (must be first)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -83,13 +99,17 @@ def initialize_app():
     """Initialize the application components."""
     # Create basic routes
     create_basic_routes(app)
-    
+
     # Initialize agent and create agent routes
     memory_store = get_checkpointer()
     agent = APIAssistant()
-    agent_workflow = create_and_compile_workflow(agent, memory_store)
-    create_agent_routes(app, agent_workflow)
-    
+    # Create the tool node for streaming processor
+    tool_node = create_chunk_accumulating_tool_node(agent.http_toolkit.get_tools())
+    agent_workflow = create_and_compile_workflow(
+        agent, memory_store, available_tools={"call_api": tool_node}
+    )
+    create_agent_routes(app, agent_workflow, tool_node=tool_node)
+
     logger.info("Application routes initialized")
 
 
@@ -99,4 +119,7 @@ initialize_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("src.api_assistant.server.app:app", host="0.0.0.0", port=8000, reload=True)
+
+    uvicorn.run(
+        "src.api_assistant.server.app:app", host="0.0.0.0", port=8000, reload=True
+    )
