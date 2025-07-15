@@ -1,13 +1,13 @@
-# Development Testing Scenarios
+# Development Scenarios
 
-This document outlines **development-specific scenarios** and troubleshooting workflows for the AI Gateway development environment.
+This document outlines **development-specific scenarios** and troubleshooting workflows for the API Assistant development environment.
 
 ## 🚀 Quick Start
 
 ```bash
-make setup    # Setup development environment
-make serve    # Start development server with hot reload
-make build    # Build development Docker image
+make setup-dev    # Setup development environment
+make serve        # Start development server with hot reload
+make docker-build # Build development Docker image
 
 # Alternative: Using Docker Compose
 docker-compose up --build  # Start with hot reload
@@ -20,8 +20,8 @@ docker-compose up -d       # Start in background
 ```bash
 # 1. Clone and setup
 git clone <repository-url>
-cd ai-gateway
-make setup
+cd integration_assistant
+make setup-dev
 
 # 2. Configure environment
 # Edit .env with your credentials (see README.md for details)
@@ -51,20 +51,20 @@ make test
 grep -E "(AUTH0)" .env
 
 # 2. Check build logs
-docker build -f Dockerfile.dev -t ai-gateway:dev . 2>&1 | tee build.log
+make docker-build 2>&1 | tee build.log
 
 # 3. Check Docker images
-docker images | grep ai-gateway
+docker images | grep api-assistant
 ```
 
 ### Scenario 4: Testing Production Build
 ```bash
 # 1. Build production image
-make build-prod
+make docker-build
 
 # 2. Run production container (choose one)
 make serve-prod               # Using Makefile
-docker run --rm -p 8080:8080 --env-file .env ai-gateway:prod  # Direct Docker
+docker run --rm -p 8080:8080 api-assistant:latest  # Direct Docker
 
 # 3. Test with production config
 curl http://localhost:8080/health
@@ -99,26 +99,23 @@ docker-compose up --build --force-recreate
 make lint
 
 # Fix auto-fixable issues
-make lint-fix
+make format
 
 # Check dependencies
-make lint-deps
+make ci-deps
 ```
 
 ### Docker Build Testing
 ```bash
 # Build development image
-make build
-
-# Build production image
-make build-prod
+make docker-build
 
 # Using Docker Compose
 docker-compose build          # Build development image
 docker-compose build --no-cache  # Force rebuild
 
 # Check image details
-docker images | grep ai-gateway
+docker images | grep api-assistant
 ```
 
 ## 🔍 Troubleshooting Scenarios
@@ -157,7 +154,7 @@ poetry show  # Check installed packages
 **Solution**:
 ```bash
 # Check build logs
-docker build -f Dockerfile.dev -t ai-gateway:dev . 2>&1 | tee build.log
+make docker-build 2>&1 | tee build.log
 
 # Check layer caching
 docker system df
@@ -169,13 +166,13 @@ docker builder prune  # Clean build cache if needed
 **Solution**:
 ```bash
 # 1. Find running container
-docker ps | grep ai-gateway
+docker ps | grep api-assistant
 
 # 2. Access container shell (if running)
 docker exec -it <container_id> /bin/bash
 
 # 3. Or start container with shell access
-docker run --rm -it --entrypoint /bin/bash -p 8080:8080 --env-file .env ai-gateway:prod
+docker run --rm -it --entrypoint /bin/bash -p 8080:8080 api-assistant:latest
 
 # 4. Check logs
 docker logs <container_id>
@@ -223,10 +220,10 @@ poetry env info
 poetry show
 
 # Check Docker images
-docker images | grep ai-gateway
+docker images | grep api-assistant
 
 # Check running containers
-docker ps | grep ai-gateway
+docker ps | grep api-assistant
 
 # Check build cache
 docker builder du
@@ -236,6 +233,50 @@ docker-compose ps
 docker-compose logs -f
 docker-compose exec app /bin/bash
 ```
+
+## 📋 Available Makefile Commands
+
+### Setup & Installation
+- `make setup-dev` - Complete development environment setup
+- `make install` - Install dependencies only
+
+### Code Quality
+- `make lint` - Run linting checks
+- `make format` - Format code automatically
+- `make ci-lint` - Run CI linting locally
+
+### Testing
+- `make test` - Run unit tests
+- `make test-integration` - Run integration tests  
+- `make test-coverage` - Run all tests with coverage
+- `make ci-test` - Run CI tests locally
+
+### Security
+- `make ci-security` - Run security scan locally
+- `make ci-deps` - Check dependency security
+
+### Docker
+- `make docker-build` - Build Docker image
+- `make docker-run` - Run Docker container
+
+### Development Server
+- `make serve` - Start development server with reload
+- `make serve-prod` - Start production-like server
+
+### Build
+- `make build` - Build development package
+- `make build-prod` - Build production package
+
+### Version Management
+- `make version` - Show current version
+- `make init-version` - Initialize version to 0.1.0
+- `make bump-patch` - Bump patch version
+- `make bump-minor` - Bump minor version
+- `make bump-major` - Bump major version
+- `make install-version-hooks` - Install git hooks for auto tag pushing
+
+### Cleanup
+- `make clean` - Clean up generated files
 
 ## 📚 Additional Resources
 
