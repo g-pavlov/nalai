@@ -46,7 +46,10 @@ jobs:
         id: version
         run: |
           # Source the version utilities (adapted for GitHub Actions)
-          source .ci/version_utils_github.sh
+          source scripts/version_utils_github.sh
+          
+          # CRITICAL: Auto-increment uses main baseline to prevent version timeline violations
+          # This ensures semantic versioning integrity by ignoring stale feature branch tags
           
           # Determine version increment type
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -114,9 +117,15 @@ jobs:
                 echo "Found valid manual version tag: $HIGHEST_VERSION (manual version wins)"
                 INCREMENTED_VERSION="$HIGHEST_VERSION"
               else
-                echo "No manual version tags found, auto-incrementing patch version..."
-                # Auto-increment from current version
-                INCREMENTED_VERSION=$(increment_patch_version "$CURRENT_VERSION")
+                echo "No manual version tags found, auto-incrementing patch version from main baseline..."
+                # Get main branch baseline for auto-increment (ignore feature branch tags)
+                MAIN_BASELINE=$(git tag --sort=-version:refname --merged origin/main | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+                if [ -z "$MAIN_BASELINE" ]; then
+                  MAIN_BASELINE="0.0.0"
+                fi
+                echo "Main baseline version: $MAIN_BASELINE"
+                # Auto-increment from main baseline (not current version)
+                INCREMENTED_VERSION=$(increment_patch_version "$MAIN_BASELINE")
               fi
             else
               # Should not happen for main branch workflow
