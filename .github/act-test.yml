@@ -1,0 +1,53 @@
+# Act configuration for local GitHub Actions testing
+# This file helps configure act for better local testing
+
+# Use a specific Docker image for consistency
+-P uses: actions/setup-python@v4
+  with:
+    python-version: '3.12'
+  image: python:3.12
+
+# Use a specific Poetry installation action
+-P uses: snok/install-poetry@v1
+  with:
+    version: 2.1.3
+    virtualenvs-create: true
+    virtualenvs-in-project: true
+  image: python:3.12
+
+# Configure secrets for local testing
+secrets:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+# Configure environment variables
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: api-assistant
+
+# Use specific Docker images for actions
+-P uses: actions/checkout@v4
+  image: node:18
+
+-P uses: actions/cache@v3
+  image: node:18
+
+-P uses: codecov/codecov-action@v3
+  image: node:18
+
+-P uses: github/codeql-action/upload-sarif@v2
+  image: node:18
+
+-P uses: docker/login-action@v3
+  image: docker:20.10
+
+-P uses: docker/metadata-action@v5
+  image: docker:20.10
+
+-P uses: docker/setup-buildx-action@v3
+  image: docker:20.10
+
+-P uses: docker/build-push-action@v5
+  image: docker:20.10
+
+-P uses: actions/create-release@v1
+  image: node:18 
