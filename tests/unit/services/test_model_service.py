@@ -7,7 +7,7 @@ management, and message content extraction across different providers.
 
 import os
 import sys
-from unittest.mock import MagicMock, patch, ANY
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 import yaml

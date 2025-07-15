@@ -85,11 +85,11 @@ class StructuredFileFormatter(logging.Formatter):
 
 class StructuredAuditFormatter(logging.Formatter):
     """Formatter for structured JSON audit logs following industry standards."""
-    
+
     def format(self, record):
         # Expect structured data in record.audit_data or parse from message
-        audit_data = getattr(record, 'audit_data', {})
-        
+        audit_data = getattr(record, "audit_data", {})
+
         # If no audit_data attribute, try to parse from message as JSON
         if not audit_data and record.getMessage():
             try:
@@ -97,7 +97,7 @@ class StructuredAuditFormatter(logging.Formatter):
             except json.JSONDecodeError:
                 # Fallback: treat message as action
                 audit_data = {"action": record.getMessage()}
-        
+
         # Create standardized audit log entry
         audit_entry = {
             "timestamp": datetime.fromtimestamp(record.created).isoformat(),
@@ -119,26 +119,28 @@ class StructuredAuditFormatter(logging.Formatter):
             "path": audit_data.get("path"),
             "thread_id": audit_data.get("thread_id"),
         }
-        
+
         # Remove None values for cleaner JSON
         audit_entry = {k: v for k, v in audit_entry.items() if v is not None}
-        
+
         return json.dumps(audit_entry)
 
 
 class AccessLogFormatter(logging.Formatter):
     """Formatter for HTTP access logs following standard web server format."""
-    
+
     def format(self, record):
         # Parse access log message to extract structured data
         access_data = self._parse_access_message(record.getMessage())
-        
+
         if not access_data:
             # Fallback: just return timestamp and message
             return f"{datetime.fromtimestamp(record.created).strftime('%d/%b/%Y:%H:%M:%S %z')} - {record.getMessage()}"
-        
+
         # Format as standard HTTP access log (Apache combined format)
-        timestamp = datetime.fromtimestamp(record.created).strftime('%d/%b/%Y:%H:%M:%S %z')
+        timestamp = datetime.fromtimestamp(record.created).strftime(
+            "%d/%b/%Y:%H:%M:%S %z"
+        )
         remote_addr = access_data.get("remote_addr", "-")
         timestamp_str = f"[{timestamp}]"
         request = f'"{access_data.get("method", "-")} {access_data.get("path", "-")} HTTP/1.1"'
@@ -147,14 +149,14 @@ class AccessLogFormatter(logging.Formatter):
         referer = access_data.get("referer", "-")
         user_agent = access_data.get("user_agent", "-")
         response_time = access_data.get("response_time_ms", "-")
-        
+
         # Apache combined log format with response time (no user_id for privacy)
         return f'{remote_addr} - - {timestamp_str} {request} {status_code} {response_size} "{referer}" "{user_agent}" {response_time}'
-    
+
     def _parse_access_message(self, message: str) -> dict:
         """Parse access log message to extract structured data."""
         data = {}
-        
+
         # Try to parse as JSON first (from middleware)
         try:
             json_data = json.loads(message)
@@ -162,40 +164,40 @@ class AccessLogFormatter(logging.Formatter):
             return data
         except json.JSONDecodeError:
             pass
-        
+
         # Handle request messages: "Request: POST /api/agent from 192.168.1.1"
         if message.startswith("Request:"):
             parts = message.replace("Request:", "").strip().split(" from ")
             if len(parts) == 2:
                 method_path = parts[0].strip()
                 remote_addr = parts[1].strip()
-                
+
                 # Parse method and path
                 if " " in method_path:
                     method, path = method_path.split(" ", 1)
                     data["method"] = method
                     data["path"] = path
-                
+
                 data["remote_addr"] = remote_addr
-        
+
         # Handle response messages: "Response: 200 for POST /api/agent"
         elif message.startswith("Response:"):
             parts = message.replace("Response:", "").strip().split(" for ")
             if len(parts) == 2:
                 status_code = parts[0].strip()
                 method_path = parts[1].strip()
-                
+
                 try:
                     data["status_code"] = int(status_code)
                 except ValueError:
                     pass
-                
+
                 # Parse method and path
                 if " " in method_path:
                     method, path = method_path.split(" ", 1)
                     data["method"] = method
                     data["path"] = path
-        
+
         return data
 
 
@@ -339,16 +341,16 @@ def setup_logging(config_path: str = "logging.yaml") -> None:
                 if "file" not in existing_handlers:
                     existing_handlers.append("file")
                 logger_config["handlers"] = existing_handlers
-        
+
         # Add access logger if not present in config
         if "loggers" not in config:
             config["loggers"] = {}
-        
+
         if "api_assistant.access" not in config["loggers"]:
             config["loggers"]["api_assistant.access"] = {
                 "level": "INFO",
                 "handlers": ["access_file"],
-                "propagate": False
+                "propagate": False,
             }
 
         # Update root logger level and handlers

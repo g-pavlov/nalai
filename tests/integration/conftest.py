@@ -119,24 +119,18 @@ def mock_package_structure():
         {
             "name": "test-package-1",
             "version": "1.0.0",
-            "dependencies": {
-                "requests": "^2.31.0"
-            }
+            "dependencies": {"requests": "^2.31.0"},
         },
         {
             "name": "test-package-2",
             "version": "2.1.0",
-            "dependencies": {
-                "fastapi": "^0.104.0"
-            }
+            "dependencies": {"fastapi": "^0.104.0"},
         },
         {
             "name": "local-package",
             "version": "0.5.0",
-            "dependencies": {
-                "another-local": {"path": "../another-local"}
-            }
-        }
+            "dependencies": {"another-local": {"path": "../another-local"}},
+        },
     ]
     return packages
 
@@ -295,6 +289,7 @@ python-multipart==0.0.6
 @pytest.fixture(scope="function")
 def mock_subprocess_success():
     """Mock successful subprocess execution"""
+
     class MockResult:
         def __init__(self, stdout="", stderr=""):
             self.returncode = 0
@@ -307,6 +302,7 @@ def mock_subprocess_success():
 @pytest.fixture(scope="function")
 def mock_subprocess_failure():
     """Mock failed subprocess execution"""
+
     class MockResult:
         def __init__(self, stdout="", stderr="Command failed"):
             self.returncode = 1
@@ -337,27 +333,15 @@ def mock_timeout_error():
 # Test markers for different script categories
 def pytest_configure(config):
     """Configure custom pytest markers"""
-    config.addinivalue_line(
-        "markers", "production: marks tests as production-related"
-    )
+    config.addinivalue_line("markers", "production: marks tests as production-related")
     config.addinivalue_line(
         "markers", "development: marks tests as development-related"
     )
-    config.addinivalue_line(
-        "markers", "docker: marks tests as docker-related"
-    )
-    config.addinivalue_line(
-        "markers", "build: marks tests as build-related"
-    )
-    config.addinivalue_line(
-        "markers", "analysis: marks tests as analysis-related"
-    )
-    config.addinivalue_line(
-        "markers", "integration: marks tests as integration tests"
-    )
-    config.addinivalue_line(
-        "markers", "unit: marks tests as unit tests"
-    )
+    config.addinivalue_line("markers", "docker: marks tests as docker-related")
+    config.addinivalue_line("markers", "build: marks tests as build-related")
+    config.addinivalue_line("markers", "analysis: marks tests as analysis-related")
+    config.addinivalue_line("markers", "integration: marks tests as integration tests")
+    config.addinivalue_line("markers", "unit: marks tests as unit tests")
 
 
 # Common test utilities
@@ -406,4 +390,6 @@ class TestUtils:
             if expected_command in str(call):
                 return
 
-        assert False, f"Expected command '{expected_command}' not found in calls"
+        raise AssertionError(
+            f"Expected command '{expected_command}' not found in calls"
+        )

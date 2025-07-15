@@ -9,18 +9,15 @@ for externalized auth scenarios (e.g., Istio/K8s).
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any
 
 import jwt
 from fastapi import HTTPException, Request
-from pydantic import ValidationError
 
 from ..config import settings
 from ..server.models.identity import (
-    APITokenRequest,
     APITokenResponse,
     IdentityContext,
-    UserContext,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,29 +25,29 @@ logger = logging.getLogger(__name__)
 
 class AuthService(ABC):
     """Abstract base class for authentication services."""
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: dict[str, Any]):
         """Initialize authentication service with configuration."""
         self.config = config
-        self._token_cache: Dict[str, APITokenResponse] = {}
-    
+        self._token_cache: dict[str, APITokenResponse] = {}
+
     @abstractmethod
     async def authenticate_request(self, request: Request) -> IdentityContext:
         """Authenticate a request and extract user identity."""
         pass
-    
+
     @abstractmethod
     async def get_api_token(self, context: IdentityContext, service: str) -> str:
         """Get API token for the specified service."""
         pass
-    
+
     async def validate_token(self, token: str) -> bool:
         """Optional token validation - can be disabled for externalized auth."""
         if not settings.auth_validate_tokens:
             logger.debug("Token validation disabled - skipping validation")
             return True  # Skip validation
         return await self._validate_token_impl(token)
-    
+
     @abstractmethod
     async def _validate_token_impl(self, token: str) -> bool:
         """Implementation of token validation."""
@@ -59,36 +56,38 @@ class AuthService(ABC):
 
 class StandardAuthService(AuthService):
     """Standard OIDC authentication service implementation."""
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: dict[str, Any]):
         """Initialize standard auth service."""
         super().__init__(config)
         self.issuer = config.get("issuer", settings.auth_oidc_issuer)
         self.audience = config.get("audience", settings.auth_oidc_audience)
-        self.client_credentials = config.get("client_credentials", settings.client_credentials)
+        self.client_credentials = config.get(
+            "client_credentials", settings.client_credentials
+        )
         self.mode = config.get("mode", settings.auth_mode)
-        
+
         logger.debug(f"Standard auth service initialized with mode: {self.mode}")
-    
+
     async def authenticate_request(self, request: Request) -> IdentityContext:
         """Authenticate request and extract user identity."""
         if settings.disable_auth:
             return self._create_dev_identity()
-        
+
         # Try ID token first
         id_token = request.headers.get("X-Id-Token")
         if id_token:
             return await self._extract_identity_from_token(id_token, "id_token")
-        
+
         # Try Authorization header
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             access_token = auth_header.replace("Bearer ", "", 1)
             return await self._extract_identity_from_token(access_token, "access_token")
-        
+
         # No valid token found
         raise HTTPException(status_code=401, detail="Authentication required")
-    
+
     async def get_api_token(self, context: IdentityContext, service: str) -> str:
         """Get API token for the specified service."""
         if self.mode == "delegation":
@@ -97,8 +96,10 @@ class StandardAuthService(AuthService):
             return await self._get_client_credentials_token(service)
         else:
             raise ValueError(f"Unsupported auth mode: {self.mode}")
-    
-    async def _extract_identity_from_token(self, token: str, token_type: str) -> IdentityContext:
+
+    async def _extract_identity_from_token(
+        self, token: str, token_type: str
+    ) -> IdentityContext:
         """Extract identity information from JWT token."""
         try:
             # Decode token without verification if validation is disabled
@@ -107,27 +108,29 @@ class StandardAuthService(AuthService):
             else:
                 # TODO: Implement proper JWT validation with issuer verification
                 payload = jwt.decode(token, options={"verify_signature": False})
-            
+
             # Extract standard claims
             user_id = payload.get("sub")
             if not user_id:
-                raise HTTPException(status_code=401, detail="Invalid token: missing sub claim")
-            
+                raise HTTPException(
+                    status_code=401, detail="Invalid token: missing sub claim"
+                )
+
             # Extract expiration
             exp = payload.get("exp")
             token_expires_at = None
             if exp:
                 token_expires_at = datetime.fromtimestamp(exp)
-            
+
             # Extract roles and permissions
             roles = payload.get("roles", [])
             if isinstance(roles, str):
                 roles = [roles]
-            
+
             permissions = payload.get("permissions", [])
             if isinstance(permissions, str):
                 permissions = [permissions]
-            
+
             return IdentityContext(
                 user_id=user_id,
                 email=payload.get("email"),
@@ -142,81 +145,81 @@ class StandardAuthService(AuthService):
                     "issuer": payload.get("iss"),
                     "audience": payload.get("aud"),
                     "issued_at": payload.get("iat"),
-                }
+                },
             )
-            
+
         except jwt.InvalidTokenError as e:
             logger.warning(f"Invalid token format: {e}")
-            raise HTTPException(status_code=401, detail="Invalid token format")
+            raise HTTPException(status_code=401, detail="Invalid token format") from e
         except HTTPException:
             # Re-raise HTTP exceptions as-is to preserve specific error messages
             raise
         except Exception as e:
             logger.error(f"Error extracting identity from token: {e}")
-            raise HTTPException(status_code=401, detail="Authentication failed")
-    
+            raise HTTPException(status_code=401, detail="Authentication failed") from e
+
     async def _get_delegated_token(self, context: IdentityContext, service: str) -> str:
         """Get delegated token using user's credentials."""
         # In delegation mode, we would use the user's token to get service tokens
         # This is a simplified implementation - in practice, you'd implement
         # token exchange or delegation logic here
         logger.debug(f"Getting delegated token for service: {service}")
-        
+
         # For now, return a placeholder token
         # TODO: Implement proper token delegation logic
         return f"delegated_token_for_{service}"
-    
+
     async def _get_client_credentials_token(self, service: str) -> str:
         """Get client credentials token for the specified service."""
         if service not in self.client_credentials:
             raise ValueError(f"No client credentials configured for service: {service}")
-        
+
         # Check cache first
         cache_key = f"cc_token_{service}"
         if cache_key in self._token_cache:
             cached_token = self._token_cache[cache_key]
             if not cached_token.expires_at or cached_token.expires_at > datetime.now():
                 return cached_token.token
-        
+
         # TODO: Implement proper OAuth2 client credentials flow
         # For now, return a placeholder token
         logger.debug(f"Getting client credentials token for service: {service}")
-        
+
         # Create mock token response
         token_response = APITokenResponse(
             token=f"cc_token_for_{service}",
             token_type="Bearer",
             expires_at=datetime.now() + timedelta(hours=1),
-            scopes=["api:read", "api:write"]
+            scopes=["api:read", "api:write"],
         )
-        
+
         # Cache the token
         self._token_cache[cache_key] = token_response
-        
+
         return token_response.token
-    
+
     async def _validate_token_impl(self, token: str) -> bool:
         """Implementation of token validation."""
         try:
             # TODO: Implement proper JWT validation with issuer verification
             # For now, just check if token can be decoded
             payload = jwt.decode(token, options={"verify_signature": False})
-            
+
             # Check expiration
             exp = payload.get("exp")
             if exp and datetime.fromtimestamp(exp) < datetime.now():
                 logger.warning("Token has expired")
                 return False
-            
+
             return True
-            
+
         except jwt.InvalidTokenError:
             logger.warning("Token validation failed: invalid token")
             return False
         except Exception as e:
             logger.error(f"Token validation error: {e}")
             return False
-    
+
     def _create_dev_identity(self) -> IdentityContext:
         """Create development identity when auth is disabled."""
         return IdentityContext(
@@ -228,22 +231,24 @@ class StandardAuthService(AuthService):
             roles=["developer"],
             permissions=["read", "write"],
             token_type="dev_token",
-            metadata={"dev_mode": True}
+            metadata={"dev_mode": True},
         )
 
 
 class AuthServiceFactory:
     """Factory for creating authentication services."""
-    
+
     @staticmethod
-    def create_auth_service(provider: str = None, config: Dict[str, Any] = None) -> AuthService:
+    def create_auth_service(
+        provider: str = None, config: dict[str, Any] = None
+    ) -> AuthService:
         """Create authentication service based on provider."""
         if not provider:
             provider = settings.auth_provider
-        
+
         if not config:
             config = {}
-        
+
         if provider == "standard":
             return StandardAuthService(config)
         elif provider == "auth0":
@@ -257,7 +262,7 @@ class AuthServiceFactory:
 
 
 # Global auth service instance
-_auth_service: Optional[AuthService] = None
+_auth_service: AuthService | None = None
 
 
 def get_auth_service() -> AuthService:
@@ -272,6 +277,3 @@ def set_auth_service(auth_service: AuthService) -> None:
     """Set the global authentication service instance."""
     global _auth_service
     _auth_service = auth_service
-
-
- 

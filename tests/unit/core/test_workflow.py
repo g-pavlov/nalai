@@ -25,11 +25,11 @@ from api_assistant.core.agent import APIAssistant
 from api_assistant.core.constants import (
     NODE_CALL_API,
     NODE_CALL_MODEL,
+    NODE_CHECK_CACHE,
     NODE_HUMAN_REVIEW,
     NODE_LOAD_API_SPECS,
     NODE_LOAD_API_SUMMARIES,
     NODE_SELECT_RELEVANT_APIS,
-    NODE_CHECK_CACHE,
 )
 from api_assistant.core.interrupts import process_human_review
 from api_assistant.core.schemas import AgentState, InputSchema, OutputSchema
@@ -280,9 +280,7 @@ class TestWorkflowCreation:
         create_and_compile_workflow(mock_agent)
 
         # Verify entry point is set
-        mock_graph_instance.set_entry_point.assert_called_once_with(
-            NODE_CHECK_CACHE
-        )
+        mock_graph_instance.set_entry_point.assert_called_once_with(NODE_CHECK_CACHE)
 
     @patch("api_assistant.core.workflow.StateGraph")
     @patch("api_assistant.core.workflow.ToolNode")
@@ -326,8 +324,6 @@ class TestWorkflowCreation:
         assert NODE_HUMAN_REVIEW in call_model_edge[0][2]
         assert END in call_model_edge[0][2]
         assert NODE_CALL_API in call_model_edge[0][2]
-
-
 
     @patch("api_assistant.core.workflow.StateGraph")
     @patch("api_assistant.core.workflow.ToolNode")

@@ -104,7 +104,6 @@ RATE_LIMITERS_CONFIG: dict[str, RateLimiterConfig] = {
         check_every_n_seconds=0.1,  # 10 times / second
         max_bucket_size=10,  # 10 requests at burst
     ),
-
     # Add more model configurations as needed
     "default": RateLimiterConfig(
         requests_per_second=1.0, max_bucket_size=1, check_every_n_seconds=1.0

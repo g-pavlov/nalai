@@ -28,12 +28,14 @@ def mask_pii(value: Any, pii_type: str) -> str:
     # Handle None and non-string values
     if value is None:
         return "***"
-    
+
     # Convert to string for processing
     value_str = str(value)
-    
+
     # For email type, handle special values that should not be masked
-    if pii_type == "email" and (not value_str or value_str == "unknown" or value_str == "anonymous"):
+    if pii_type == "email" and (
+        not value_str or value_str == "unknown" or value_str == "anonymous"
+    ):
         return value_str
 
     # Check if PII masking is globally disabled
