@@ -3,6 +3,7 @@ __pycache__
 
 .env
 .env.*
+.env_*
 
 # Poetry generated files
 dist
@@ -41,9 +42,15 @@ tests/__pycache__/
 
 # logs
 *.log
+logs
 
 .ruff_cache
 
 build.env
 
 .batsrc
+
+.astrc
+
+.coverage
+.coverage.*

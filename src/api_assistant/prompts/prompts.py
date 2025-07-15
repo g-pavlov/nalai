@@ -5,8 +5,12 @@ from typing import Literal
 
 # Model ID to prompt template mapping
 MODEL_PROMPT_MAPPING = {
-    "anthropic.claude-3-5-sonnet-20240620-v1:0": "anthropic-claude-3-5-sonnet",
-    "us.anthropic.claude-3-5-sonnet-20241022-v2:0": "anthropic-claude-3-5-sonnet",
+    "anthropic.claude-3-5-sonnet-20240620-v1:0": "large",
+    "us.anthropic.claude-3-5-sonnet-20241022-v2:0": "large",
+    "gpt-4.1": "large",
+    "gpt-4o": "large",
+    "gpt-4o-mini": "large",
+    "gpt-3.5-turbo": "large",
     "llama3.1:8b": "llama-small",
     "llama3-groq-tool-use:8b": "llama-small",
 }
@@ -14,6 +18,10 @@ MODEL_PROMPT_MAPPING = {
 # Supported model IDs
 SUPPORTED_MODEL_IDS = Literal[
     "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "gpt-4.1",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gpt-3.5-turbo",
     "llama3.1:8b",
     "llama3-groq-tool-use:8b",
 ]
@@ -82,13 +90,12 @@ def format_template_with_variables(template_string: str, **variables) -> str:
         str: Formatted template with variables replaced
     """
     import re
+
     placeholder_map = {}
     for key in variables:
         token = f"__PLACEHOLDER_{key.upper()}__"
         placeholder_map[token] = key
-        template_string = re.sub(
-            rf"{{\s*{re.escape(key)}\s*}}", token, template_string
-        )
+        template_string = re.sub(rf"{{\s*{re.escape(key)}\s*}}", token, template_string)
 
     # Escape all remaining braces
     template_string = template_string.replace("{", "{{").replace("}", "}}")
