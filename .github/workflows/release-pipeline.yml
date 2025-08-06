@@ -24,6 +24,8 @@ jobs:
   # Version Management Job
   version-management:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
       should-deploy: ${{ steps.version.outputs.should_deploy }}
@@ -33,6 +35,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.ref }}
 
       - name: Configure Git
         run: |
@@ -41,6 +44,19 @@ jobs:
 
       - name: Fetch all tags
         run: git fetch --tags
+
+      - name: Validate tag state
+        run: |
+          echo "Current tags:"
+          git tag --sort=-version:refname | head -10
+          
+          echo "Tags merged into main:"
+          git tag --sort=-version:refname --merged origin/main | head -5
+          
+          # Warn if no semantic version tags exist
+          if ! git tag --sort=-version:refname | grep -q '^[0-9]\+\.[0-9]\+\.[0-9]\+$'; then
+            echo "⚠️  Warning: No semantic version tags found. This might indicate a force push or tag deletion."
+          fi
 
       - name: Version Management
         id: version
@@ -145,11 +161,14 @@ jobs:
           echo "version=$INCREMENTED_VERSION" >> $GITHUB_OUTPUT
           echo "should_deploy=$SHOULD_DEPLOY" >> $GITHUB_OUTPUT
 
-      - name: Create version tag
+      - name: Prepare version tag
         if: steps.version.outputs.should_deploy == 'true'
         run: |
-          git tag "v${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}"
+          # Store version for later use (don't create tag yet)
+          echo "Prepared version: ${{ steps.version.outputs.version }}"
+          echo "Tag will be created after all checks pass"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Lint and Test Job
   lint-and-test:
@@ -247,7 +266,12 @@ jobs:
 
       - name: Publish package to GitHub Packages
         run: |
+          # Publish with both version and commit SHA for traceability
           poetry publish --repository github --username ${{ github.actor }} --password ${{ secrets.GITHUB_TOKEN }}
+          
+          echo "Published package: ${{ github.repository }}==${{ needs.version-management.outputs.version }}"
+          echo "Commit SHA: ${{ github.sha }}"
+          echo "Note: Git tag will be created after all checks pass"
 
   # Build and Push Docker Image
   build-and-push:
@@ -276,7 +300,6 @@ jobs:
           tags: |
             type=raw,value=${{ needs.version-management.outputs.version }}
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ github.sha }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -298,6 +321,11 @@ jobs:
         run: |
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
           docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }} --help
+          
+          echo "Published Docker images:"
+          echo "- ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }} (semantic version)"
+          echo "- ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest (latest stable)"
+          echo "Note: Git tag will be created after all checks pass"
 
   # Security Scan
   security-scan:
@@ -333,6 +361,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Create version tag
+        run: |
+          # Create tag only after all checks have passed
+          echo "Creating version tag: ${{ needs.version-management.outputs.version }}"
+          
+          # Check if tag already exists
+          if git tag --list | grep -q "^${{ needs.version-management.outputs.version }}$"; then
+            echo "Tag ${{ needs.version-management.outputs.version }} already exists locally"
+          else
+            git tag "${{ needs.version-management.outputs.version }}"
+          fi
+          
+          # Try to push the tag
+          if git push origin "${{ needs.version-management.outputs.version }}"; then
+            echo "✅ Successfully created and pushed tag ${{ needs.version-management.outputs.version }}"
+          else
+            echo "❌ Failed to push tag automatically. Please push manually:"
+            echo "git push origin ${{ needs.version-management.outputs.version }}"
+            exit 1
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Generate changelog
         id: changelog
         run: |
@@ -347,8 +398,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v${{ needs.version-management.outputs.version }}
-          release_name: Release v${{ needs.version-management.outputs.version }}
+          tag_name: ${{ needs.version-management.outputs.version }}
+          release_name: Release ${{ needs.version-management.outputs.version }}
           body: |
             ## Changes in this release
             
@@ -380,13 +431,10 @@ jobs:
             
             ```bash
             # Pull the specific version
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${{ needs.version-management.outputs.version }}
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
             
             # Pull the latest version
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            
-            # Pull by commit SHA
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             ```
             
             ## Usage
@@ -399,7 +447,57 @@ jobs:
             
             ### Docker Container
             ```bash
-            docker run -p 8080:8080 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${{ needs.version-management.outputs.version }}
+            docker run -p 8080:8080 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
             ```
           draft: false
-          prerelease: false 
+          prerelease: false
+
+
+
+  # Cleanup Job (runs on failure)
+  cleanup-on-failure:
+    runs-on: ubuntu-latest
+    needs: [version-management, lint-and-test, build-and-push-package, build-and-push, security-scan, create-release]
+    if: failure() && needs.version-management.outputs.should-deploy == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup orphaned artifacts
+        run: |
+          echo "Pipeline failed - cleaning up orphaned artifacts..."
+          echo "Version that was being built: ${{ needs.version-management.outputs.version }}"
+          echo "Commit SHA: ${{ github.sha }}"
+          
+          # Clean up Python package
+          echo "Cleaning up Python package..."
+          curl -X DELETE \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/user/packages/pypi/${{ github.repository }}/versions" \
+            -d "{\"version\": \"${{ needs.version-management.outputs.version }}\"}" || echo "Failed to delete Python package (may not exist)"
+          
+          # Clean up Docker image tags
+          echo "Cleaning up Docker image tags..."
+          curl -X DELETE \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/user/packages/container/${{ env.IMAGE_NAME }}/versions" \
+            -d "{\"tag_name\": \"${{ needs.version-management.outputs.version }}\"}" || echo "Failed to delete Docker tag (may not exist)"
+          
+          echo ""
+          echo "✅ Cleanup completed. Removed orphaned artifacts:"
+          echo "- Python package: ${{ github.repository }}==${{ needs.version-management.outputs.version }}"
+          echo "- Docker image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}"
+          echo ""
+          echo "These artifacts were not associated with a Git tag and have been cleaned up." 
