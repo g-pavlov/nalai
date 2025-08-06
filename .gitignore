@@ -50,7 +50,7 @@ build.env
 
 .batsrc
 
-.astrc
-
 .coverage
 .coverage.*
+
+*.sarif

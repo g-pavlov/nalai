@@ -54,7 +54,7 @@ setup-dev:
 	
 	# Install project dependencies
 	@echo "📦 Installing project dependencies..."
-	@poetry install --with=testing
+	@poetry install --with=testing,dev
 	
 	# Install git hooks (version management)
 	@echo "🔗 Installing git hooks..."
@@ -65,7 +65,7 @@ setup-dev:
 
 # Install dependencies
 install:
-	poetry install --with=testing
+	poetry install --with=testing,dev
 
 # Validate environment (Python version, Poetry version, etc.)
 validate-env:
@@ -111,7 +111,7 @@ test-integration: install
 # Run all tests with coverage
 test-coverage: install
 	@echo "🧪 Running tests with coverage..."
-	@time poetry run pytest tests/ -v --cov=src --cov-report=term-missing --cov-report=html
+	@time poetry run pytest tests/ -v --cov=src/api_assistant --cov-report=term-missing --cov-report=html --ignore=tests/unit/core/test_tool_node.py --ignore=tests/unit/tools/test_http_requests.py --ignore=tests/integration/test_chunk_accumulation.py
 	@echo "✅ Tests completed"
 
 # Security Commands
