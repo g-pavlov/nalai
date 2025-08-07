@@ -39,7 +39,6 @@ class RichFormatter(logging.Formatter):
         # Color mapping for different loggers
         self.logger_colors = {
             "nalai": "blue",
-            "api_assistant": "green",
             "models": "magenta",
             "config": "cyan",
             "uvicorn": "yellow",
@@ -262,17 +261,17 @@ def setup_logging(config_path: str = "logging.yaml") -> None:
 
         # Add structured formatter for file logging
         config["formatters"]["structured"] = {
-            "()": "api_assistant.utils.logging.StructuredFileFormatter"
+            "()": "nalai.utils.logging.StructuredFileFormatter"
         }
 
         # Add structured audit formatter
         config["formatters"]["structured_audit"] = {
-            "()": "api_assistant.utils.logging.StructuredAuditFormatter"
+            "()": "nalai.utils.logging.StructuredAuditFormatter"
         }
 
         # Add access log formatter
         config["formatters"]["access"] = {
-            "()": "api_assistant.utils.logging.AccessLogFormatter"
+            "()": "nalai.utils.logging.AccessLogFormatter"
         }
 
         # Add file handler for structured logging
@@ -307,7 +306,6 @@ def setup_logging(config_path: str = "logging.yaml") -> None:
             for logger_name, logger_config in config["loggers"].items():
                 if logger_name in [
                     "nalai",
-                    "api_assistant",
                     "models",
                     "config",
                 ]:
@@ -325,12 +323,12 @@ def setup_logging(config_path: str = "logging.yaml") -> None:
                         if current_log_level in ["INFO", "WARNING", "ERROR", "CRITICAL"]
                         else "INFO"
                     )
-                elif logger_name == "api_assistant.audit":
+                elif logger_name == "nalai.audit":
                     # Audit logger always uses INFO level and only audit_file handler
                     logger_config["level"] = "INFO"
                     logger_config["handlers"] = ["audit_file"]
                     continue  # Skip the file handler addition for audit logger
-                elif logger_name == "api_assistant.access":
+                elif logger_name == "nalai.access":
                     # Access logger always uses INFO level and only access_file handler
                     logger_config["level"] = "INFO"
                     logger_config["handlers"] = ["access_file"]
@@ -346,8 +344,8 @@ def setup_logging(config_path: str = "logging.yaml") -> None:
         if "loggers" not in config:
             config["loggers"] = {}
 
-        if "api_assistant.access" not in config["loggers"]:
-            config["loggers"]["api_assistant.access"] = {
+        if "nalai.access" not in config["loggers"]:
+            config["loggers"]["nalai.access"] = {
                 "level": "INFO",
                 "handlers": ["access_file"],
                 "propagate": False,

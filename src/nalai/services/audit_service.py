@@ -106,7 +106,7 @@ class InMemoryAuditBackend(AuditBackend):
             logger.debug(f"Removed {excess} old audit entries to maintain limit")
 
         # Log to dedicated audit stream with structured data
-        audit_logger = logging.getLogger("api_assistant.audit")
+        audit_logger = logging.getLogger("nalai.audit")
         audit_data = {
             "action": action,
             "user_id": user_id,
@@ -283,7 +283,7 @@ class AuditService:
     ) -> None:
         """Log thread access event."""
         # Log to dedicated audit stream with structured data
-        audit_logger = logging.getLogger("api_assistant.audit")
+        audit_logger = logging.getLogger("nalai.audit")
         audit_data = {
             "action": action,
             "user_id": user_id,
@@ -344,7 +344,7 @@ class AuditService:
     ) -> None:
         """Log the start of an HTTP request."""
         # Log to dedicated audit stream with structured data
-        audit_logger = logging.getLogger("api_assistant.audit")
+        audit_logger = logging.getLogger("nalai.audit")
         audit_data = {
             "action": "request_start",
             "user_id": user_id,
@@ -385,7 +385,7 @@ class AuditService:
     ) -> None:
         """Log the completion of an HTTP request."""
         # Log to dedicated audit stream with structured data
-        audit_logger = logging.getLogger("api_assistant.audit")
+        audit_logger = logging.getLogger("nalai.audit")
         audit_data = {
             "action": "request_complete",
             "user_id": user_id,

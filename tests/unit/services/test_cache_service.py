@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from langchain_core.messages import HumanMessage
 
-from api_assistant.services.cache_service import (
+from nalai.services.cache_service import (
     CacheEntry,
     CacheService,
     TokenSimilarityMatcher,
@@ -171,7 +171,7 @@ class TestCacheService:
         response = "Product created successfully"
 
         # Create entry with immediate expiration
-        with patch("api_assistant.services.cache_service.datetime") as mock_datetime:
+        with patch("nalai.services.cache_service.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime.now()
             mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 

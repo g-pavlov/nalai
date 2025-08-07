@@ -82,7 +82,7 @@ The API Assistant provides **secure concurrent multi-user access** where multipl
 - Supports both delegation and client credentials modes
 - Clean development identity when auth is disabled
 
-**Implementation**: `src/api_assistant/services/auth_service.py`
+**Implementation**: `src/nalai/services/auth_service.py`
 
 **Related Documentation**: See [Security Overview](security.md) for detailed authentication implementation.
 
@@ -97,7 +97,7 @@ The API Assistant provides **secure concurrent multi-user access** where multipl
 
 **Critical Security Principle**: Data isolation alone is NOT access control. The system validates thread ownership before any operations.
 
-**Implementation**: `src/api_assistant/services/thread_access_control.py`
+**Implementation**: `src/nalai/services/thread_access_control.py`
 
 ### 3. Identity-Aware Services
 **Purpose**: Provide user-scoped data isolation across all components
@@ -108,9 +108,9 @@ The API Assistant provides **secure concurrent multi-user access** where multipl
 - **Audit**: Dedicated audit logging to separate files with PII masking
 
 **Implementation**: 
-- Cache: `src/api_assistant/services/identity_aware_cache.py`
-- Checkpointing: `src/api_assistant/services/checkpointing_service.py`
-- Audit: `src/api_assistant/services/audit_service.py`
+- Cache: `src/nalai/services/identity_aware_cache.py`
+- Checkpointing: `src/nalai/services/checkpointing_service.py`
+- Audit: `src/nalai/services/audit_service.py`
 
 ### 4. Audit & Compliance Layer
 **Purpose**: Provide comprehensive audit trails and compliance features
@@ -128,7 +128,7 @@ The API Assistant provides **secure concurrent multi-user access** where multipl
 - Request lifecycle tracking (start/completion events)
 - Configurable audit retention and rotation
 
-**Implementation**: `src/api_assistant/services/audit_service.py` and `src/api_assistant/utils/pii_masking.py`
+**Implementation**: `src/nalai/services/audit_service.py` and `src/nalai/utils/pii_masking.py`
 
 ## Request Flow Architecture
 
@@ -170,7 +170,7 @@ AUDIT_BACKEND=memory
 - **PostgreSQL**: For checkpointing (LangGraph native)
 - **External**: For audit services (framework ready)
 
-**Implementation**: `src/api_assistant/config.py`
+**Implementation**: `src/nalai/config.py`
 
 ## Security Model
 

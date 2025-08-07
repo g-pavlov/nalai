@@ -11,8 +11,8 @@ from unittest.mock import Mock
 import pytest
 from langchain_core.messages import AIMessage
 
-from api_assistant.core.tool_node import ChunkAccumulatingToolNode
-from api_assistant.server.streaming_processor import StreamingEventProcessor
+from nalai.core.tool_node import ChunkAccumulatingToolNode
+from nalai.server.streaming_processor import StreamingEventProcessor
 
 
 class TestChunkAccumulationIntegration:

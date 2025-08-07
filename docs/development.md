@@ -34,8 +34,8 @@ docker-compose up --build     # Using Docker Compose
 ### Scenario 2: Adding New Modules
 ```bash
 # 1. Create module structure
-mkdir src/api_assistant/my-new-module
-touch src/api_assistant/my-new-module/__init__.py
+mkdir src/nalai/my-new-module
+touch src/nalai/my-new-module/__init__.py
 
 # 2. Add to main dependencies (if needed)
 # Edit pyproject.toml in project root
@@ -145,7 +145,7 @@ poetry show  # Check installed packages
 ### Issue 4: API Specifications Not Found
 **Symptoms**: Runtime errors about missing API specs
 **Solution**:
-- **Location**: `src/api_assistant/api_specs/`
+- **Location**: `src/nalai/api_specs/`
 - **Runtime access**: Via `importlib.resources`
 - **Package data**: Automatically included in Docker images
 

@@ -20,7 +20,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.services.model_service import ModelService
+from nalai.services.model_service import ModelService
 
 
 @pytest.fixture
@@ -77,9 +77,9 @@ class TestModelService:
         )
         assert result == case_data["expected"]
 
-    @patch("api_assistant.services.model_service.create_model_rate_limiter")
-    @patch("api_assistant.services.model_service.init_chat_model")
-    @patch("api_assistant.services.model_service.settings")
+    @patch("nalai.services.model_service.create_model_rate_limiter")
+    @patch("nalai.services.model_service.init_chat_model")
+    @patch("nalai.services.model_service.settings")
     @pytest.mark.parametrize(
         "test_case", ["aws_bedrock_model", "ollama_model", "unknown_provider"]
     )
@@ -181,8 +181,8 @@ class TestModelService:
         result = ModelService.get_model_id_from_config(mock_config)
         assert result == "test-model"
 
-    @patch("api_assistant.services.model_service.ModelService.get_model_config")
-    @patch("api_assistant.services.model_service.ModelService.initialize_chat_model")
+    @patch("nalai.services.model_service.ModelService.get_model_config")
+    @patch("nalai.services.model_service.ModelService.initialize_chat_model")
     def test_get_model_from_config(
         self, mock_initialize_model, mock_get_config, mock_config
     ):
@@ -238,7 +238,7 @@ class TestModelService:
         result = ModelService.get_model_context_window_size("unknown", "unknown-model")
         assert result == 32000  # Default value
 
-    @patch("api_assistant.services.model_service.settings")
+    @patch("nalai.services.model_service.settings")
     def test_model_initialization_with_rate_limiting(self, mock_settings):
         """Test model initialization with rate limiting."""
         mock_settings.aws_bedrock_retry_max_attempts = 3
@@ -247,11 +247,9 @@ class TestModelService:
 
         with (
             patch(
-                "api_assistant.services.model_service.create_model_rate_limiter"
+                "nalai.services.model_service.create_model_rate_limiter"
             ) as mock_create_limiter,
-            patch(
-                "api_assistant.services.model_service.init_chat_model"
-            ) as mock_init_model,
+            patch("nalai.services.model_service.init_chat_model") as mock_init_model,
         ):
             mock_rate_limiter = MagicMock()
             mock_create_limiter.return_value = mock_rate_limiter
@@ -274,12 +272,10 @@ class TestModelService:
         """Test that model metadata is consistent across different providers."""
         with (
             patch(
-                "api_assistant.services.model_service.create_model_rate_limiter"
+                "nalai.services.model_service.create_model_rate_limiter"
             ) as mock_create_limiter,
-            patch(
-                "api_assistant.services.model_service.init_chat_model"
-            ) as mock_init_model,
-            patch("api_assistant.services.model_service.settings") as mock_settings,
+            patch("nalai.services.model_service.init_chat_model") as mock_init_model,
+            patch("nalai.services.model_service.settings") as mock_settings,
         ):
             mock_settings.aws_bedrock_retry_max_attempts = 3
             mock_settings.default_model_platform = "aws_bedrock"

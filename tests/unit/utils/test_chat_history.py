@@ -18,7 +18,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.utils.chat_history import (
+from nalai.utils.chat_history import (
     compress_conversation_history_if_needed,
     get_token_ids_simplistic,
     get_token_ids_with_tiktoken,
@@ -52,14 +52,14 @@ class TestTokenCounting:
     @pytest.mark.parametrize("test_case", ["simple_text", "complex_text"])
     def test_get_token_ids_with_tiktoken(self, test_case, test_data):
         """Test token counting with tiktoken."""
-        from api_assistant.utils import chat_history
+        from nalai.utils import chat_history
 
         chat_history.get_tiktoken_encoder.cache_clear()
         case_data = next(
             c for c in test_data["token_counting"] if c["name"] == test_case
         )
 
-        with patch("api_assistant.utils.chat_history.tiktoken") as mock_tiktoken:
+        with patch("nalai.utils.chat_history.tiktoken") as mock_tiktoken:
             mock_encoding = MagicMock()
             mock_encoding.encode.return_value = [0] * case_data["expected"][
                 "token_count"
@@ -86,10 +86,10 @@ class TestTokenCounting:
 
     def test_tiktoken_encoder_caching(self):
         """Test that tiktoken encoder is cached."""
-        from api_assistant.utils import chat_history
+        from nalai.utils import chat_history
 
         chat_history.get_tiktoken_encoder.cache_clear()
-        with patch("api_assistant.utils.chat_history.tiktoken") as mock_tiktoken:
+        with patch("nalai.utils.chat_history.tiktoken") as mock_tiktoken:
             mock_encoding = MagicMock()
             mock_tiktoken.encoding_for_model.return_value = mock_encoding
 
@@ -136,7 +136,7 @@ class TestConversationTrimming:
                 case_data["input"]["context_window"] - 100
             )
 
-        with patch("api_assistant.utils.chat_history.trim_messages") as mock_trim:
+        with patch("nalai.utils.chat_history.trim_messages") as mock_trim:
             if case_data["expected"]["should_trim"]:
                 if test_case == "preserves_system_messages":
                     mock_trim.return_value = messages[:2]
@@ -170,7 +170,7 @@ class TestConversationTrimming:
         mock_model.metadata["context_window"] = 1000
         mock_model.get_num_tokens_from_messages.return_value = 2000
 
-        with patch("api_assistant.utils.chat_history.trim_messages") as mock_trim:
+        with patch("nalai.utils.chat_history.trim_messages") as mock_trim:
             mock_trim.return_value = messages[:1]
 
             result = trim_conversation_history_if_needed(
@@ -191,7 +191,7 @@ class TestConversationTrimming:
         mock_model.metadata["context_window"] = 1000
         mock_model.get_num_tokens_from_messages.return_value = 1200  # Exceeds threshold
 
-        with patch("api_assistant.utils.chat_history.trim_messages") as mock_trim:
+        with patch("nalai.utils.chat_history.trim_messages") as mock_trim:
             mock_trim.return_value = messages[:1]  # Keep only first message
 
             trim_conversation_history_if_needed(messages, mock_model)
@@ -246,7 +246,7 @@ class TestConversationCompression:
                 )
         else:
             with patch(
-                "api_assistant.utils.chat_history.summarize_conversation"
+                "nalai.utils.chat_history.summarize_conversation"
             ) as mock_summarize:
                 if case_data["expected"]["should_compress"]:
                     summary_message = AIMessage(content="Summary of conversation")
@@ -280,9 +280,7 @@ class TestConversationCompression:
         def custom_token_counter(text):
             return [0] * 1000  # High token count for each message
 
-        with patch(
-            "api_assistant.utils.chat_history.summarize_conversation"
-        ) as mock_summarize:
+        with patch("nalai.utils.chat_history.summarize_conversation") as mock_summarize:
             summary_message = AIMessage(content="Summary")
             mock_summarize.return_value = summary_message
 
@@ -305,9 +303,7 @@ class TestConversationCompression:
         mock_model.metadata["context_window"] = 1000
         mock_model.metadata["messages_token_count_supported"] = False
 
-        with patch(
-            "api_assistant.utils.chat_history.summarize_conversation"
-        ) as mock_summarize:
+        with patch("nalai.utils.chat_history.summarize_conversation") as mock_summarize:
             summary_message = AIMessage(content="Summary")
             mock_summarize.return_value = summary_message
 

@@ -7,11 +7,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from api_assistant.core.tool_node import (
+from nalai.core.tool_node import (
     ChunkAccumulatingToolNode,
     create_chunk_accumulating_tool_node,
 )
-from api_assistant.server.streaming_processor import (
+from nalai.server.streaming_processor import (
     StreamingEventProcessor,
     create_streaming_event_processor,
 )

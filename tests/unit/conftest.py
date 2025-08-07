@@ -243,7 +243,7 @@ def mock_ai_message_with_tool_calls(mock_tool_call):
 
 @pytest.fixture
 def mock_agent():
-    """Create a mock APIAssistant agent for testing."""
+    """Create a mock APIAgent agent for testing."""
     agent = MagicMock()
     agent.http_toolkit = MagicMock()
     agent.http_toolkit.get_tools.return_value = [MagicMock(), MagicMock()]

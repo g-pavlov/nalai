@@ -70,7 +70,7 @@ If the issue is configuration-related, please include your configuration:
 
 ```bash
 # Environment variables (remove sensitive data)
-env | grep -E "(API_ASSISTANT|AUTH|CACHE|AUDIT)"
+env | grep -E "(NALAI|AUTH|CACHE|AUDIT)"
 
 # Configuration file
 cat config.yaml

@@ -19,7 +19,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.server.routes import create_agent_routes, create_basic_routes
+from nalai.server.routes import create_agent_routes, create_basic_routes
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ class TestAgentInvoke:
         mock_agent.ainvoke.return_value = {"result": "ok"}
         payload = {"input": {"messages": input_messages}, "config": config}
         with patch(
-            "api_assistant.server.routes.setup_runtime_config_with_access_control",
+            "nalai.server.routes.setup_runtime_config_with_access_control",
             new=AsyncMock(return_value=({}, "tid")),
         ):
             response = client.post("/nalai/invoke", json=payload)
@@ -104,7 +104,7 @@ class TestAgentStreamEvents:
         mock_agent.astream_events = astream_events
         payload = {"input": {"messages": input_messages}, "config": config}
         with patch(
-            "api_assistant.server.routes.setup_runtime_config_with_access_control",
+            "nalai.server.routes.setup_runtime_config_with_access_control",
             new=AsyncMock(return_value=({}, str(uuid.uuid4()))),
         ):
             response = client.post("/nalai/stream_events", json=payload)
@@ -140,11 +140,11 @@ class TestHumanReview:
             yield json.dumps({"event": "test", "data": {"foo": "bar"}})
 
         with patch(
-            "api_assistant.server.routes.setup_runtime_config_with_access_control",
+            "nalai.server.routes.setup_runtime_config_with_access_control",
             new=AsyncMock(return_value=({}, thread_id)),
         ):
             with patch(
-                "api_assistant.server.routes.stream_interruptable_events",
+                "nalai.server.routes.stream_interruptable_events",
                 new=fake_stream_interruptable_events,
             ):
                 response = client.post(
@@ -170,11 +170,11 @@ class TestHumanReview:
             "thread_id": thread_id,
         }
         with patch(
-            "api_assistant.server.routes.setup_runtime_config_with_access_control",
+            "nalai.server.routes.setup_runtime_config_with_access_control",
             new=AsyncMock(return_value=({}, thread_id)),
         ):
             with patch(
-                "api_assistant.server.routes.stream_interruptable_events",
+                "nalai.server.routes.stream_interruptable_events",
                 new=AsyncMock(),
             ):
                 with pytest.raises(Exception) as exc_info:

@@ -19,8 +19,8 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.server.models.identity import IdentityContext, UserContext
-from api_assistant.services.auth_service import (
+from nalai.server.models.identity import IdentityContext, UserContext
+from nalai.services.auth_service import (
     AuthService,
     AuthServiceFactory,
     StandardAuthService,
@@ -35,7 +35,7 @@ class TestAuthService:
     @pytest.fixture
     def mock_settings(self):
         """Mock settings for testing."""
-        with patch("api_assistant.services.auth_service.settings") as mock_settings:
+        with patch("nalai.services.auth_service.settings") as mock_settings:
             mock_settings.disable_auth = False
             mock_settings.auth_validate_tokens = True
             mock_settings.auth_provider = "standard"
@@ -214,7 +214,7 @@ class TestAuthService:
     @pytest.mark.asyncio
     async def test_authenticate_request_development_mode(self, mock_request):
         """Test authentication in development mode."""
-        with patch("api_assistant.services.auth_service.settings") as mock_settings:
+        with patch("nalai.services.auth_service.settings") as mock_settings:
             mock_settings.disable_auth = True
 
             auth_service = StandardAuthService({})
@@ -271,7 +271,7 @@ class TestAuthService:
     @pytest.mark.asyncio
     async def test_validate_token_enabled(self, mock_settings, valid_jwt_token):
         """Test token validation when enabled."""
-        with patch("api_assistant.services.auth_service.settings") as mock_settings:
+        with patch("nalai.services.auth_service.settings") as mock_settings:
             mock_settings.auth_validate_tokens = True
 
             auth_service = StandardAuthService({})
@@ -282,7 +282,7 @@ class TestAuthService:
     @pytest.mark.asyncio
     async def test_validate_token_disabled(self, mock_settings, invalid_jwt_token):
         """Test token validation when disabled."""
-        with patch("api_assistant.services.auth_service.settings") as mock_settings:
+        with patch("nalai.services.auth_service.settings") as mock_settings:
             mock_settings.auth_validate_tokens = False
 
             auth_service = StandardAuthService({})
@@ -293,7 +293,7 @@ class TestAuthService:
     @pytest.mark.asyncio
     async def test_validate_token_expired(self, mock_settings, expired_jwt_token):
         """Test token validation with expired token."""
-        with patch("api_assistant.services.auth_service.settings") as mock_settings:
+        with patch("nalai.services.auth_service.settings") as mock_settings:
             mock_settings.auth_validate_tokens = True
 
             auth_service = StandardAuthService({})
@@ -304,7 +304,7 @@ class TestAuthService:
     @pytest.mark.asyncio
     async def test_validate_token_invalid(self, mock_settings, invalid_jwt_token):
         """Test token validation with invalid token."""
-        with patch("api_assistant.services.auth_service.settings") as mock_settings:
+        with patch("nalai.services.auth_service.settings") as mock_settings:
             mock_settings.auth_validate_tokens = True
 
             auth_service = StandardAuthService({})

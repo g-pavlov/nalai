@@ -16,7 +16,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.services.checkpointing_service import (
+from nalai.services.checkpointing_service import (
     CheckpointingBackend,
     CheckpointingService,
     FileCheckpointingBackend,
@@ -234,9 +234,7 @@ class TestCheckpointingServiceGlobal:
     @pytest.fixture
     def mock_settings(self):
         """Mock settings for testing."""
-        with patch(
-            "api_assistant.services.checkpointing_service.settings"
-        ) as mock_settings:
+        with patch("nalai.services.checkpointing_service.settings") as mock_settings:
             mock_settings.checkpointing_backend = "memory"
             mock_settings.checkpointing_file_path = "./checkpoints"
             mock_settings.checkpointing_postgres_url = ""

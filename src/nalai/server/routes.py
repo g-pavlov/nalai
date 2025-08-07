@@ -56,7 +56,7 @@ def create_basic_routes(app: FastAPI) -> None:
     async def serve_ui() -> HTMLResponse:
         """Serve the demo UI."""
         # Calculate path from the current file location to the demo directory
-        # From src/api_assistant/server/routes.py -> ../../../../demo/simple_ui.html
+        # From src/nalai/server/routes.py -> ../../../../demo/simple_ui.html
         ui_path = Path(__file__).parent.parent.parent.parent / "demo" / "simple_ui.html"
         if ui_path.exists():
             with open(ui_path, encoding="utf-8") as f:

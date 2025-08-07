@@ -256,7 +256,7 @@ environment:
 
 ### Model Configuration
 
-Configure which models to use in `src/api_assistant/config.py`:
+Configure which models to use in `src/nalai/config.py`:
 
 ```python
 OLLAMA_MODELS = {

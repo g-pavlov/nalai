@@ -111,7 +111,7 @@ test-integration: install
 # Run all tests with coverage
 test-coverage: install
 	@echo "🧪 Running tests with coverage..."
-	@time poetry run pytest tests/ -v --cov=src/api_assistant --cov-report=term-missing --cov-report=html --ignore=tests/unit/core/test_tool_node.py --ignore=tests/unit/tools/test_http_requests.py --ignore=tests/integration/test_chunk_accumulation.py
+	@time poetry run pytest tests/ -v --cov=src/nalai --cov-report=term-missing --cov-report=html --ignore=tests/unit/core/test_tool_node.py --ignore=tests/unit/tools/test_http_requests.py --ignore=tests/integration/test_chunk_accumulation.py
 	@echo "✅ Tests completed"
 
 # Security Commands
@@ -159,7 +159,7 @@ docker-run-prod: docker-build-prod
 
 # Start development server
 serve: install
-	poetry run uvicorn api_assistant.server.app:app --host 0.0.0.0 --port 8000 --reload
+	poetry run uvicorn nalai.server.app:app --host 0.0.0.0 --port 8000 --reload
 
 # Build Commands
 # Cleanup Commands

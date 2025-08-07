@@ -17,7 +17,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.server.event_handlers import (
+from nalai.server.event_handlers import (
     format_sse_event_default,
     process_and_format_event,
     serialize_event_default,
@@ -313,7 +313,7 @@ class TestStreamInterruptableEvents:
         events = []
         # Use the real formatter for error event test
         if should_raise_exception:
-            from api_assistant.server.event_handlers import format_sse_event_default
+            from nalai.server.event_handlers import format_sse_event_default
 
             async for event in stream_interruptable_events(
                 mock_agent,

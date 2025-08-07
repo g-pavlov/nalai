@@ -1,4 +1,4 @@
-# Test cases for APIAssistant agent functionality
+# Test cases for APIAgent agent functionality
 
 parse_response_examples:
   - name: "basic_examples"

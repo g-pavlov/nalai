@@ -15,7 +15,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.core.schemas import (
+from nalai.core.schemas import (
     DEFAULT_MODEL_CONFIG,
     AgentState,
     ConfigSchema,
