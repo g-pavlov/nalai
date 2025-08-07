@@ -116,6 +116,22 @@ def add_user_context_to_config(config: dict | None, req: Request) -> dict:
     return config
 
 
+def add_no_cache_header_to_config(config: dict | None, req: Request) -> dict:
+    """Add no-cache setting from request header to configuration."""
+    config = _ensure_config_dict(config)
+    configurable = _ensure_configurable(config)
+
+    # Check for X-No-Cache header
+    no_cache_header = req.headers.get("X-No-Cache", "").lower()
+    if no_cache_header in ("true", "1", "yes"):
+        configurable["cache_disabled"] = True
+        logger.debug("No-cache header detected - disabling cache for this request")
+    else:
+        configurable["cache_disabled"] = False
+
+    return config
+
+
 async def validate_thread_access_and_scope(
     config: dict | None, req: Request
 ) -> tuple[dict, str]:
@@ -224,6 +240,9 @@ def default_modify_runtime_config(config: dict | None, req: Request) -> dict:
 
     # Add user context
     config = add_user_context_to_config(config, req)
+
+    # Add no-cache header setting
+    config = add_no_cache_header_to_config(config, req)
 
     return config
 
