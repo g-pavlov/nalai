@@ -107,13 +107,8 @@ class APIAgent:
         response = cast(AIMessage, model.invoke(prompt_value, config))
 
         state["selected_apis"] = response.selected_apis
-        if response.selected_apis:
-            response_message = AIMessage(
-                content=json.dumps([api.model_dump() for api in response.selected_apis])
-            )
-        else:
-            response_message = AIMessage(content=SelectedApis().model_dump_json())
-        return {"messages": [response_message], **state}
+        # Don't add the JSON message to conversation history - it's internal metadata
+        return {"messages": [], **state}
 
     def check_cache_with_similarity(
         self, state: AgentState, config: RunnableConfig
@@ -123,9 +118,18 @@ class APIAgent:
         """
         conversation_messages = state.get("messages", [])
 
-        # Check if caching is enabled
+        # Check if caching is enabled globally
         if not settings.cache_enabled:
-            logger.debug("Caching disabled - proceeding to load API summaries")
+            logger.debug("Caching disabled globally - proceeding to load API summaries")
+            return {"messages": conversation_messages, "cache_miss": True}
+
+        # Check if cache is disabled for this specific request
+        cache_disabled = False
+        if config and "configurable" in config:
+            cache_disabled = config["configurable"].get("cache_disabled", False)
+        
+        if cache_disabled:
+            logger.debug("Cache disabled for this request - proceeding to load API summaries")
             return {"messages": conversation_messages, "cache_miss": True}
 
         if not conversation_messages:
@@ -258,16 +262,16 @@ class APIAgent:
                 class MockCachedModel(BaseChatModel):
                     def __init__(self, cached_content: str, cached_tool_calls=None):
                         super().__init__()
-                        self.cached_content = cached_content
-                        self.cached_tool_calls = cached_tool_calls
+                        self._cached_content = cached_content
+                        self._cached_tool_calls = cached_tool_calls
 
                     def _generate(
                         self, messages, stop=None, run_manager=None, **kwargs
                     ):
                         # Create a mock response with the cached content
-                        response = AIMessage(content=self.cached_content)
-                        if self.cached_tool_calls:
-                            response.tool_calls = self.cached_tool_calls
+                        response = AIMessage(content=self._cached_content)
+                        if self._cached_tool_calls:
+                            response.tool_calls = self._cached_tool_calls
 
                         return ChatResult(
                             generations=[ChatGeneration(message=response)]
@@ -325,26 +329,34 @@ class APIAgent:
 
         # Cache the final response for future use
         if settings.cache_enabled:
-            # Don't cache responses with empty content (especially tool-only responses)
-            if response.content and response.content.strip():
-                cache_service = get_cache_service()
+            # Check if cache is disabled for this specific request
+            cache_disabled = False
+            if config and "configurable" in config:
+                cache_disabled = config["configurable"].get("cache_disabled", False)
+            
+            if not cache_disabled:
+                # Don't cache responses with empty content (especially tool-only responses)
+                if response.content and response.content.strip():
+                    cache_service = get_cache_service()
 
-                # Extract user ID from config for cache isolation
-                user_id = "anonymous"
-                if config and "configurable" in config:
-                    user_id = config["configurable"].get("user_id", "anonymous")
+                    # Extract user ID from config for cache isolation
+                    user_id = "anonymous"
+                    if config and "configurable" in config:
+                        user_id = config["configurable"].get("user_id", "anonymous")
 
-                cache_service.set(
-                    messages=conversation_messages,
-                    response=response.content,
-                    tool_calls=response.tool_calls,
-                    user_id=user_id,
-                )
-                logger.debug(
-                    f"Cached response for {len(conversation_messages)} messages (user: {user_id})"
-                )
+                    cache_service.set(
+                        messages=conversation_messages,
+                        response=response.content,
+                        tool_calls=response.tool_calls,
+                        user_id=user_id,
+                    )
+                    logger.debug(
+                        f"Cached response for {len(conversation_messages)} messages (user: {user_id})"
+                    )
+                else:
+                    logger.debug("Skipping cache for empty content response")
             else:
-                logger.debug("Skipping cache for empty content response")
+                logger.debug("Cache disabled for this request - skipping cache storage")
 
         conversation_messages = conversation_messages + [response]
         if compressed_messages:
