@@ -71,7 +71,7 @@ class StandardAuthService(AuthService):
 
     async def authenticate_request(self, request: Request) -> IdentityContext:
         """Authenticate request and extract user identity."""
-        if settings.disable_auth:
+        if not settings.auth_enabled:
             return self._create_dev_identity()
 
         # Try ID token first

@@ -101,10 +101,10 @@ fi
 echo ""
 echo "📋 Checking required demo settings..."
 
-append_if_missing "ENABLE_API_CALLS" "true" "Enable API calls for demo"
+append_if_missing "API_CALLS_ENABLED" "true" "Enable API calls for demo"
 append_if_missing "API_CALLS_ALLOWED_URLS" "http://ecommerce-mock:8000,http://localhost:8000,http://localhost:8001" "Allowed URLs for API calls"
 append_if_missing "CORS_ALLOW_ORIGINS" "http://localhost:3001,http://127.0.0.1:3001" "CORS allowed origins"
-append_if_missing "DISABLE_AUTH" "true" "Disable authentication for demo"
+append_if_missing "AUTH_ENABLED" "false" "Disable authentication for demo"
 
 # Check API keys for current platform
 CURRENT_PLATFORM=$(get_current_platform)

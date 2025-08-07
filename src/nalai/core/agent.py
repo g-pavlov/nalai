@@ -64,8 +64,8 @@ class APIAgent:
         system_prompt_str = load_prompt_template(model_id, variant)
         # Always format the system prompt, even if no variables are present
         # Use the first allowed URL as the primary example, but mention all allowed URLs
-        primary_url = settings.api_calls_base_url
         all_urls = settings.api_calls_allowed_urls_list
+        primary_url = all_urls[0] if all_urls else "example.com"
         system_prompt_str = format_template_with_variables(
             system_prompt_str, base_url=primary_url
         )
@@ -124,7 +124,7 @@ class APIAgent:
         conversation_messages = state.get("messages", [])
 
         # Check if caching is enabled
-        if not settings.enable_caching:
+        if not settings.cache_enabled:
             logger.debug("Caching disabled - proceeding to load API summaries")
             return {"messages": conversation_messages, "cache_miss": True}
 
@@ -301,7 +301,7 @@ class APIAgent:
                 compress_conversation_history_if_needed(
                     conversation_messages,
                     model,
-                    settings.history_compression_trigger_percentage,
+                    settings.chat_thread_compression_trigger_percentage,
                 )
             )
         except ValueError as error:
@@ -313,12 +313,12 @@ class APIAgent:
             {"messages": conversation_messages, "api_specs": api_specs_json}
         )
 
-        if settings.enable_api_calls is True:
+        if settings.api_calls_enabled is True:
             model = model.bind_tools(self.http_toolkit.get_tools())
         response = cast(AIMessage, model.invoke(prompt_value, config))
 
         # Cache the final response for future use
-        if settings.enable_caching:
+        if settings.cache_enabled:
             # Don't cache responses with empty content (especially tool-only responses)
             if response.content and response.content.strip():
                 cache_service = get_cache_service()
@@ -358,7 +358,7 @@ class APIAgent:
         tool_call_name = last_ai_message.tool_calls[0]["name"]
         toolkit = self.http_toolkit
 
-        if settings.enable_api_calls is True and tool_call_name in (
+        if settings.api_calls_enabled is True and tool_call_name in (
             tool.name for tool in toolkit.get_tools()
         ):
             if toolkit.is_safe_tool(tool_call_name):

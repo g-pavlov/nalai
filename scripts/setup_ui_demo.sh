@@ -104,10 +104,10 @@ if [ ! -f ".env" ]; then
 # ==========================
 
 # Model Configuration
-MODEL_ID=gpt-4o-mini
-MODEL_PLATFORM=openai
-MODEL_TEMPERATURE=0.0
-MODEL_MAX_TOKENS=4000
+NALAI_MODEL_ID=gpt-4o-mini
+NALAI_MODEL_PLATFORM=openai
+NALAI_MODEL_TEMPERATURE=0.0
+NALAI_MODEL_MAX_TOKENS=4000
 
 # OpenAI Configuration (REQUIRED for demo)
 # Get your API key from: https://platform.openai.com/api-keys
@@ -123,16 +123,16 @@ OLLAMA_BASE_URL=http://ollama:11434
 OLLAMA_PORT=11435
 
 # API Behavior
-ENABLE_API_CALLS=true
+API_CALLS_ENABLED=true
 API_CALLS_ALLOWED_URLS=http://ecommerce-mock:8000,http://localhost:8000,http://localhost:8001
 
 # Cache Settings
-ENABLE_CACHING=true
+CACHE_ENABLED=true
 CACHE_MAX_SIZE=1000
 CACHE_TTL_HOURS=1
 
 # Development Settings
-DISABLE_AUTH=true
+AUTH_ENABLED=false
 LOGGING_LEVEL=INFO
 
 # CORS Configuration

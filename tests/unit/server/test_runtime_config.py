@@ -154,7 +154,7 @@ class TestAddAuthTokenToConfig:
         should_raise,
     ):
         """Test authentication token addition with various scenarios."""
-        mock_settings.disable_auth = auth_disabled
+        mock_settings.auth_enabled = not auth_disabled
         mock_request.headers = headers
 
         if should_raise:

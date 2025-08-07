@@ -25,7 +25,7 @@ class DefaultRateLimiterFactory(RateLimiterFactoryInterface):
         config_overrides: dict[str, RateLimiterConfig] | None = None,
     ):
         # Use FileLockRateLimiter if explicitly enabled or in test environment
-        if settings.enable_cross_process_rate_limiter:
+        if settings.cross_process_rate_limiter_enabled:
             from .rate_limiters import FileLockRateLimiter
 
             self.rate_limiter_class = FileLockRateLimiter

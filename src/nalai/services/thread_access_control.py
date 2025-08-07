@@ -234,7 +234,7 @@ def get_thread_access_control() -> ThreadAccessControl:
     """Get the global thread access control instance."""
     global _thread_access_control
     if _thread_access_control is None:
-        backend = getattr(settings, "thread_access_control_backend", "memory")
+        backend = getattr(settings, "chat_thread_access_control_backend", "memory")
         _thread_access_control = ThreadAccessControl(backend=backend)
     return _thread_access_control
 

@@ -215,11 +215,11 @@ def temp_yaml_file():
 def mock_settings():
     """Create mock settings for testing."""
     settings = MagicMock()
-    settings.api_calls_base_url = "https://api.example.com"
+    settings.api_calls_allowed_urls_list = ["https://api.example.com"]
     settings.aws_bedrock_retry_max_attempts = 3
     settings.default_model_platform = "aws_bedrock"
     settings.default_model_id = "claude-3.5-sonnet"
-    settings.enable_api_calls = True
+    settings.api_calls_enabled = True
     return settings
 
 
