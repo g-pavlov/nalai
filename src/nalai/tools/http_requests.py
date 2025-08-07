@@ -132,6 +132,7 @@ class GetTool:
         self.method = "GET"
         self.name = "get_http_requests"
         self.description = "Handles GET requests to retrieve data from the specified URL. Use this for reading information without modifying any data."
+        self.is_safe = True
         self._run = http_request_tool(
             "GET", True, "get_http_requests", self.description
         )
@@ -144,6 +145,7 @@ class PostTool:
         self.method = "POST"
         self.name = "post_http_requests"
         self.description = "Handles POST requests to create new resources or submit data to the specified URL. Use this for creating new items or submitting forms."
+        self.is_safe = False
         self._run = http_request_tool(
             "POST", False, "post_http_requests", self.description
         )
@@ -156,6 +158,7 @@ class PutTool:
         self.method = "PUT"
         self.name = "put_http_requests"
         self.description = "Handles PUT requests to update or replace existing resources at the specified URL. Use this for completely replacing an existing item."
+        self.is_safe = False
         self._run = http_request_tool(
             "PUT", False, "put_http_requests", self.description
         )
@@ -168,6 +171,7 @@ class DeleteTool:
         self.method = "DELETE"
         self.name = "delete_http_requests"
         self.description = "Handles DELETE requests to remove resources at the specified URL. Use this for deleting items or resources."
+        self.is_safe = False
         self._run = http_request_tool(
             "DELETE", False, "delete_http_requests", self.description
         )
@@ -180,6 +184,7 @@ class HeadTool:
         self.method = "HEAD"
         self.name = "head_http_requests"
         self.description = "Handles HEAD requests"
+        self.is_safe = True
         self._run = http_request_tool(
             "HEAD", True, "head_http_requests", self.description
         )
@@ -192,6 +197,7 @@ class OptionsTool:
         self.method = "OPTIONS"
         self.name = "options_http_requests"
         self.description = "Handles OPTIONS requests"
+        self.is_safe = True
         self._run = http_request_tool(
             "OPTIONS", True, "options_http_requests", self.description
         )
@@ -204,6 +210,7 @@ class PatchTool:
         self.method = "PATCH"
         self.name = "patch_http_requests"
         self.description = "Handles PATCH requests"
+        self.is_safe = False
         self._run = http_request_tool(
             "PATCH", False, "patch_http_requests", self.description
         )
@@ -216,6 +223,7 @@ class TraceTool:
         self.method = "TRACE"
         self.name = "trace_http_requests"
         self.description = "Handles TRACE requests"
+        self.is_safe = True
         self._run = http_request_tool(
             "TRACE", True, "trace_http_requests", self.description
         )
