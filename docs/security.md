@@ -158,7 +158,7 @@ AUTH_AUDIT_ENABLED=true     # Still audit for compliance
 # In-memory (default)
 CACHE_BACKEND=memory
 CACHE_MAX_SIZE=1000
-CACHE_TTL_HOURS=1
+CACHE_TTL_SECONDS=1800
 
 # Redis (when implemented)
 CACHE_BACKEND=redis

@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1.4
 
+# Build arguments
+ARG CACHE_SEMANTIC_CORPUS=fallback
+
 # --- Build Stage ---
 FROM python:3.12-slim AS build
 
@@ -15,7 +18,7 @@ RUN apt-get update && \
 WORKDIR /build
 
 # Copy stable dependency files first (for best caching)
-COPY pyproject.toml poetry.lock ./
+COPY pyproject.toml poetry.lock Makefile ./
 
 # Install Poetry (cached layer)
 RUN pip install --no-cache-dir poetry==2.1.3 && poetry config virtualenvs.create false
@@ -25,6 +28,17 @@ RUN poetry self add poetry-plugin-export
 
 # Copy source code last in build stage (changes frequently)
 COPY src/ ./src/
+
+# Install dependencies and corpus based on CACHE_SEMANTIC_CORPUS
+RUN poetry install --only main && \
+    if [ "$CACHE_SEMANTIC_CORPUS" = "comprehensive" ]; then \
+        poetry run pip install nltk spacy && \
+        poetry run python -m spacy download en_core_web_sm && \
+        poetry run python scripts/setup_nlp_corpus.py; \
+    elif [ "$CACHE_SEMANTIC_CORPUS" = "wordnet" ]; then \
+        poetry run pip install nltk && \
+        poetry run python scripts/setup_nlp_corpus.py; \
+    fi
 
 # Generate requirements.txt for production
 RUN poetry export --without-hashes --without-urls --without=dev -o requirements.txt && \

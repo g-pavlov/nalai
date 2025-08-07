@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     Provides centralized configuration management with sensible defaults
     for model settings, AWS credentials, API behavior, and logging.
     """
+
     # ===== SERVER CONFIGURATION =====
     cors_allow_origins: str = Field(
         alias="CORS_ALLOW_ORIGINS",
@@ -134,19 +135,31 @@ class Settings(BaseSettings):
         default=1000,
         description="Maximum number of cache entries (default: 1000)",
     )
-    cache_ttl_hours: int = Field(
-        alias="CACHE_TTL_HOURS",
-        default=1,
-        description="Cache time-to-live in hours (default: 1)",
+    cache_ttl_seconds: int = Field(
+        alias="CACHE_TTL_SECONDS",
+        default=1800,
+        description="Cache time-to-live in seconds (default: 1800 = 30 minutes)",
     )
     cache_backend: str = Field(
         alias="CACHE_BACKEND",
         default="memory",
-        description="Cache backend (memory, redis)",
+        description="Cache backend (memory only)",
     )
-    cache_redis_url: str = Field(
-        alias="CACHE_REDIS_URL", default="", description="Redis URL for cache backend"
-    )    
+    cache_tool_calls: bool = Field(
+        alias="CACHE_TOOL_CALLS",
+        default=False,
+        description="Cache tool calls (default: False - tool results may change over time)",
+    )
+    cache_similarity_threshold: float = Field(
+        alias="CACHE_SIMILARITY_THRESHOLD",
+        default=0.8,
+        description="Similarity threshold for semantic cache matching (0.0-1.0)",
+    )
+    cache_similarity_enabled: bool = Field(
+        alias="CACHE_SIMILARITY_ENABLED",
+        default=True,
+        description="Enable similarity-based cache matching (default: True)",
+    )
 
     # ===== CHECKPOINTING CONFIGURATION =====
     checkpointing_backend: str = Field(
@@ -269,11 +282,11 @@ class Settings(BaseSettings):
             url.strip() for url in self.api_calls_allowed_urls.split(",") if url.strip()
         ]
 
-
     class Config:
         env_file = dotenv.find_dotenv()
         env_file_encoding = "utf-8"
         extra = "allow"  # Allow extra environment variables
+
 
 settings = Settings()
 

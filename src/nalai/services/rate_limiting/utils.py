@@ -100,7 +100,7 @@ def is_test_environment() -> bool:
         or settings.cross_process_rate_limiter_enabled
     )
     _write_debug_message(
-        f"Test environment check: pytest={bool('pytest' in sys.modules)}, test={bool('test' in sys.argv[0])}, deepeval={bool('deepeval' in sys.modules)}, xproc={settings.enable_cross_process_rate_limiter}, result={result}"
+        f"Test environment check: pytest={bool('pytest' in sys.modules)}, test={bool('test' in sys.argv[0])}, deepeval={bool('deepeval' in sys.modules)}, xproc={settings.cross_process_rate_limiter_enabled}, result={result}"
     )
     return result
 
