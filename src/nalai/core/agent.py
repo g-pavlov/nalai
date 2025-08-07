@@ -134,11 +134,16 @@ class APIAgent:
 
         logger.debug(f"Checking cache for {len(conversation_messages)} messages")
 
+        # Extract user ID from config for cache isolation
+        user_id = "anonymous"
+        if config and "configurable" in config:
+            user_id = config["configurable"].get("user_id", "anonymous")
+
         # Check cache service
         cache_service = get_cache_service()
 
         # 1. Exact match first
-        cached_result = cache_service.get(conversation_messages)
+        cached_result = cache_service.get(conversation_messages, user_id)
         if cached_result:
             cached_response, cached_tool_calls = cached_result
             logger.info("Cache hit (exact match) for messages")
@@ -153,35 +158,36 @@ class APIAgent:
             logger.debug(f"Returning exact cache hit result: {result}")
             return result
 
-        # 2. Similarity search (for the last human message)
-        last_human_message = None
-        for message in reversed(conversation_messages):
-            if hasattr(message, "content") and message.content:
-                last_human_message = message.content
-                break
+        # 2. Similarity search (for the last human message) - only if enabled
+        if settings.cache_similarity_enabled:
+            last_human_message = None
+            for message in reversed(conversation_messages):
+                if hasattr(message, "content") and message.content:
+                    last_human_message = message.content
+                    break
 
-        if last_human_message:
-            similar_responses = cache_service.find_similar_cached_responses(
-                last_human_message, similarity_threshold=0.8
-            )
-
-            if similar_responses:
-                best_content, best_response, best_tool_calls, similarity_score = (
-                    similar_responses[0]
-                )
-                logger.info(
-                    f"Cache hit (similarity) for message matches '{best_content}' (score: {similarity_score:.2f})"
+            if last_human_message:
+                similar_responses = cache_service.find_similar_cached_responses(
+                    last_human_message, user_id, settings.cache_similarity_threshold
                 )
 
-                # Create AIMessage from cached response
-                response = AIMessage(content=best_response)
-                if best_tool_calls:
-                    response.tool_calls = best_tool_calls
+                if similar_responses:
+                    best_content, best_response, best_tool_calls, similarity_score = (
+                        similar_responses[0]
+                    )
+                    logger.info(
+                        f"Cache hit (similarity) for message matches '{best_content}' (score: {similarity_score:.2f})"
+                    )
 
-                conversation_messages = conversation_messages + [response]
-                result = {"messages": conversation_messages, "cache_hit": True}
-                logger.debug(f"Returning cache hit result: {result}")
-                return result
+                    # Create AIMessage from cached response
+                    response = AIMessage(content=best_response)
+                    if best_tool_calls:
+                        response.tool_calls = best_tool_calls
+
+                    conversation_messages = conversation_messages + [response]
+                    result = {"messages": conversation_messages, "cache_hit": True}
+                    logger.debug(f"Returning cache hit result: {result}")
+                    return result
 
         # 3. No cache hit, proceed to load API summaries
         logger.debug("No cache hit, proceeding to load API summaries")
@@ -322,13 +328,20 @@ class APIAgent:
             # Don't cache responses with empty content (especially tool-only responses)
             if response.content and response.content.strip():
                 cache_service = get_cache_service()
+
+                # Extract user ID from config for cache isolation
+                user_id = "anonymous"
+                if config and "configurable" in config:
+                    user_id = config["configurable"].get("user_id", "anonymous")
+
                 cache_service.set(
                     messages=conversation_messages,
                     response=response.content,
                     tool_calls=response.tool_calls,
+                    user_id=user_id,
                 )
                 logger.debug(
-                    f"Cached response for {len(conversation_messages)} messages"
+                    f"Cached response for {len(conversation_messages)} messages (user: {user_id})"
                 )
             else:
                 logger.debug("Skipping cache for empty content response")

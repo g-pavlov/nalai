@@ -49,6 +49,10 @@ grandalf = "^0.8"
 aiohttp = "^3.12.14"
 requests = "^2.32.4"
 
+# NLP and word corpus support
+nltk = "^3.8.1"
+spacy = "^3.7.2"
+
 [tool.poetry.group.llm]
 optional = true
 

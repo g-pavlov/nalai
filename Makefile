@@ -4,11 +4,12 @@
 # Environment variables
 IMAGE_NAME ?= nalai
 VERSION ?= latest
+CACHE_SEMANTIC_CORPUS ?= fallback
 
 # Setup Commands
 # ==============
 
-.PHONY: setup-dev install validate-env
+.PHONY: setup-dev install validate-env install-corpus test-corpus
 
 # Setup development environment
 setup-dev:
@@ -66,6 +67,32 @@ setup-dev:
 # Install dependencies
 install:
 	poetry install --with=testing,dev
+
+# Install corpus based on CACHE_SEMANTIC_CORPUS
+install-corpus:
+	@echo "📚 Installing cache corpus: $(CACHE_SEMANTIC_CORPUS)"
+	@if [ "$(CACHE_SEMANTIC_CORPUS)" != "fallback" ] && [ "$(CACHE_SEMANTIC_CORPUS)" != "wordnet" ] && [ "$(CACHE_SEMANTIC_CORPUS)" != "comprehensive" ]; then \
+		echo "❌ Error: CACHE_SEMANTIC_CORPUS must be one of: fallback, wordnet, comprehensive"; \
+		echo "Got: '$(CACHE_SEMANTIC_CORPUS)'"; \
+		exit 1; \
+	fi
+	@if [ "$(CACHE_SEMANTIC_CORPUS)" = "comprehensive" ]; then \
+		echo "📦 Installing comprehensive corpus (NLTK + spaCy)..."; \
+		poetry run pip install nltk spacy && \
+		poetry run python -m spacy download en_core_web_sm && \
+		poetry run python scripts/setup_nlp_corpus.py; \
+	elif [ "$(CACHE_SEMANTIC_CORPUS)" = "wordnet" ]; then \
+		echo "📦 Installing WordNet corpus (NLTK only)..."; \
+		poetry run pip install nltk && \
+		poetry run python scripts/setup_nlp_corpus.py; \
+	else \
+		echo "📦 Using fallback corpus (no additional packages)"; \
+	fi
+
+# Test corpus installation
+test-corpus:
+	@echo "🧪 Testing corpus installation..."
+	@poetry run python -c "from nalai.services.cache_service import TokenSimilarityMatcher; m = TokenSimilarityMatcher(); print(f'✅ Corpus loaded: {len(m.verbs)} verbs, {len(m.nouns)} nouns, {len(m.adjectives)} adjectives')"
 
 # Validate environment (Python version, Poetry version, etc.)
 validate-env:
@@ -134,11 +161,16 @@ security-image: install
 # Docker Commands
 # ==============
 
-.PHONY: docker-build docker-run
+.PHONY: docker-build docker-run build-docker
 
 # Build Docker image (development)
 docker-build: install
 	docker build -t $(IMAGE_NAME):latest .
+
+# Build Docker image with corpus configuration
+build-docker: install
+	@echo "🐳 Building Docker image with corpus: $(CACHE_SEMANTIC_CORPUS)"
+	docker build --build-arg CACHE_SEMANTIC_CORPUS=$(CACHE_SEMANTIC_CORPUS) -t $(IMAGE_NAME):$(VERSION) .
 
 # Build production Docker image
 docker-build-prod: install
@@ -381,12 +413,14 @@ help:
 	@echo "  make setup-dev           - Setup complete development environment"
 	@echo "  make install             - Install dependencies"
 	@echo "  make validate-env        - Validate environment (Python, Poetry versions)"
+	@echo "  make install-corpus      - Install cache corpus (CACHE_SEMANTIC_CORPUS=fallback|wordnet|comprehensive)"
 	@echo ""
 	@echo "\033[1m💻 Development:\033[0m"
 	@echo "  make lint                - Format code and run linting (CI-safe)"
 	@echo "  make lint-fix            - Format code and run linting with auto-fix"
 	@echo "  make serve               - Start development server"
 	@echo "  make docker-build        - Build Docker image (development)"
+	@echo "  make build-docker        - Build Docker image with corpus configuration"
 	@echo "  make docker-run          - Run Docker container"
 	@echo "  make ui-run              - Start API Assistant with UI demo"
 	@echo "  make ui-stop             - Stop all demo services"
@@ -395,6 +429,7 @@ help:
 	@echo "  make test                - Run unit tests"
 	@echo "  make test-integration    - Run integration tests"
 	@echo "  make test-coverage       - Run all tests with coverage"
+	@echo "  make test-corpus         - Test corpus installation and functionality"
 	@echo "  make security            - Run security scan (filesystem)"
 	@echo "  make security-image      - Run security scan on Docker image"
 	@echo "  make validate-deps       - Validate dependencies"
@@ -423,3 +458,8 @@ help:
 	@echo "  make tool-info TOOL=<name> - Show information about a specific tool"
 	@echo "  make tool-versions        - Show versions of all tools"
 	@echo "  make update-tool-versions - Update tool versions in configuration"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make install-corpus CACHE_SEMANTIC_CORPUS=wordnet"
+	@echo "  make build-docker CACHE_SEMANTIC_CORPUS=comprehensive"
+	@echo "  make test-corpus"

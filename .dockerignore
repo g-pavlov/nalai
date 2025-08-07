@@ -25,7 +25,6 @@ docs/
 # DEVELOPMENT FILES
 # =============================================================================
 Dockerfile.dev
-Makefile
 .env
 .env.example
 .env.local

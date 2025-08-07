@@ -77,7 +77,7 @@ def test_cache_service():
     """Test the cache service functionality."""
     print("\n=== Testing CacheService ===")
 
-    cache_service = CacheService(max_size=5, default_ttl_hours=1)
+    cache_service = CacheService(max_size=5, default_ttl_seconds=3600)
 
     # Test basic get/set
     print("\n1. Basic get/set operations:")
@@ -159,7 +159,7 @@ def test_cache_service():
 def test_cache_hit_and_miss():
     """Test explicit cache hit and cache miss scenarios."""
     print("\n=== Testing Cache Hit and Miss ===")
-    cache_service = CacheService(max_size=3, default_ttl_hours=1)
+    cache_service = CacheService(max_size=3, default_ttl_seconds=3600)
 
     # Cache a response
     messages = [HumanMessage(content="create a product")]
@@ -191,7 +191,7 @@ def test_cache_with_real_scenarios():
     """Test cache with realistic scenarios."""
     print("\n=== Testing Real Scenarios ===")
 
-    cache_service = CacheService(max_size=10, default_ttl_hours=1)
+    cache_service = CacheService(max_size=10, default_ttl_seconds=3600)
 
     # Scenario 1: User asks to create a product
     print("\n1. Scenario: Create a product")

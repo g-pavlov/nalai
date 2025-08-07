@@ -95,9 +95,7 @@ class TestHTTPTool:
             else:
                 # Should raise ValueError for invalid URLs
                 with pytest.raises(ValueError):
-                    tool._run(
-                        {"url": case_data["input"]["url"], "input_data": {}}
-                    )
+                    tool._run({"url": case_data["input"]["url"], "input_data": {}})
 
     @pytest.mark.parametrize(
         "test_case",
@@ -134,9 +132,7 @@ class TestHTTPTool:
             if "user_headers" in case_data["input"]:
                 input_data["headers"] = case_data["input"]["user_headers"]
 
-            tool._run(
-                {"url": "https://api.example.com/test", "input_data": input_data}
-            )
+            tool._run({"url": "https://api.example.com/test", "input_data": input_data})
 
             # Verify request was made with correct headers
             call_args = mock_request.call_args
@@ -180,7 +176,10 @@ class TestHTTPTool:
                 tool = GetTool()  # Default fallback
 
             tool._run(
-                {"url": "https://api.example.com/test", "input_data": case_data["input"]["input_data"]}
+                {
+                    "url": "https://api.example.com/test",
+                    "input_data": case_data["input"]["input_data"],
+                }
             )
 
             # Verify request was made with correct payload
@@ -231,9 +230,11 @@ class TestHTTPTool:
                     )
                 elif case_data["name"] == "empty_response":
                     mock_response.text = ""
-                    mock_response.json.side_effect = ValueError("No JSON object could be decoded")
+                    mock_response.json.side_effect = ValueError(
+                        "No JSON object could be decoded"
+                    )
 
-                with pytest.raises(Exception):
+                with pytest.raises((ValueError, requests.RequestException)):
                     tool._run({"url": "https://api.example.com/test", "input_data": {}})
             else:
                 # Mock response based on test case
@@ -241,7 +242,9 @@ class TestHTTPTool:
                     mock_response.text = ""
                     mock_response.json.return_value = {}
 
-                result = tool._run({"url": "https://api.example.com/test", "input_data": {}})
+                result = tool._run(
+                    {"url": "https://api.example.com/test", "input_data": {}}
+                )
                 assert result == case_data["expected"]["result"]
 
     def test_error_context_logging(self, mock_config, mock_run_manager):
@@ -256,7 +259,7 @@ class TestHTTPTool:
 
             tool = GetTool()
 
-            with pytest.raises(Exception):
+            with pytest.raises((ValueError, requests.RequestException)):
                 tool._run({"url": "https://api.example.com/test", "input_data": {}})
 
             # Verify error was logged
