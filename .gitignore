@@ -54,3 +54,5 @@ build.env
 .coverage.*
 
 *.sarif
+# Evaluation and testing files
+eval/
