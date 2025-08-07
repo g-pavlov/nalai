@@ -404,6 +404,15 @@
                     </label>
                     <span id="streamingStatus">ON</span>
                 </div>
+                
+                <div class="control-group">
+                    <label for="noCacheToggle">No Cache:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="noCacheToggle">
+                        <span class="slider round"></span>
+                    </label>
+                    <span id="noCacheStatus">OFF</span>
+                </div>
             </div>
         </div>
         <div class="chat-container" id="chatContainer">
@@ -455,16 +464,27 @@
             
             // Update streaming status indicator
             updateStreamingStatus();
+            updateNoCacheStatus();
         });
         
         // Update streaming status when toggle changes
         document.getElementById('streamingToggle').addEventListener('change', updateStreamingStatus);
+        
+        // Update no-cache status when toggle changes
+        document.getElementById('noCacheToggle').addEventListener('change', updateNoCacheStatus);
         
         function updateStreamingStatus() {
             const streamingToggle = document.getElementById('streamingToggle');
             const streamingStatus = document.getElementById('streamingStatus');
             streamingStatus.textContent = streamingToggle.checked ? 'ON' : 'OFF';
             streamingStatus.style.color = streamingToggle.checked ? '#059669' : '#6b7280';
+        }
+        
+        function updateNoCacheStatus() {
+            const noCacheToggle = document.getElementById('noCacheToggle');
+            const noCacheStatus = document.getElementById('noCacheStatus');
+            noCacheStatus.textContent = noCacheToggle.checked ? 'ON' : 'OFF';
+            noCacheStatus.style.color = noCacheToggle.checked ? '#dc2626' : '#6b7280';
         }
 
         // Handle Enter key
@@ -492,6 +512,10 @@
             const streamingToggle = document.getElementById('streamingToggle');
             const isStreamingEnabled = streamingToggle.checked;
             
+            // Check if no-cache is enabled
+            const noCacheToggle = document.getElementById('noCacheToggle');
+            const isNoCacheEnabled = noCacheToggle.checked;
+            
             // Update loading message based on streaming setting
             const loadingText = document.getElementById('loadingText');
             loadingText.textContent = isStreamingEnabled ? '🤔 Thinking...' : '⏳ Processing...';
@@ -514,6 +538,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        ...(isNoCacheEnabled && { 'X-No-Cache': 'true' })
                     },
                     body: JSON.stringify({
                         input: {
@@ -560,18 +585,51 @@
                             if (line.startsWith('data: ')) {
                                 const data = line.slice(6);
                                 if (data === '[DONE]') {
+                                    console.log('Stream completed with [DONE] event');
                                     break;
                                 }
                                 
                                 try {
+                                    // Skip empty data
+                                    if (!data || data.trim() === '') {
+                                        continue;
+                                    }
+                                    
                                     const event = JSON.parse(data);
                                     hasReceivedEvents = true;
+                                    console.log('Received SSE event:', event.event);
+                                    console.log('Event data structure:', JSON.stringify(event, null, 2));
                                     
                                     if (event.event === 'on_chat_model_stream' && event.data && event.data.chunk && event.data.chunk.content) {
                                         // Append streaming content
                                         fullMessageContent += event.data.chunk.content;
                                         assistantMessageDiv.innerHTML = marked.parse(fullMessageContent);
                                         chatContainer.scrollTop = chatContainer.scrollHeight;
+                                        console.log('Updated content:', fullMessageContent.substring(0, 100) + '...');
+                                    } else if (event.event === 'on_chain_end' && event.data && event.data.output && event.data.output.messages) {
+                                        // Handle chain end event with messages
+                                        const messages = event.data.output.messages;
+                                        // Find the last AI message
+                                        for (let i = messages.length - 1; i >= 0; i--) {
+                                            if (messages[i].type === 'ai' && messages[i].content) {
+                                                fullMessageContent = messages[i].content;
+                                                assistantMessageDiv.innerHTML = marked.parse(fullMessageContent);
+                                                chatContainer.scrollTop = chatContainer.scrollHeight;
+                                                console.log('Got content from on_chain_end:', fullMessageContent.substring(0, 100) + '...');
+                                                break;
+                                            }
+                                        }
+                                    } else if (event.event === 'on_chat_model_end' && event.data && event.data.output) {
+                                        // Handle end event with full content
+                                        const output = event.data.output;
+                                        if (output && output.content) {
+                                            fullMessageContent = output.content;
+                                            assistantMessageDiv.innerHTML = marked.parse(fullMessageContent);
+                                            chatContainer.scrollTop = chatContainer.scrollHeight;
+                                            console.log('Got content from on_chat_model_end:', fullMessageContent.substring(0, 100) + '...');
+                                        }
+                                    } else if (event.event === 'on_chat_model_stream') {
+                                        console.log('Chat model stream event but no content:', event);
                                     } else if (event.event === 'on_tool_start' && event.data) {
                                         // Handle tool start
                                         const toolCallDiv = document.createElement('div');
@@ -590,6 +648,9 @@
                                     }
                                 } catch (e) {
                                     console.warn('Failed to parse SSE event:', e);
+                                    console.warn('Raw data:', data);
+                                    console.warn('Data length:', data ? data.length : 0);
+                                    // Continue processing other events instead of breaking
                                 }
                             }
                         }
@@ -600,9 +661,16 @@
                         assistantMessageDiv.textContent = '⚡ Cached response (no streaming events received)';
                         assistantMessageDiv.style.fontStyle = 'italic';
                         assistantMessageDiv.style.color = '#6b7280';
-                    } else {
+                    } else if (fullMessageContent.trim()) {
                         // Render the full accumulated message as markdown
+                        console.log('Final content length:', fullMessageContent.length);
+                        console.log('Final content preview:', fullMessageContent.substring(0, 200) + '...');
                         assistantMessageDiv.innerHTML = marked.parse(fullMessageContent);
+                    } else {
+                        // Fallback for incomplete streaming
+                        console.log('No content accumulated, hasReceivedEvents:', hasReceivedEvents);
+                        assistantMessageDiv.textContent = '⚠️ Response incomplete - please try again';
+                        assistantMessageDiv.style.color = '#dc2626';
                     }
                 } else {
                     // Handle non-streaming response
