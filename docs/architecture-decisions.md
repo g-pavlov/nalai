@@ -390,7 +390,7 @@ Providing safe, extensible HTTP tool capabilities while maintaining security bou
 #### **Tool Integration**
 ```python
 # Automatic tool binding to models
-if settings.enable_api_calls:
+if settings.api_calls_enabled:
     model = model.bind_tools(http_toolkit.get_tools())
 
 # Safety validation

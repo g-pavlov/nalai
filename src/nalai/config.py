@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from pydantic_settings import BaseSettings
 
-CLAUDE_SONNET_3_5 = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-AWS_BEDROCK_PLATFORM = "aws_bedrock"
+OPENAI_GPT_41 = "gpt-4.1"
+OPENAI_PLATFORM = "openai"
 
 
 class Settings(BaseSettings):
@@ -14,151 +14,7 @@ class Settings(BaseSettings):
     Provides centralized configuration management with sensible defaults
     for model settings, AWS credentials, API behavior, and logging.
     """
-
-    # Model configuration
-    default_model_max_tokens: int | None = Field(
-        alias="MODEL_MAX_TOKENS",
-        default=None,
-        description="Maximum tokens for model responses (optional)",
-    )
-
-    # AWS credentials (optional - can use AWS profile instead)
-    aws_access_key_id: str | None = Field(
-        alias="AWS_ACCESS_KEY_ID",
-        default=None,
-        description="AWS access key ID (optional if using AWS profile)",
-    )
-    aws_secret_access_key: str | None = Field(
-        alias="AWS_SECRET_ACCESS_KEY",
-        default=None,
-        description="AWS secret access key (optional if using AWS profile)",
-    )
-
-    # Model defaults
-    default_model_id: str = Field(
-        alias="MODEL_ID",
-        default=CLAUDE_SONNET_3_5,
-        description=f"Default model ID for API calls (default: {CLAUDE_SONNET_3_5})",
-    )
-    default_model_platform: str = Field(
-        alias="MODEL_PLATFORM",
-        default=AWS_BEDROCK_PLATFORM,
-        description=f"Default model platform (default: {AWS_BEDROCK_PLATFORM})",
-        examples=["aws_bedrock", "ollama"],
-    )
-    default_model_temperature: float = Field(
-        alias="MODEL_TEMPERATURE",
-        default=0.0,
-        description="Default model temperature for response generation",
-    )
-
-    # AWS configuration
-    aws_default_region: str = Field(
-        alias="AWS_DEFAULT_REGION",
-        default="us-east-1",
-        description="AWS default region for Bedrock services",
-    )
-    aws_bedrock_retry_max_attempts: int = Field(
-        alias="AWS_BEDROCK_RETRY_MAX_ATTEMPTS",
-        default=4,
-        description="Maximum retry attempts for AWS Bedrock API calls",
-    )
-
-    # Ollama configuration
-    ollama_base_url: str = Field(
-        alias="OLLAMA_BASE_URL",
-        default="http://localhost:11434",
-        description="Base URL for Ollama service",
-    )
-
-    # API behavior settings
-    enable_api_calls: bool = Field(
-        alias="ENABLE_API_CALLS",
-        default=False,
-        description="Enable actual HTTP API calls (default: False for safety)",
-    )
-    api_calls_allowed_urls: str = Field(
-        alias="API_CALLS_ALLOWED_URLS",
-        default="http://ecommerce-mock:8000,http://localhost:8000,http://localhost:8001",
-        description="Comma-separated list of allowed base URLs for API calls when enabled",
-    )
-
-    @property
-    def api_calls_allowed_urls_list(self) -> list[str]:
-        """Get allowed API URLs as a list."""
-        if not self.api_calls_allowed_urls.strip():
-            return []
-        return [
-            url.strip() for url in self.api_calls_allowed_urls.split(",") if url.strip()
-        ]
-
-    # Legacy support for backward compatibility
-    @property
-    def api_calls_base_url(self) -> str:
-        """Get the first allowed URL for backward compatibility."""
-        allowed_urls = self.api_calls_allowed_urls_list
-        return allowed_urls[0] if allowed_urls else "example.com"
-
-    history_compression_trigger_percentage: int = Field(
-        alias="HISTORY_COMPRESSION_TRIGGER_PERCENTAGE",
-        default=95,
-        description="Context window saturation percentage that triggers conversation history compression",
-    )
-    enable_cross_process_rate_limiter: bool = Field(
-        alias="ENABLE_CROSS_PROCESS_RATE_LIMITER",
-        default=False,
-        description="Enable cross-process rate limiting for LLM API calls (useful for parallel testing)",
-    )
-
-    # Cache settings
-    enable_caching: bool = Field(
-        alias="ENABLE_CACHING",
-        default=True,
-        description="Enable response caching to reduce LLM calls (default: True)",
-    )
-    cache_max_size: int = Field(
-        alias="CACHE_MAX_SIZE",
-        default=1000,
-        description="Maximum number of cache entries (default: 1000)",
-    )
-    cache_ttl_hours: int = Field(
-        alias="CACHE_TTL_HOURS",
-        default=1,
-        description="Cache time-to-live in hours (default: 1)",
-    )
-
-    # Development settings
-    disable_auth: bool = Field(
-        alias="DISABLE_AUTH",
-        default=False,
-        description="Disable authentication for development (use with caution)",
-    )
-
-    # Data paths
-    api_specs_path: str = Field(
-        alias="API_SPECS_PATH",
-        default="data/api_specs",
-        description="Directory containing API specification files",
-    )
-
-    # Logging configuration
-    logging_config_path: str = Field(
-        alias="LOGGING_CONFIG_PATH",
-        default="logging.yaml",
-        description="Path to YAML logging configuration file",
-    )
-    logging_level: str = Field(
-        alias="LOGGING_LEVEL",
-        default="INFO",
-        description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
-    )
-    logging_directory: str = Field(
-        alias="LOGGING_DIRECTORY",
-        default="logs",
-        description="Directory for log file output",
-    )
-
-    # CORS configuration
+    # ===== SERVER CONFIGURATION =====
     cors_allow_origins: str = Field(
         alias="CORS_ALLOW_ORIGINS",
         default="http://localhost:3001,http://127.0.0.1:3001",
@@ -176,9 +32,60 @@ class Settings(BaseSettings):
             if origin.strip()
         ]
 
-    # ===== ACCESS CONTROL CONFIGURATION =====
+    # ===== LOGGING CONFIGURATION =====
+    logging_config_path: str = Field(
+        alias="LOGGING_CONFIG_PATH",
+        default="logging.yaml",
+        description="Path to YAML logging configuration file",
+    )
+    logging_level: str = Field(
+        alias="LOGGING_LEVEL",
+        default="INFO",
+        description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    )
+    logging_directory: str = Field(
+        alias="LOGGING_DIRECTORY",
+        default="logs",
+        description="Directory for log file output",
+    )
 
-    # Auth settings
+    # ===== AUDIT TRAIL CONFIGURATION =====
+    audit_backend: str = Field(
+        alias="AUDIT_BACKEND",
+        default="memory",
+        description="Audit backend (memory, external)",
+    )
+    audit_max_entries: int = Field(
+        alias="AUDIT_MAX_ENTRIES",
+        default=10000,
+        description="Maximum number of audit log entries",
+    )
+    audit_external_url: str = Field(
+        alias="AUDIT_EXTERNAL_URL", default="", description="External audit service URL"
+    )
+    # PII Protection settings
+    audit_mask_pii: bool = Field(
+        alias="AUDIT_MASK_PII",
+        default=True,
+        description="Enable PII masking in audit logs",
+    )
+    audit_mask_emails: bool = Field(
+        alias="AUDIT_MASK_EMAILS",
+        default=True,
+        description="Mask email addresses in audit logs",
+    )
+    audit_mask_names: bool = Field(
+        alias="AUDIT_MASK_NAMES",
+        default=True,
+        description="Mask personal names in audit logs",
+    )
+    audit_mask_ip_addresses: bool = Field(
+        alias="AUDIT_MASK_IP_ADDRESSES",
+        default=False,
+        description="Mask IP addresses in audit logs (disabled by default for security)",
+    )
+
+    # ===== AUTH CONFIGURATION =====
     auth_enabled: bool = Field(
         alias="AUTH_ENABLED",
         default=True,
@@ -204,7 +111,6 @@ class Settings(BaseSettings):
         default=True,
         description="Enable access audit logging",
     )
-
     # OIDC settings
     auth_oidc_issuer: str = Field(
         alias="AUTH_OIDC_ISSUER",
@@ -217,47 +123,32 @@ class Settings(BaseSettings):
         description="OIDC audience (API identifier)",
     )
 
-    # Client credentials (individual environment variables)
-    auth_cc_service_a_client_id: str = Field(
-        alias="AUTH_CC_SERVICE_A_CLIENT_ID",
-        default="",
-        description="Client ID for service A",
+    # ===== PROMPT CACHE CONFIGURATION =====
+    cache_enabled: bool = Field(
+        alias="CACHE_ENABLED",
+        default=True,
+        description="Enable response caching to reduce LLM calls (default: True)",
     )
-    auth_cc_service_a_client_secret: str = Field(
-        alias="AUTH_CC_SERVICE_A_CLIENT_SECRET",
-        default="",
-        description="Client secret for service A",
+    cache_max_size: int = Field(
+        alias="CACHE_MAX_SIZE",
+        default=1000,
+        description="Maximum number of cache entries (default: 1000)",
     )
-    auth_cc_service_b_client_id: str = Field(
-        alias="AUTH_CC_SERVICE_B_CLIENT_ID",
-        default="",
-        description="Client ID for service B",
+    cache_ttl_hours: int = Field(
+        alias="CACHE_TTL_HOURS",
+        default=1,
+        description="Cache time-to-live in hours (default: 1)",
     )
-    auth_cc_service_b_client_secret: str = Field(
-        alias="AUTH_CC_SERVICE_B_CLIENT_SECRET",
-        default="",
-        description="Client secret for service B",
-    )
-
-    # Cache settings
     cache_backend: str = Field(
         alias="CACHE_BACKEND",
         default="memory",
         description="Cache backend (memory, redis)",
     )
-    cache_max_size: int = Field(
-        alias="CACHE_MAX_SIZE",
-        default=1000,
-        description="Maximum number of cache entries",
-    )
-    cache_ttl_hours: int = Field(
-        alias="CACHE_TTL_HOURS", default=1, description="Cache TTL in hours"
-    )
     cache_redis_url: str = Field(
         alias="CACHE_REDIS_URL", default="", description="Redis URL for cache backend"
-    )
+    )    
 
-    # Checkpointing settings
+    # ===== CHECKPOINTING CONFIGURATION =====
     checkpointing_backend: str = Field(
         alias="CHECKPOINTING_BACKEND",
         default="memory",
@@ -279,71 +170,110 @@ class Settings(BaseSettings):
         description="Redis URL for checkpointing backend",
     )
 
-    # Audit settings
-    audit_backend: str = Field(
-        alias="AUDIT_BACKEND",
-        default="memory",
-        description="Audit backend (memory, external)",
+    # ===== MODEL CONFIGURATION =====
+    default_model_id: str = Field(
+        alias="MODEL_ID",
+        default=OPENAI_GPT_41,
+        description=f"Default model ID for API calls (default: {OPENAI_GPT_41})",
     )
-    audit_max_entries: int = Field(
-        alias="AUDIT_MAX_ENTRIES",
-        default=10000,
-        description="Maximum number of audit log entries",
+    default_model_platform: str = Field(
+        alias="MODEL_PLATFORM",
+        default=OPENAI_PLATFORM,
+        description=f"Default model platform (default: {OPENAI_PLATFORM})",
+        examples=["aws_bedrock", "ollama"],
     )
-    audit_external_url: str = Field(
-        alias="AUDIT_EXTERNAL_URL", default="", description="External audit service URL"
+    default_model_temperature: float = Field(
+        alias="MODEL_TEMPERATURE",
+        default=0.0,
+        description="Default model temperature for response generation",
     )
-
-    # PII Protection settings
-    audit_mask_pii: bool = Field(
-        alias="AUDIT_MASK_PII",
-        default=True,
-        description="Enable PII masking in audit logs",
+    default_model_max_tokens: int | None = Field(
+        alias="MODEL_MAX_TOKENS",
+        default=None,
+        description="Maximum tokens for model responses (optional)",
     )
-    audit_mask_emails: bool = Field(
-        alias="AUDIT_MASK_EMAILS",
-        default=True,
-        description="Mask email addresses in audit logs",
-    )
-    audit_mask_names: bool = Field(
-        alias="AUDIT_MASK_NAMES",
-        default=True,
-        description="Mask personal names in audit logs",
-    )
-    audit_mask_ip_addresses: bool = Field(
-        alias="AUDIT_MASK_IP_ADDRESSES",
+    cross_process_rate_limiter_enabled: bool = Field(
+        alias="CROSS_PROCESS_RATE_LIMITER_ENABLED",
         default=False,
-        description="Mask IP addresses in audit logs (disabled by default for security)",
+        description="Enable cross-process rate limiting for LLM API calls (useful for parallel testing)",
     )
 
-    # Thread access control settings
-    thread_access_control_backend: str = Field(
-        alias="THREAD_ACCESS_CONTROL_BACKEND",
+    # Ollama configuration
+    ollama_base_url: str = Field(
+        alias="NALAI_OLLAMA_BASE_URL",
+        default="http://localhost:11434",
+        description="Base URL for Ollama service",
+    )
+
+    # AWS Bedrock configuration
+    aws_access_key_id: str | None = Field(
+        alias="AWS_ACCESS_KEY_ID",
+        default=None,
+        description="AWS access key ID (optional if using AWS profile)",
+    )
+    aws_secret_access_key: str | None = Field(
+        alias="AWS_SECRET_ACCESS_KEY",
+        default=None,
+        description="AWS secret access key (optional if using AWS profile)",
+    )
+    aws_default_region: str = Field(
+        alias="AWS_DEFAULT_REGION",
+        default="us-east-1",
+        description="AWS default region for Bedrock services",
+    )
+    aws_bedrock_retry_max_attempts: int = Field(
+        alias="AWS_BEDROCK_RETRY_MAX_ATTEMPTS",
+        default=4,
+        description="Maximum retry attempts for AWS Bedrock API calls",
+    )
+
+    # ===== CONVERSATION CONFIGURATION =====
+    chat_thread_compression_trigger_percentage: int = Field(
+        alias="CHAT_THREAD_COMPRESSION_TRIGGER_PERCENTAGE",
+        default=95,
+        description="Context window saturation percentage that triggers conversation history compression",
+    )
+
+    # ===== THREAD ACCESS CONTROL CONFIGURATION =====
+    chat_thread_access_control_backend: str = Field(
+        alias="CHAT_THREAD_ACCESS_CONTROL_BACKEND",
         default="memory",
         description="Thread access control backend (memory, redis)",
     )
+
+    # ===== API DOCS CONFIGURATION =====
+    api_specs_path: str = Field(
+        alias="API_SPECS_PATH",
+        default="data/api_specs",
+        description="Directory containing API specification files",
+    )
+
+    # ===== TOOLS CONFIGURATION =====
+    api_calls_enabled: bool = Field(
+        alias="API_CALLS_ENABLED",
+        default=False,
+        description="Enable actual HTTP API calls (default: False for safety)",
+    )
+    api_calls_allowed_urls: str = Field(
+        alias="API_CALLS_ALLOWED_URLS",
+        default="http://ecommerce-mock:8000,http://localhost:8000,http://localhost:8001",
+        description="Comma-separated list of allowed base URLs for API calls when enabled",
+    )
+
+    @property
+    def api_calls_allowed_urls_list(self) -> list[str]:
+        """Get allowed API URLs as a list."""
+        if not self.api_calls_allowed_urls.strip():
+            return []
+        return [
+            url.strip() for url in self.api_calls_allowed_urls.split(",") if url.strip()
+        ]
+
 
     class Config:
         env_file = dotenv.find_dotenv()
         env_file_encoding = "utf-8"
         extra = "allow"  # Allow extra environment variables
-
-    @property
-    def client_credentials(self) -> dict[str, dict]:
-        """Build client credentials from individual env vars (transparent configuration)"""
-        creds = {}
-        if self.auth_cc_service_a_client_id:
-            creds["service_a"] = {
-                "client_id": self.auth_cc_service_a_client_id,
-                "client_secret": self.auth_cc_service_a_client_secret,
-            }
-        if self.auth_cc_service_b_client_id:
-            creds["service_b"] = {
-                "client_id": self.auth_cc_service_b_client_id,
-                "client_secret": self.auth_cc_service_b_client_secret,
-            }
-        return creds
-
 
 settings = Settings()
 

@@ -61,7 +61,7 @@ ls -la data/api_specs/
 ### Authentication
 ```bash
 # Development mode
-export DISABLE_AUTH=true
+export AUTH_ENABLED=false
 
 # Production
 export AUTH_OIDC_ISSUER=https://your-domain.auth0.com/

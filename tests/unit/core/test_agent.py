@@ -185,7 +185,7 @@ class TestAPIAgent:
 
         # Mock settings for tool recognition
         with patch("nalai.core.agent.settings") as mock_settings:
-            mock_settings.enable_api_calls = True
+            mock_settings.api_calls_enabled = True
             result = assistant.determine_workflow_action(state)
             expected = (
                 END if case_data["expected"] == "__end__" else case_data["expected"]
@@ -222,7 +222,7 @@ class TestAPIAgent:
         mock_config,
     ):
         """Test model response generation with API calls disabled."""
-        mock_settings.enable_api_calls = False
+        mock_settings.api_calls_enabled = False
         mock_prompt = MagicMock()
         mock_prompt.invoke.return_value = "test prompt"
 
@@ -269,7 +269,7 @@ class TestAPIAgent:
         mock_config,
     ):
         """Test model response generation with API calls enabled."""
-        mock_settings.enable_api_calls = True
+        mock_settings.api_calls_enabled = True
         mock_prompt = MagicMock()
         mock_prompt.invoke.return_value = "test prompt"
 

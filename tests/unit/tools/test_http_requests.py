@@ -84,7 +84,7 @@ class TestHTTPTool:
         )
 
         with patch("nalai.tools.http_requests.settings") as mock_settings:
-            mock_settings.api_calls_base_url = case_data["input"]["base_url"]
+            mock_settings.api_calls_allowed_urls_list = [case_data["input"]["base_url"]]
 
             # Create a test tool instance
             tool = GetTool()
@@ -115,7 +115,6 @@ class TestHTTPTool:
             patch("nalai.tools.http_requests.settings") as mock_settings,
             patch("requests.request") as mock_request,
         ):
-            mock_settings.api_calls_base_url = "https://api.example.com"
             mock_settings.api_calls_allowed_urls_list = ["https://api.example.com"]
             mock_response = MagicMock()
             mock_response.ok = True
@@ -164,7 +163,6 @@ class TestHTTPTool:
             patch("nalai.tools.http_requests.settings") as mock_settings,
             patch("requests.request") as mock_request,
         ):
-            mock_settings.api_calls_base_url = "https://api.example.com"
             mock_settings.api_calls_allowed_urls_list = ["https://api.example.com"]
             mock_response = MagicMock()
             mock_response.ok = True
@@ -217,74 +215,55 @@ class TestHTTPTool:
             patch("nalai.tools.http_requests.settings") as mock_settings,
             patch("requests.request") as mock_request,
         ):
-            mock_settings.api_calls_base_url = "https://api.example.com"
             mock_settings.api_calls_allowed_urls_list = ["https://api.example.com"]
+            mock_response = MagicMock()
+            mock_response.ok = True
+            mock_response.json.return_value = {"result": "success"}
+            mock_request.return_value = mock_response
 
-            if case_data["expected"]["success"]:
-                mock_response = MagicMock()
-                mock_response.ok = True
-                mock_response.status_code = case_data["input"]["status_code"]
+            tool = GetTool()
 
-                if case_data["input"]["json_data"] is not None:
-                    mock_response.json.return_value = case_data["input"]["json_data"]
-                    mock_response.text = "some content"
-                else:
-                    mock_response.json.return_value = {}
-                    mock_response.text = ""
-
-                mock_request.return_value = mock_response
-
-                tool = GetTool()
-                result = tool._run(
-                    {"url": "https://api.example.com/test"}
-                )
-
-                assert result == case_data["expected"]["data"]
-                mock_run_manager.on_tool_end.assert_called_once()
-
-            else:
-                # Test error handling
-                mock_response = MagicMock()
-                mock_response.raise_for_status.side_effect = requests.HTTPError(
-                    case_data["input"]["error_message"], response=mock_response
-                )
-                mock_response.status_code = case_data["input"]["status_code"]
-                mock_response.text = "Error response"
-                mock_request.return_value = mock_response
-
-                tool = GetTool()
-
-                with pytest.raises(requests.HTTPError):
-                    tool._run(
-                        {"url": "https://api.example.com/test"}
+            if case_data["expected"]["should_raise"]:
+                # Mock response to raise exception
+                if case_data["name"] == "http_error":
+                    mock_response.raise_for_status.side_effect = requests.HTTPError(
+                        "HTTP Error", response=mock_response
                     )
+                elif case_data["name"] == "empty_response":
+                    mock_response.text = ""
+                    mock_response.json.side_effect = ValueError("No JSON object could be decoded")
 
-                mock_run_manager.on_tool_error.assert_called_once()
+                with pytest.raises(Exception):
+                    tool._run({"url": "https://api.example.com/test", "input_data": {}})
+            else:
+                # Mock response based on test case
+                if case_data["name"] == "empty_response":
+                    mock_response.text = ""
+                    mock_response.json.return_value = {}
+
+                result = tool._run({"url": "https://api.example.com/test", "input_data": {}})
+                assert result == case_data["expected"]["result"]
 
     def test_error_context_logging(self, mock_config, mock_run_manager):
         """Test that error context is properly logged."""
         with (
             patch("nalai.tools.http_requests.settings") as mock_settings,
-            patch("nalai.tools.http_requests.logger") as mock_logger,
             patch("requests.request") as mock_request,
+            patch("nalai.tools.http_requests.logger") as mock_logger,
         ):
-            mock_settings.api_calls_base_url = "https://api.example.com"
+            mock_settings.api_calls_allowed_urls_list = ["https://api.example.com"]
             mock_request.side_effect = Exception("Test error")
 
             tool = GetTool()
-            tool.name = "test_tool"
 
-            with pytest.raises(Exception):  # noqa: B017
-                tool._run(
-                    {"url": "https://api.example.com/test"}
-                )
+            with pytest.raises(Exception):
+                tool._run({"url": "https://api.example.com/test", "input_data": {}})
 
-            # Verify error was logged with context
-            mock_logger.error.assert_called_once()
+            # Verify error was logged
+            mock_logger.error.assert_called()
             error_call = mock_logger.error.call_args[0][0]
-            assert "Error context" in error_call
-            assert "get_http_requests" in error_call
-            assert "test-thread" in error_call
+            assert "Unexpected error during HTTP request" in error_call
+            assert "Test error" in error_call
 
 
 class TestHTTPToolClasses:

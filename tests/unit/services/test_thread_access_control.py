@@ -435,7 +435,7 @@ class TestThreadAccessControlGlobal:
     def mock_settings(self):
         """Mock settings for testing."""
         with patch("nalai.services.thread_access_control.settings") as mock_settings:
-            mock_settings.thread_access_control_backend = "memory"
+            mock_settings.chat_thread_access_control_backend = "memory"
             yield mock_settings
 
     def test_get_thread_access_control_singleton(self, mock_settings):

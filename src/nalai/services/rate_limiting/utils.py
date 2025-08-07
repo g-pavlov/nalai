@@ -97,7 +97,7 @@ def is_test_environment() -> bool:
         "pytest" in sys.modules
         or "test" in sys.argv[0]
         or "deepeval" in sys.modules
-        or settings.enable_cross_process_rate_limiter
+        or settings.cross_process_rate_limiter_enabled
     )
     _write_debug_message(
         f"Test environment check: pytest={bool('pytest' in sys.modules)}, test={bool('test' in sys.argv[0])}, deepeval={bool('deepeval' in sys.modules)}, xproc={settings.enable_cross_process_rate_limiter}, result={result}"
@@ -108,7 +108,7 @@ def is_test_environment() -> bool:
 def get_default_rate_limiter_class() -> type[RateLimiterInterface]:
     """Get the default rate limiter class based on the environment."""
     is_test = is_test_environment()
-    enable_cross_process = settings.enable_cross_process_rate_limiter
+    enable_cross_process = settings.cross_process_rate_limiter_enabled
     _write_debug_message(
         f"Getting rate limiter class: is_test={is_test}, enable_cross_process={enable_cross_process}"
     )

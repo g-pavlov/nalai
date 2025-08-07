@@ -36,7 +36,7 @@ class TestAuthService:
     def mock_settings(self):
         """Mock settings for testing."""
         with patch("nalai.services.auth_service.settings") as mock_settings:
-            mock_settings.disable_auth = False
+            mock_settings.auth_enabled = True
             mock_settings.auth_validate_tokens = True
             mock_settings.auth_provider = "standard"
             mock_settings.auth_mode = "client_credentials"
@@ -215,7 +215,7 @@ class TestAuthService:
     async def test_authenticate_request_development_mode(self, mock_request):
         """Test authentication in development mode."""
         with patch("nalai.services.auth_service.settings") as mock_settings:
-            mock_settings.disable_auth = True
+            mock_settings.auth_enabled = False
 
             auth_service = StandardAuthService({})
             identity = await auth_service.authenticate_request(mock_request)

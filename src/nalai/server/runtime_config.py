@@ -77,7 +77,7 @@ def add_auth_token_to_config(config: dict | None, req: Request) -> dict:
     configurable = _ensure_configurable(config)
 
     # Check if auth is disabled for development
-    if settings.disable_auth:
+    if not settings.auth_enabled:
         logger.warning(
             "AUTH DISABLED: Using development mode - no authorization required"
         )
