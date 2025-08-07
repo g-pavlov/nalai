@@ -17,7 +17,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.server.middleware import (
+from nalai.server.middleware import (
     create_audit_middleware,
     create_auth_middleware,
     create_log_request_middleware,
@@ -26,7 +26,7 @@ from api_assistant.server.middleware import (
     get_user_context,
     is_request_processable,
 )
-from api_assistant.server.models.identity import IdentityContext, UserContext
+from nalai.server.models.identity import IdentityContext, UserContext
 
 
 class TestRequestProcessing:
@@ -103,7 +103,7 @@ class TestLogRequestMiddleware:
         call_next = AsyncMock(return_value=mock_response)
         middleware = create_log_request_middleware(excluded_paths)
 
-        with patch("api_assistant.server.middleware.logger") as mock_logger:
+        with patch("nalai.server.middleware.logger") as mock_logger:
             result = await middleware(mock_request, call_next)
 
             assert result == mock_response
@@ -129,7 +129,7 @@ class TestLogRequestMiddleware:
         call_next = AsyncMock(return_value=mock_response)
         middleware = create_log_request_middleware()
 
-        with patch("api_assistant.server.middleware.logger") as mock_logger:
+        with patch("nalai.server.middleware.logger") as mock_logger:
             result = await middleware(request, call_next)
 
             assert result == mock_response
@@ -179,14 +179,12 @@ class TestAuthMiddleware:
         call_next = AsyncMock(return_value=mock_response)
         middleware = create_auth_middleware(excluded_paths)
 
-        with patch(
-            "api_assistant.services.auth_service.get_auth_service"
-        ) as mock_get_auth:
+        with patch("nalai.services.auth_service.get_auth_service") as mock_get_auth:
             mock_auth_service = AsyncMock()
             mock_auth_service.authenticate_request.return_value = mock_identity
             mock_get_auth.return_value = mock_auth_service
 
-            with patch("api_assistant.server.middleware.logger") as mock_logger:
+            with patch("nalai.server.middleware.logger") as mock_logger:
                 result = await middleware(mock_request, call_next)
 
                 assert result == mock_response
@@ -207,16 +205,14 @@ class TestAuthMiddleware:
         call_next = AsyncMock(return_value=mock_response)
         middleware = create_auth_middleware()
 
-        with patch(
-            "api_assistant.services.auth_service.get_auth_service"
-        ) as mock_get_auth:
+        with patch("nalai.services.auth_service.get_auth_service") as mock_get_auth:
             mock_auth_service = AsyncMock()
             mock_auth_service.authenticate_request.side_effect = Exception(
                 "Auth failed"
             )
             mock_get_auth.return_value = mock_auth_service
 
-            with patch("api_assistant.server.middleware.logger") as mock_logger:
+            with patch("nalai.server.middleware.logger") as mock_logger:
                 with pytest.raises(HTTPException) as exc_info:
                     await middleware(mock_request, call_next)
 
@@ -277,13 +273,11 @@ class TestAuditMiddleware:
         call_next = AsyncMock(return_value=mock_response)
         middleware = create_audit_middleware(excluded_paths)
 
-        with patch(
-            "api_assistant.services.audit_service.get_audit_service"
-        ) as mock_get_audit:
+        with patch("nalai.services.audit_service.get_audit_service") as mock_get_audit:
             mock_audit_service = AsyncMock()
             mock_get_audit.return_value = mock_audit_service
 
-            with patch("api_assistant.server.middleware.logger") as _mock_logger:  # noqa: F841
+            with patch("nalai.server.middleware.logger") as _mock_logger:  # noqa: F841
                 result = await middleware(mock_request, call_next)
 
                 assert result == mock_response
@@ -302,14 +296,12 @@ class TestAuditMiddleware:
         call_next = AsyncMock(return_value=mock_response)
         middleware = create_audit_middleware()
 
-        with patch(
-            "api_assistant.services.audit_service.get_audit_service"
-        ) as mock_get_audit:
+        with patch("nalai.services.audit_service.get_audit_service") as mock_get_audit:
             mock_audit_service = AsyncMock()
             mock_audit_service.log_request_start.side_effect = Exception("Audit failed")
             mock_get_audit.return_value = mock_audit_service
 
-            with patch("api_assistant.server.middleware.logger") as _mock_logger:  # noqa: F841
+            with patch("nalai.server.middleware.logger") as _mock_logger:  # noqa: F841
                 result = await middleware(mock_request, call_next)
 
                 # Should still process request even if audit fails
@@ -377,13 +369,11 @@ class TestUserContextMiddleware:
         else:
             mock_request.state.identity = None
 
-        with patch(
-            "api_assistant.server.middleware.extract_user_context"
-        ) as mock_extract:
+        with patch("nalai.server.middleware.extract_user_context") as mock_extract:
             mock_user_context = MagicMock(spec=UserContext)
             mock_extract.return_value = mock_user_context
 
-            with patch("api_assistant.server.middleware.logger") as _mock_logger:  # noqa: F841
+            with patch("nalai.server.middleware.logger") as _mock_logger:  # noqa: F841
                 result = await middleware(mock_request, call_next)
 
                 assert result == mock_response
@@ -410,12 +400,10 @@ class TestUserContextMiddleware:
         # Simulate error in context extraction
         mock_request.state.identity = None
 
-        with patch(
-            "api_assistant.server.middleware.extract_user_context"
-        ) as mock_extract:
+        with patch("nalai.server.middleware.extract_user_context") as mock_extract:
             mock_extract.side_effect = Exception("Context extraction failed")
 
-            with patch("api_assistant.server.middleware.logger") as _mock_logger:  # noqa: F841
+            with patch("nalai.server.middleware.logger") as _mock_logger:  # noqa: F841
                 result = await middleware(mock_request, call_next)
 
                 # Should still process request even if context extraction fails
@@ -470,9 +458,7 @@ class TestUserContextUtilities:
             "User-Agent": "test-agent",
         }
 
-        with patch(
-            "api_assistant.services.auth_service.get_auth_service"
-        ) as mock_get_auth:
+        with patch("nalai.services.auth_service.get_auth_service") as mock_get_auth:
             mock_auth_service = AsyncMock()
             mock_auth_service.authenticate_request.return_value = mock_identity
             mock_get_auth.return_value = mock_auth_service

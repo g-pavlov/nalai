@@ -9,13 +9,16 @@ and measuring response times to verify cache hits.
 import time
 from typing import Any
 
+import pytest
 import requests
 
 
+@pytest.mark.integration
 def test_cache_integration():
     """Test cache integration with a running server."""
 
     base_url = "http://localhost:8000"
+    timeout = 5  # 5 second timeout for requests
 
     # Test prompts that should generate responses with content
     test_cases = [
@@ -49,16 +52,28 @@ def test_cache_integration():
         """Make a request to the API assistant."""
         payload = {"input": {"messages": [{"content": prompt, "type": "human"}]}}
 
-        response = requests.post(
-            f"{base_url}/nalai/invoke",
-            json=payload,
-            headers={"Content-Type": "application/json"},
-        )
+        try:
+            response = requests.post(
+                f"{base_url}/nalai/invoke",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=timeout,
+            )
 
-        if response.status_code != 200:
-            raise Exception(f"Request failed: {response.status_code} - {response.text}")
+            if response.status_code != 200:
+                raise Exception(
+                    f"Request failed: {response.status_code} - {response.text}"
+                )
 
-        return response.json()
+            return response.json()
+        except requests.exceptions.Timeout:
+            pytest.skip(
+                f"Server at {base_url} is not responding (timeout after {timeout}s)"
+            )
+        except requests.exceptions.ConnectionError:
+            pytest.skip(
+                f"Cannot connect to server at {base_url}. Make sure the server is running with: make serve"
+            )
 
     def test_cache_hits(test_case: dict[str, Any]):
         """Test cache hits for a set of similar prompts."""
@@ -189,11 +204,10 @@ def test_cache_integration():
     print("=" * 60)
 
     try:
-        # Check server health
-        health_response = requests.get(f"{base_url}/healthz")
+        # Check server health with timeout
+        health_response = requests.get(f"{base_url}/healthz", timeout=timeout)
         if health_response.status_code != 200:
-            print(f"❌ Server not healthy: {health_response.status_code}")
-            return
+            pytest.skip(f"Server not healthy: {health_response.status_code}")
 
         print("✅ Server is healthy and ready for testing")
 
@@ -233,11 +247,16 @@ def test_cache_integration():
 
         print("\n🎉 Cache integration test completed!")
 
+    except requests.exceptions.Timeout:
+        pytest.skip(
+            f"Server at {base_url} is not responding (timeout after {timeout}s)"
+        )
     except requests.exceptions.ConnectionError:
-        print(f"❌ Cannot connect to server at {base_url}")
-        print("Make sure the server is running with: make serve")
+        pytest.skip(
+            f"Cannot connect to server at {base_url}. Make sure the server is running with: make serve"
+        )
     except Exception as e:
-        print(f"❌ Test failed with error: {e}")
+        pytest.fail(f"Test failed with error: {e}")
 
 
 if __name__ == "__main__":

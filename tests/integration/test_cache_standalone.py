@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from langchain_core.messages import HumanMessage
 
-from api_assistant.services.cache_service import (
+from nalai.services.cache_service import (
     CacheService,
     TokenSimilarityMatcher,
 )

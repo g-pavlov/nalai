@@ -7,7 +7,7 @@ services:
       - "8000:8080"
     volumes:
       # Development: Mount source code for hot reload
-      - ./src/api_assistant:/app/api_assistant
+      - ./src/nalai:/app/nalai
       # Production-like: Mount logs and data
       - ./logs:/app/logs
       - ./data:/app/data

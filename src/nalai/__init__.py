@@ -1,5 +1,5 @@
 """
-API Assistant - Conversational AI agent for API integration and testing.
+nalAI - Conversational AI agent for API integration and testing.
 
 A comprehensive toolkit for building AI-powered API assistants that can:
 - Analyze API specifications and select relevant endpoints
@@ -9,7 +9,7 @@ A comprehensive toolkit for building AI-powered API assistants that can:
 - Provide structured responses with examples and guidelines
 
 Key components:
-- APIAssistant: Main agent class for orchestrating API interactions
+- APIAgent: Main agent class for orchestrating API interactions
 - AgentState: Typed state management for conversation flow
 - ConfigSchema: Configuration models for model and runtime settings
 - HTTP tools: Complete HTTP client toolkit with safety features
@@ -17,7 +17,7 @@ Key components:
 - Server: FastAPI server with streaming and authentication support
 """
 
-from .core.agent import APIAssistant
+from .core.agent import APIAgent
 from .core.schemas import (
     AgentState,
     ConfigSchema,
@@ -29,7 +29,7 @@ from .core.schemas import (
 )
 
 __all__ = [
-    "APIAssistant",
+    "APIAgent",
     "AgentState",
     "ConfigSchema",
     "InputSchema",

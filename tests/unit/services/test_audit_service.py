@@ -17,7 +17,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.services.audit_service import (
+from nalai.services.audit_service import (
     AuditBackend,
     AuditService,
     ExternalAuditBackend,
@@ -368,7 +368,7 @@ class TestAuditService:
 
     def test_external_backend_not_implemented(self):
         """Test that external backend raises NotImplementedError."""
-        with patch("api_assistant.services.audit_service.settings") as mock_settings:
+        with patch("nalai.services.audit_service.settings") as mock_settings:
             mock_settings.audit_external_url = "http://audit-service:8080"
 
             with pytest.raises(NotImplementedError):
@@ -381,7 +381,7 @@ class TestAuditServiceGlobal:
     @pytest.fixture
     def mock_settings(self):
         """Mock settings for testing."""
-        with patch("api_assistant.services.audit_service.settings") as mock_settings:
+        with patch("nalai.services.audit_service.settings") as mock_settings:
             mock_settings.audit_backend = "memory"
             yield mock_settings
 

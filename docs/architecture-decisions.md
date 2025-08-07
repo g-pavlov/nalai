@@ -33,7 +33,7 @@ API specifications and guidelines change frequently, but rebuilding containers f
 ./data/api_specs/api_summaries.yaml
 
 # Or set custom path
-API_SPECS_PATH=./custom_specs python -m api_assistant.server
+API_SPECS_PATH=./custom_specs python -m nalai.server
 ```
 
 #### **Production Deployment**
@@ -76,7 +76,7 @@ python -c "import yaml; yaml.safe_load(open('data/api_specs/api_summaries.yaml')
 ### **The Result**
 **Simple, flexible, and reliable** data management that scales from development to production with minimal complexity.
 
-**Implementation**: `src/api_assistant/services/api_docs_service.py` and `src/api_assistant/config.py`
+**Implementation**: `src/nalai/services/api_docs_service.py` and `src/nalai/config.py`
 
 ## LangGraph Workflow Architecture
 
@@ -110,7 +110,7 @@ Building complex AI workflows with state management, human-in-the-loop review, a
 ```python
 # Create and compile workflow with checkpointing
 memory_store = MemorySaver()
-agent = APIAssistant()
+    agent = APIAgent()
 workflow = create_and_compile_workflow(agent, memory_store)
 
 # Visualize workflow structure
@@ -160,7 +160,7 @@ async for event in workflow.astream_events(input_data, config):
 ### **The Result**
 **Intelligent, stateful, and human-in-the-loop** workflow orchestration that scales from simple conversations to complex multi-step API integrations.
 
-**Implementation**: `src/api_assistant/core/workflow.py` and `src/api_assistant/core/agent.py`
+**Implementation**: `src/nalai/core/workflow.py` and `src/nalai/core/agent.py`
 
 ## Service Layer Architecture
 
@@ -254,11 +254,11 @@ audit_stats = await audit_service.get_stats()
 **Modular, testable, and production-ready** service architecture that scales from development to enterprise deployments with minimal configuration complexity.
 
 **Implementation**: 
-- Auth: `src/api_assistant/services/auth_service.py`
-- Cache: `src/api_assistant/services/cache_service.py`
-- Audit: `src/api_assistant/services/audit_service.py`
-- Checkpointing: `src/api_assistant/services/checkpointing_service.py`
-- Thread Access: `src/api_assistant/services/thread_access_control.py`
+- Auth: `src/nalai/services/auth_service.py`
+- Cache: `src/nalai/services/cache_service.py`
+- Audit: `src/nalai/services/audit_service.py`
+- Checkpointing: `src/nalai/services/checkpointing_service.py`
+- Thread Access: `src/nalai/services/thread_access_control.py`
 
 ## Access Control Architecture
 
@@ -356,7 +356,7 @@ await audit_service.log_thread_access(user_id, thread_id, "create", success=True
 ### **The Result**
 **Secure, scalable, and developer-friendly** access control that works seamlessly from development to enterprise production environments.
 
-**Implementation**: `src/api_assistant/services/thread_access_control.py` and `src/api_assistant/server/runtime_config.py`
+**Implementation**: `src/nalai/services/thread_access_control.py` and `src/nalai/server/runtime_config.py`
 
 **Related Documentation**: See [Access Control Architecture](access-control-architecture.md) for detailed implementation and [Security Overview](security.md) for compliance details.
 
@@ -449,7 +449,7 @@ if not is_safe_tool(tool_call_name):
 ### **The Result**
 **Safe, extensible, and human-in-the-loop** tool system that provides powerful API integration capabilities while maintaining security and oversight.
 
-**Implementation**: `src/api_assistant/tools/http_requests.py`
+**Implementation**: `src/nalai/tools/http_requests.py`
 
 ---
 

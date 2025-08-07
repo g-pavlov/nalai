@@ -1,5 +1,4 @@
 import logging
-import traceback
 from datetime import UTC, datetime
 
 import requests
@@ -99,32 +98,127 @@ def http_request_tool(method: str, is_safe: bool, name: str, description: str):
                     "response_body": getattr(e.response, "text", None),
                 }
             )
-            logger.error(f"HTTP request failedError context: {error_context}")
+            logger.error(f"HTTP error during request. Error context: {error_context}")
             if run_manager:
-                run_manager.on_tool_error(error=e)
-            raise
+                run_manager.on_tool_error(e)
+            raise e
         except Exception as e:
             error_context.update(
                 {
                     "error_type": type(e).__name__,
                     "error_message": str(e),
-                    "stack_trace": traceback.format_exc(),
                 }
             )
             logger.error(
                 f"Unexpected error during HTTP request. Error context: {error_context}"
             )
             if run_manager:
-                run_manager.on_tool_error(error=e)
-            raise
+                run_manager.on_tool_error(e)
+            raise e
 
     return StructuredTool.from_function(
         func=_http_request,
         name=name,
         description=description,
         args_schema=HTTPToolArgs,
-        return_type=dict,
     )
+
+
+# Create individual tool classes for backward compatibility with tests
+class GetTool:
+    """GET HTTP tool."""
+
+    def __init__(self):
+        self.method = "GET"
+        self.name = "get_http_requests"
+        self.description = "Handles GET requests to retrieve data from the specified URL. Use this for reading information without modifying any data."
+        self._run = http_request_tool(
+            "GET", True, "get_http_requests", self.description
+        )
+
+
+class PostTool:
+    """POST HTTP tool."""
+
+    def __init__(self):
+        self.method = "POST"
+        self.name = "post_http_requests"
+        self.description = "Handles POST requests to create new resources or submit data to the specified URL. Use this for creating new items or submitting forms."
+        self._run = http_request_tool(
+            "POST", False, "post_http_requests", self.description
+        )
+
+
+class PutTool:
+    """PUT HTTP tool."""
+
+    def __init__(self):
+        self.method = "PUT"
+        self.name = "put_http_requests"
+        self.description = "Handles PUT requests to update or replace existing resources at the specified URL. Use this for completely replacing an existing item."
+        self._run = http_request_tool(
+            "PUT", False, "put_http_requests", self.description
+        )
+
+
+class DeleteTool:
+    """DELETE HTTP tool."""
+
+    def __init__(self):
+        self.method = "DELETE"
+        self.name = "delete_http_requests"
+        self.description = "Handles DELETE requests to remove resources at the specified URL. Use this for deleting items or resources."
+        self._run = http_request_tool(
+            "DELETE", False, "delete_http_requests", self.description
+        )
+
+
+class HeadTool:
+    """HEAD HTTP tool."""
+
+    def __init__(self):
+        self.method = "HEAD"
+        self.name = "head_http_requests"
+        self.description = "Handles HEAD requests"
+        self._run = http_request_tool(
+            "HEAD", True, "head_http_requests", self.description
+        )
+
+
+class OptionsTool:
+    """OPTIONS HTTP tool."""
+
+    def __init__(self):
+        self.method = "OPTIONS"
+        self.name = "options_http_requests"
+        self.description = "Handles OPTIONS requests"
+        self._run = http_request_tool(
+            "OPTIONS", True, "options_http_requests", self.description
+        )
+
+
+class PatchTool:
+    """PATCH HTTP tool."""
+
+    def __init__(self):
+        self.method = "PATCH"
+        self.name = "patch_http_requests"
+        self.description = "Handles PATCH requests"
+        self._run = http_request_tool(
+            "PATCH", False, "patch_http_requests", self.description
+        )
+
+
+class TraceTool:
+    """TRACE HTTP tool."""
+
+    def __init__(self):
+        self.method = "TRACE"
+        self.name = "trace_http_requests"
+        self.description = "Handles TRACE requests"
+        self._run = http_request_tool(
+            "TRACE", True, "trace_http_requests", self.description
+        )
 
 
 class HttpRequestsToolkit(BaseToolkit):
@@ -196,11 +290,7 @@ class HttpRequestsToolkit(BaseToolkit):
     )
 
     def get_tools(self):
-        """Returns a list of all HTTP tools in the toolkit.
-
-        Returns:
-            list: A list containing instances of all HTTP tools.
-        """
+        """Get all HTTP tools."""
         return [
             self.get_tool,
             self.post_tool,
@@ -213,10 +303,7 @@ class HttpRequestsToolkit(BaseToolkit):
         ]
 
     def is_safe_tool(self, tool_name: str) -> bool:
-        """
-        Returns True if the tool with the given name is marked as safe.
-        """
-        # Define safe tools explicitly since the is_safe attribute is not set on StructuredTool
+        """Check if a tool is safe (read-only)."""
         safe_tools = {
             "get_http_requests",
             "head_http_requests",

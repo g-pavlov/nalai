@@ -1,5 +1,5 @@
 """
-Unit tests for APIAssistant core agent functionality.
+Unit tests for APIAgent core agent functionality.
 
 Tests cover agent initialization, response parsing, template formatting,
 API selection, workflow actions, and model response generation.
@@ -21,20 +21,20 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.core.agent import APIAssistant
-from api_assistant.core.constants import (
+from nalai.core.agent import APIAgent
+from nalai.core.constants import (
     NODE_CALL_MODEL,
     NODE_SELECT_RELEVANT_APIS,
 )
-from api_assistant.core.schemas import AgentState, SelectApi, SelectedApis
-from api_assistant.prompts.prompts import format_template_with_variables
-from api_assistant.services.model_service import ModelService
+from nalai.core.schemas import AgentState, SelectApi, SelectedApis
+from nalai.prompts.prompts import format_template_with_variables
+from nalai.services.model_service import ModelService
 
 
 @pytest.fixture
 def assistant():
-    """Create a fresh APIAssistant instance for each test."""
-    return APIAssistant()
+    """Create a fresh APIAgent instance for each test."""
+    return APIAgent()
 
 
 @pytest.fixture
@@ -60,8 +60,8 @@ def test_data():
         return yaml.safe_load(f)
 
 
-class TestAPIAssistant:
-    """Test cases for APIAssistant functionality."""
+class TestAPIAgent:
+    """Test cases for APIAgent functionality."""
 
     def test_agent_initialization(self, assistant):
         """Test agent initialization."""
@@ -84,7 +84,7 @@ class TestAPIAssistant:
         assert result == case_data["expected"]
 
     @patch.object(ModelService, "get_model_id_from_config")
-    @patch("api_assistant.core.agent.load_prompt_template")
+    @patch("nalai.core.agent.load_prompt_template")
     @patch.object(ModelService, "get_model_from_config")
     def test_create_prompt_and_model(
         self,
@@ -110,7 +110,7 @@ class TestAPIAssistant:
         assert "Test system prompt" in prompt.format(messages=[])
         assert model == mock_model
 
-    @patch.object(APIAssistant, "create_prompt_and_model")
+    @patch.object(APIAgent, "create_prompt_and_model")
     @pytest.mark.parametrize("test_case", ["single_api_selection", "no_relevant_apis"])
     def test_select_relevant_apis(
         self, mock_create_prompt_and_model, test_case, test_data, assistant, mock_config
@@ -184,7 +184,7 @@ class TestAPIAssistant:
         state = AgentState(messages=messages)
 
         # Mock settings for tool recognition
-        with patch("api_assistant.core.agent.settings") as mock_settings:
+        with patch("nalai.core.agent.settings") as mock_settings:
             mock_settings.enable_api_calls = True
             result = assistant.determine_workflow_action(state)
             expected = (
@@ -210,9 +210,9 @@ class TestAPIAssistant:
         result = assistant.determine_next_step(state)
         assert result == case_data["expected"]
 
-    @patch.object(APIAssistant, "create_prompt_and_model")
-    @patch("api_assistant.core.agent.compress_conversation_history_if_needed")
-    @patch("api_assistant.core.agent.settings")
+    @patch.object(APIAgent, "create_prompt_and_model")
+    @patch("nalai.core.agent.compress_conversation_history_if_needed")
+    @patch("nalai.core.agent.settings")
     def test_generate_model_response_api_call_disabled(
         self,
         mock_settings,
@@ -257,9 +257,9 @@ class TestAPIAssistant:
         assert result["messages"][0].content == "Test message"
         assert result["messages"][1].content == "This is the AI response"
 
-    @patch.object(APIAssistant, "create_prompt_and_model")
-    @patch("api_assistant.core.agent.compress_conversation_history_if_needed")
-    @patch("api_assistant.core.agent.settings")
+    @patch.object(APIAgent, "create_prompt_and_model")
+    @patch("nalai.core.agent.compress_conversation_history_if_needed")
+    @patch("nalai.core.agent.settings")
     def test_generate_model_response_api_call_enabled(
         self,
         mock_settings,

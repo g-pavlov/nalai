@@ -19,8 +19,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from src.api_assistant.core.schemas import SelectedApis
-from src.api_assistant.server.app import app
+from src.nalai.core.schemas import SelectedApis
+from src.nalai.server.app import app
 
 
 class SimpleMockChatModel(BaseChatModel):
@@ -99,9 +99,7 @@ class TestCacheWithMockedLLM(unittest.TestCase):
         response = self.client.post("/nalai/invoke", json=payload)
         return response.json()
 
-    @patch(
-        "src.api_assistant.services.model_service.ModelService.get_model_from_config"
-    )
+    @patch("src.nalai.services.model_service.ModelService.get_model_from_config")
     def test_cache_hit_with_mocked_content(self, mock_get_model):
         # Create a simple mock chat model
         mock_model = SimpleMockChatModel()

@@ -28,8 +28,8 @@ COPY logging.yaml ./
 # Install all dependencies (including main, llm group, and testing)
 RUN poetry install --with llm --with testing
 
-# Move api_assistant package to root for desired layout
-RUN mv src/api_assistant ./api_assistant
+# Move nalai package to root for desired layout
+RUN mv src/nalai ./nalai
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash app && \
@@ -40,4 +40,4 @@ USER app
 EXPOSE 8080
 
 # Development command with hot reload
-CMD ["poetry", "run", "uvicorn", "api_assistant.server.app:app", "--host", "0.0.0.0", "--port", "8080", "--reload", "--log-config", "logging.yaml"] 
+CMD ["poetry", "run", "uvicorn", "nalai.server.app:app", "--host", "0.0.0.0", "--port", "8080", "--reload", "--log-config", "logging.yaml"] 

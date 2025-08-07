@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from api_assistant.utils.logging import (
+from nalai.utils.logging import (
     get_environment_log_level,
     get_log_level,
     is_debug_enabled,
@@ -28,7 +28,7 @@ class TestLoggingConfig:
         """Test log level from LOG_LEVEL environment variable."""
         with (
             patch.dict(os.environ, {"LOG_LEVEL": "DEBUG"}, clear=True),
-            patch("api_assistant.config.settings") as mock_settings,
+            patch("nalai.config.settings") as mock_settings,
         ):
             mock_settings.logging_level = "DEBUG"
             assert get_environment_log_level() == "DEBUG"
@@ -44,7 +44,7 @@ class TestLoggingConfig:
             patch.dict(
                 os.environ, {"DEBUG": "false", "LOG_LEVEL": "WARNING"}, clear=True
             ),
-            patch("api_assistant.config.settings") as mock_settings,
+            patch("nalai.config.settings") as mock_settings,
         ):
             mock_settings.logging_level = "WARNING"
             assert get_environment_log_level() == "WARNING"
@@ -53,7 +53,7 @@ class TestLoggingConfig:
         """Test that log level is converted to uppercase."""
         with (
             patch.dict(os.environ, {"LOG_LEVEL": "debug"}, clear=True),
-            patch("api_assistant.config.settings") as mock_settings,
+            patch("nalai.config.settings") as mock_settings,
         ):
             mock_settings.logging_level = "debug"
             assert get_environment_log_level() == "DEBUG"
@@ -62,7 +62,7 @@ class TestLoggingConfig:
         """Test get_log_level function."""
         with (
             patch.dict(os.environ, {"LOG_LEVEL": "ERROR"}, clear=True),
-            patch("api_assistant.config.settings") as mock_settings,
+            patch("nalai.config.settings") as mock_settings,
         ):
             mock_settings.logging_level = "ERROR"
             assert get_log_level() == "ERROR"
@@ -125,7 +125,7 @@ root:
         try:
             with (
                 patch.dict(os.environ, {"LOG_LEVEL": "INFO"}, clear=True),
-                patch("api_assistant.config.settings") as mock_settings,
+                patch("nalai.config.settings") as mock_settings,
                 patch("rich.logging.RichHandler", logging.StreamHandler),
             ):
                 mock_settings.logging_level = "INFO"
@@ -133,7 +133,7 @@ root:
                 setup_logging(config_path)
 
                 # Check that loggers are created
-                loggers = ["nalai", "api_assistant", "models", "config"]
+                loggers = ["nalai", "models", "config"]
 
                 for logger_name in loggers:
                     logger = logging.getLogger(logger_name)
@@ -159,7 +159,7 @@ root:
         try:
             with (
                 patch.dict(os.environ, {"LOG_LEVEL": "DEBUG"}, clear=True),
-                patch("api_assistant.config.settings") as mock_settings,
+                patch("nalai.config.settings") as mock_settings,
             ):
                 mock_settings.logging_level = "DEBUG"
                 mock_settings.logging_directory = "/tmp/test_logs"
@@ -210,7 +210,7 @@ root:
         try:
             with (
                 patch.dict(os.environ, {"LOG_LEVEL": "INVALID_LEVEL"}, clear=True),
-                patch("api_assistant.config.settings") as mock_settings,
+                patch("nalai.config.settings") as mock_settings,
             ):
                 mock_settings.logging_level = "INVALID_LEVEL"
                 mock_settings.logging_directory = "/tmp/test_logs"

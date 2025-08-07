@@ -31,11 +31,7 @@ loggers:
     level: INFO
     handlers: [console]
     propagate: False
-  api_assistant:
-    level: INFO
-    handlers: [console]
-    propagate: False
-  api_assistant.audit:
+  nalai.audit:
     level: INFO
     handlers: [audit_file]
     propagate: False

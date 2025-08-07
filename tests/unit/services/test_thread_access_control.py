@@ -16,7 +16,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.services.thread_access_control import (
+from nalai.services.thread_access_control import (
     InMemoryThreadAccessControl,
     ThreadAccessControl,
     ThreadAccessControlBackend,
@@ -421,9 +421,7 @@ class TestThreadAccessControl:
 
     def test_redis_backend_not_implemented(self):
         """Test that Redis backend raises NotImplementedError."""
-        with patch(
-            "api_assistant.services.thread_access_control.settings"
-        ) as mock_settings:
+        with patch("nalai.services.thread_access_control.settings") as mock_settings:
             mock_settings.cache_redis_url = "redis://localhost:6379"
 
             with pytest.raises(NotImplementedError):
@@ -436,9 +434,7 @@ class TestThreadAccessControlGlobal:
     @pytest.fixture
     def mock_settings(self):
         """Mock settings for testing."""
-        with patch(
-            "api_assistant.services.thread_access_control.settings"
-        ) as mock_settings:
+        with patch("nalai.services.thread_access_control.settings") as mock_settings:
             mock_settings.thread_access_control_backend = "memory"
             yield mock_settings
 

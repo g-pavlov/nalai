@@ -20,8 +20,8 @@ sys.path.insert(
 
 import logging
 
-from api_assistant.core.constants import NODE_CALL_API, NODE_CALL_MODEL
-from api_assistant.core.interrupts import ABORT_MESSAGE, process_human_review
+from nalai.core.constants import NODE_CALL_API, NODE_CALL_MODEL
+from nalai.core.interrupts import ABORT_MESSAGE, process_human_review
 
 
 @pytest.fixture
@@ -66,7 +66,7 @@ def mock_state(mock_ai_message):
 class TestProcessHumanReview:
     """Test suite for human review processing."""
 
-    @patch("api_assistant.core.interrupts.interrupt")
+    @patch("nalai.core.interrupts.interrupt")
     def test_continue_action(
         self, mock_interrupt, mock_state, mock_config, mock_tool_call
     ):
@@ -88,7 +88,7 @@ class TestProcessHumanReview:
         }
         assert call_args[0] == expected_interrupt_data
 
-    @patch("api_assistant.core.interrupts.interrupt")
+    @patch("nalai.core.interrupts.interrupt")
     def test_abort_action(
         self, mock_interrupt, mock_state, mock_config, mock_tool_call
     ):
@@ -110,7 +110,7 @@ class TestProcessHumanReview:
         assert tool_msg.tool_call_id == mock_tool_call["id"]
         assert tool_msg.content == ABORT_MESSAGE
 
-    @patch("api_assistant.core.interrupts.interrupt")
+    @patch("nalai.core.interrupts.interrupt")
     def test_update_action(
         self, mock_interrupt, mock_state, mock_config, mock_tool_call
     ):
@@ -132,7 +132,7 @@ class TestProcessHumanReview:
         assert updated_msg["id"] == mock_state["messages"][0].id
         assert updated_msg["tool_calls"][0]["args"] == updated_args
 
-    @patch("api_assistant.core.interrupts.interrupt")
+    @patch("nalai.core.interrupts.interrupt")
     def test_feedback_action(
         self, mock_interrupt, mock_state, mock_config, mock_tool_call
     ):
@@ -155,7 +155,7 @@ class TestProcessHumanReview:
         assert tool_msg.tool_call_id == mock_tool_call["id"]
         assert tool_msg.content == feedback_message
 
-    @patch("api_assistant.core.interrupts.interrupt")
+    @patch("nalai.core.interrupts.interrupt")
     def test_unknown_action(self, mock_interrupt, mock_state, mock_config):
         """Test handling of unknown action - should default to continue."""
         mock_interrupt.return_value = {"action": "unknown_action"}
@@ -167,7 +167,7 @@ class TestProcessHumanReview:
         assert result.goto == NODE_CALL_API
         assert result.update == {}
 
-    @patch("api_assistant.core.interrupts.interrupt")
+    @patch("nalai.core.interrupts.interrupt")
     def test_unknown_action_logging(
         self, mock_interrupt, mock_state, mock_config, caplog
     ):
@@ -217,7 +217,7 @@ class TestProcessHumanReview:
         with pytest.raises(ValueError, match="No AIMessage found"):
             process_human_review(state, mock_config)
 
-    @patch("api_assistant.core.interrupts.interrupt")
+    @patch("nalai.core.interrupts.interrupt")
     def test_multiple_tool_calls(self, mock_interrupt, mock_state, mock_config):
         """Test processing with multiple tool calls."""
         # Create AI message with multiple tool calls
@@ -246,7 +246,7 @@ class TestProcessHumanReview:
         assert isinstance(result, Command)
         assert result.goto == NODE_CALL_API
 
-    @patch("api_assistant.core.interrupts.interrupt")
+    @patch("nalai.core.interrupts.interrupt")
     def test_interrupt_error_handling(self, mock_interrupt, mock_state, mock_config):
         """Test error handling when interrupt function fails."""
         mock_interrupt.side_effect = Exception("Interrupt failed")
@@ -254,7 +254,7 @@ class TestProcessHumanReview:
         with pytest.raises(Exception, match="Interrupt failed"):
             process_human_review(mock_state, mock_config)
 
-    @patch("api_assistant.core.interrupts.interrupt")
+    @patch("nalai.core.interrupts.interrupt")
     def test_config_extraction(self, mock_interrupt, mock_state, mock_config):
         """Test that configuration is properly extracted and passed."""
         mock_interrupt.return_value = {"action": "continue"}
@@ -280,7 +280,7 @@ class TestProcessHumanReview:
         }
         assert call_args[0] == expected_interrupt_data
 
-    @patch("api_assistant.core.interrupts.interrupt")
+    @patch("nalai.core.interrupts.interrupt")
     def test_state_preservation(self, mock_interrupt, mock_state, mock_config):
         """Test that state is properly preserved and passed."""
         mock_interrupt.return_value = {"action": "continue"}
@@ -299,7 +299,7 @@ class TestProcessHumanReview:
         # Verify state is not modified for continue action
         assert result.update == {}
 
-    @patch("api_assistant.core.interrupts.interrupt")
+    @patch("nalai.core.interrupts.interrupt")
     def test_tool_message_creation(
         self, mock_interrupt, mock_state, mock_config, mock_tool_call
     ):

@@ -4,7 +4,7 @@ This directory contains comprehensive unit tests for the API Assistant project, 
 
 ## Test Structure
 
-The test structure reflects the package organization in `src/api_assistant/`:
+The test structure reflects the package organization in `src/nalai/`:
 
 ```
 tests/unit/
@@ -16,7 +16,7 @@ tests/unit/
 │   └── chat_history_test_cases.yaml
 ├── core/                       # Tests for core package
 │   ├── __init__.py
-│   ├── test_agent.py          # APIAssistant tests
+│   ├── test_agent.py          # APIAgent tests
 │   ├── test_workflow.py       # Workflow creation tests
 │   ├── test_interrupts.py     # Human review processing tests
 │   └── test_schemas.py        # Data model validation tests
@@ -91,7 +91,7 @@ Test data is externalized in YAML files to:
 - Separate test logic from test data
 
 ### Test Data Files:
-- `agent_test_cases.yaml`: APIAssistant functionality test cases
+- `agent_test_cases.yaml`: APIAgent functionality test cases
 - `http_tools_test_cases.yaml`: HTTP tools validation and processing
 - `model_service_test_cases.yaml`: Model service configuration and initialization
 - `chat_history_test_cases.yaml`: Chat history utilities and token management

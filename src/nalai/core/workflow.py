@@ -14,7 +14,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from ..config import BaseRuntimeConfiguration
 from ..services.api_docs_service import APIService
-from .agent import APIAssistant
+from .agent import APIAgent
 from .constants import (
     NODE_CALL_API,
     NODE_CALL_MODEL,
@@ -30,7 +30,7 @@ from .tool_node import create_chunk_accumulating_tool_node
 
 
 def create_and_compile_workflow(
-    agent: APIAssistant,
+    agent: APIAgent,
     memory_store: MemorySaver = None,
     available_tools: dict[str, Any] = None,
 ) -> CompiledStateGraph:
@@ -38,7 +38,7 @@ def create_and_compile_workflow(
     Creates and compiles the agent workflow using LangGraph's StateGraph.
 
     Args:
-        agent: The APIAssistant instance
+        agent: The APIAgent instance
         memory_store: Optional memory store for checkpointing
         available_tools: Optional dictionary of tools to use
 

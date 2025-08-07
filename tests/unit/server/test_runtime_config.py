@@ -17,8 +17,8 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.server.models.identity import IdentityContext, UserContext
-from api_assistant.server.runtime_config import (
+from nalai.server.models.identity import IdentityContext, UserContext
+from nalai.server.runtime_config import (
     _ensure_config_dict,
     _ensure_configurable,
     add_auth_token_to_config,
@@ -143,7 +143,7 @@ class TestAddAuthTokenToConfig:
             (False, {"Authorization": ""}, None, True),
         ],
     )
-    @patch("api_assistant.server.runtime_config.settings")
+    @patch("nalai.server.runtime_config.settings")
     def test_add_auth_token_to_config(
         self,
         mock_settings,
@@ -200,7 +200,7 @@ class TestAddUserContextToConfig:
             ),
         ],
     )
-    @patch("api_assistant.server.runtime_config.get_user_context")
+    @patch("nalai.server.runtime_config.get_user_context")
     def test_add_user_context_to_config(
         self, mock_get_user_context, mock_request, user_context_success, expected_values
     ):
@@ -267,9 +267,9 @@ class TestValidateThreadAccessAndScope:
             (False, True, "user:test-user-123:new-thread-789", False),
         ],
     )
-    @patch("api_assistant.server.runtime_config.get_user_context")
-    @patch("api_assistant.server.runtime_config.get_thread_access_control")
-    @patch("api_assistant.server.runtime_config.log_thread_access_event")
+    @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.server.runtime_config.get_thread_access_control")
+    @patch("nalai.server.runtime_config.log_thread_access_event")
     @pytest.mark.asyncio
     async def test_validate_thread_access_and_scope(
         self,
@@ -308,7 +308,7 @@ class TestValidateThreadAccessAndScope:
             assert user_scoped_thread_id == expected_scoped_id
             assert result_config["configurable"]["thread_id"] == expected_scoped_id
 
-    @patch("api_assistant.server.runtime_config.get_user_context")
+    @patch("nalai.server.runtime_config.get_user_context")
     @pytest.mark.asyncio
     async def test_validate_thread_access_no_user_context(
         self, mock_get_user_context, mock_request
@@ -333,8 +333,8 @@ class TestDefaultFunctions:
         request.headers = {"Authorization": "Bearer test-token"}
         return request
 
-    @patch("api_assistant.server.runtime_config.add_auth_token_to_config")
-    @patch("api_assistant.server.runtime_config.add_user_context_to_config")
+    @patch("nalai.server.runtime_config.add_auth_token_to_config")
+    @patch("nalai.server.runtime_config.add_user_context_to_config")
     def test_default_modify_runtime_config(
         self, mock_add_user_context, mock_add_auth_token, mock_request
     ):
@@ -349,7 +349,7 @@ class TestDefaultFunctions:
         mock_add_auth_token.assert_called_once_with({}, mock_request)
         mock_add_user_context.assert_called_once()
 
-    @patch("api_assistant.server.runtime_config.validate_runtime_config")
+    @patch("nalai.server.runtime_config.validate_runtime_config")
     def test_default_validate_runtime_config(self, mock_validate):
         """Test default runtime configuration validation."""
         mock_validate.return_value = MagicMock()
@@ -360,8 +360,8 @@ class TestDefaultFunctions:
         mock_validate.assert_called_once_with(config)
         assert result == mock_validate.return_value
 
-    @patch("api_assistant.server.runtime_config.default_modify_runtime_config")
-    @patch("api_assistant.server.runtime_config.validate_thread_access_and_scope")
+    @patch("nalai.server.runtime_config.default_modify_runtime_config")
+    @patch("nalai.server.runtime_config.validate_thread_access_and_scope")
     @pytest.mark.asyncio
     async def test_default_modify_runtime_config_with_access_control(
         self, mock_validate_access, mock_modify_config, mock_request
@@ -382,7 +382,7 @@ class TestDefaultFunctions:
         mock_validate_access.assert_called_once()
         assert thread_id == "scoped-id"
 
-    @patch("api_assistant.server.runtime_config.validate_runtime_config")
+    @patch("nalai.server.runtime_config.validate_runtime_config")
     @pytest.mark.asyncio
     async def test_setup_runtime_config_with_access_control(self, mock_validate):
         """Test setup runtime configuration with access control."""

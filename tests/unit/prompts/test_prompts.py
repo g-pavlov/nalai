@@ -3,7 +3,7 @@ import tempfile
 
 import pytest
 
-from src.api_assistant.prompts.prompts import MODEL_PROMPT_MAPPING, load_prompt_template
+from src.nalai.prompts.prompts import MODEL_PROMPT_MAPPING, load_prompt_template
 
 
 class TestLoadPromptTemplate:

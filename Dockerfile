@@ -82,4 +82,4 @@ USER nalai
 
 EXPOSE 8080
 
-CMD ["uvicorn", "api_assistant.server:app", "--host", "0.0.0.0", "--port", "8080"] 
+CMD ["uvicorn", "nalai.server:app", "--host", "0.0.0.0", "--port", "8080"] 

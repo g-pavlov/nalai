@@ -1,7 +1,7 @@
 """
-Command-line interface for API Assistant.
+Command-line interface for nalAI.
 
-Provides an interactive CLI for testing and debugging the API Assistant
+Provides an interactive CLI for testing and debugging the nalAI
 agent. Supports conversation history, human-in-the-loop review,
 and streaming responses for development and testing workflows.
 """
@@ -11,9 +11,9 @@ import asyncio
 from dotenv import load_dotenv
 from langgraph.checkpoint.memory import MemorySaver
 
-from api_assistant.core.agent import APIAssistant
-from api_assistant.core.workflow import create_and_compile_workflow
-from api_assistant.utils.cli_print import stream_events_with_interruptions
+from nalai.core.agent import APIAgent
+from nalai.core.workflow import create_and_compile_workflow
+from nalai.utils.cli_print import stream_events_with_interruptions
 
 CLI_PROMPT = "\nPrompt: "
 EXIT_COMMANDS = {"quit", "exit", "q"}
@@ -27,7 +27,7 @@ def main():
     conversation interface with streaming responses and human review.
     """
     memory_store = MemorySaver()
-    agent = APIAssistant()
+    agent = APIAgent()
     agent_workflow = create_and_compile_workflow(agent, memory_store)
 
     agent_config = {
@@ -47,7 +47,7 @@ def main():
         print("Note: Install 'grandalf' to see the workflow diagram")
         print("pip install grandalf")
 
-    print("API Assistant CLI - Type 'quit', 'exit', or 'q' to exit")
+    print("nalAI CLI - Type 'quit', 'exit', or 'q' to exit")
 
     while True:
         user_input = input(CLI_PROMPT)

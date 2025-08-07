@@ -16,7 +16,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.utils.pii_masking import (
+from nalai.utils.pii_masking import (
     is_pii_field,
     mask_audit_metadata,
     mask_dict_pii,
@@ -36,7 +36,7 @@ class TestPIIMasking:
     @pytest.fixture
     def mock_settings(self):
         """Mock settings for testing."""
-        with patch("api_assistant.utils.pii_masking.settings") as mock_settings:
+        with patch("nalai.utils.pii_masking.settings") as mock_settings:
             mock_settings.audit_mask_pii = True
             mock_settings.audit_mask_emails = True
             mock_settings.audit_mask_names = True
@@ -278,7 +278,7 @@ class TestPIIMaskingIntegration:
     @pytest.fixture
     def mock_settings(self):
         """Mock settings for integration testing."""
-        with patch("api_assistant.utils.pii_masking.settings") as mock_settings:
+        with patch("nalai.utils.pii_masking.settings") as mock_settings:
             mock_settings.audit_mask_pii = True
             mock_settings.audit_mask_emails = True
             mock_settings.audit_mask_names = True

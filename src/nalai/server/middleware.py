@@ -38,7 +38,7 @@ def create_log_request_middleware(excluded_paths: set[str] = None):
             )
 
             # Log structured access event
-            access_logger = logging.getLogger("api_assistant.access")
+            access_logger = logging.getLogger("nalai.access")
             user_context = getattr(request.state, "user_context", None)
             user_id = user_context.user_id if user_context else "anonymous"
 
@@ -65,7 +65,7 @@ def create_log_request_middleware(excluded_paths: set[str] = None):
             )
 
             # Log structured access completion
-            access_logger = logging.getLogger("api_assistant.access")
+            access_logger = logging.getLogger("nalai.access")
             user_context = getattr(request.state, "user_context", None)
             user_id = user_context.user_id if user_context else "anonymous"
 

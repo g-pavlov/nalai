@@ -19,7 +19,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from api_assistant.tools.http_requests import (
+from nalai.tools.http_requests import (
     DeleteTool,
     GetTool,
     HeadTool,
@@ -83,7 +83,7 @@ class TestHTTPTool:
             c for c in test_data["http_request_validation"] if c["name"] == test_case
         )
 
-        with patch("api_assistant.tools.http_requests.settings") as mock_settings:
+        with patch("nalai.tools.http_requests.settings") as mock_settings:
             mock_settings.api_calls_base_url = case_data["input"]["base_url"]
 
             # Create a test tool instance
@@ -114,7 +114,7 @@ class TestHTTPTool:
         )
 
         with (
-            patch("api_assistant.tools.http_requests.settings") as mock_settings,
+            patch("nalai.tools.http_requests.settings") as mock_settings,
             patch("requests.request") as mock_request,
         ):
             mock_settings.api_calls_base_url = "https://api.example.com"
@@ -165,7 +165,7 @@ class TestHTTPTool:
         )
 
         with (
-            patch("api_assistant.tools.http_requests.settings") as mock_settings,
+            patch("nalai.tools.http_requests.settings") as mock_settings,
             patch("requests.request") as mock_request,
         ):
             mock_settings.api_calls_base_url = "https://api.example.com"
@@ -220,7 +220,7 @@ class TestHTTPTool:
         )
 
         with (
-            patch("api_assistant.tools.http_requests.settings") as mock_settings,
+            patch("nalai.tools.http_requests.settings") as mock_settings,
             patch("requests.request") as mock_request,
         ):
             mock_settings.api_calls_base_url = "https://api.example.com"
@@ -273,8 +273,8 @@ class TestHTTPTool:
     def test_error_context_logging(self, mock_config, mock_run_manager):
         """Test that error context is properly logged."""
         with (
-            patch("api_assistant.tools.http_requests.settings") as mock_settings,
-            patch("api_assistant.tools.http_requests.logger") as mock_logger,
+            patch("nalai.tools.http_requests.settings") as mock_settings,
+            patch("nalai.tools.http_requests.logger") as mock_logger,
             patch("requests.request") as mock_request,
         ):
             mock_settings.api_calls_base_url = "https://api.example.com"

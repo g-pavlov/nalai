@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from ..config import settings
-from ..core.agent import APIAssistant
+from ..core.agent import APIAgent
 from ..core.tool_node import create_chunk_accumulating_tool_node
 from ..core.workflow import create_and_compile_workflow
 from ..services.checkpointing_service import get_checkpointer
@@ -102,7 +102,7 @@ def initialize_app():
 
     # Initialize agent and create agent routes
     memory_store = get_checkpointer()
-    agent = APIAssistant()
+    agent = APIAgent()
     # Create the tool node for streaming processor
     tool_node = create_chunk_accumulating_tool_node(agent.http_toolkit.get_tools())
     agent_workflow = create_and_compile_workflow(
@@ -120,6 +120,4 @@ initialize_app()
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(
-        "src.api_assistant.server.app:app", host="0.0.0.0", port=8000, reload=True
-    )
+    uvicorn.run("src.nalai.server.app:app", host="0.0.0.0", port=8000, reload=True)

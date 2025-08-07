@@ -1,7 +1,7 @@
 """
-Core API Assistant agent implementation.
+Core API Agent implementation.
 
-Contains the main APIAssistant class that orchestrates AI-powered
+Contains the main APIAgent class that orchestrates AI-powered
 API interactions with intelligent context management, tool selection,
 and human-in-the-loop review capabilities.
 """
@@ -35,8 +35,8 @@ from .schemas import AgentState, SelectedApis
 logger = logging.getLogger(__name__)
 
 
-class APIAssistant:
-    """AI-powered API assistant with intelligent context management.
+class APIAgent:
+    """AI-powered API agent with intelligent context management.
     Orchestrates API interactions by:
     - Selecting relevant APIs based on conversation context
     - Managing conversation history with intelligent compression
@@ -90,7 +90,7 @@ class APIAssistant:
 
         # Disable streaming due to issue with ChatBedrockConverse lib. https://github.com/langchain-ai/langchain/issues/27962
         # Even calling it with invoke fails when the graph is streamed with .astream_events(...)
-        prompt, model = APIAssistant.create_prompt_and_model(
+        prompt, model = APIAgent.create_prompt_and_model(
             config, NODE_SELECT_RELEVANT_APIS, disable_streaming=True
         )
         model = model.with_structured_output(SelectedApis)
@@ -288,7 +288,7 @@ class APIAssistant:
                 logger.warning("Cache hit but no AI message found")
 
         # Normal flow for cache misses
-        prompt_template, model = APIAssistant.create_prompt_and_model(
+        prompt_template, model = APIAgent.create_prompt_and_model(
             config, NODE_CALL_MODEL
         )
 
