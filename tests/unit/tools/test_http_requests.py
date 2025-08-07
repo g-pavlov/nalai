@@ -96,9 +96,7 @@ class TestHTTPTool:
                 # Should raise ValueError for invalid URLs
                 with pytest.raises(ValueError):
                     tool._run(
-                        url=case_data["input"]["url"],
-                        config=RunnableConfig(),
-                        input_data={},
+                        {"url": case_data["input"]["url"], "input_data": {}}
                     )
 
     @pytest.mark.parametrize(
@@ -118,6 +116,7 @@ class TestHTTPTool:
             patch("requests.request") as mock_request,
         ):
             mock_settings.api_calls_base_url = "https://api.example.com"
+            mock_settings.api_calls_allowed_urls_list = ["https://api.example.com"]
             mock_response = MagicMock()
             mock_response.ok = True
             mock_response.json.return_value = {"result": "success"}
@@ -137,10 +136,7 @@ class TestHTTPTool:
                 input_data["headers"] = case_data["input"]["user_headers"]
 
             tool._run(
-                url="https://api.example.com/test",
-                config=mock_config,
-                run_manager=mock_run_manager,
-                input_data=input_data,
+                {"url": "https://api.example.com/test", "input_data": input_data}
             )
 
             # Verify request was made with correct headers
@@ -169,6 +165,7 @@ class TestHTTPTool:
             patch("requests.request") as mock_request,
         ):
             mock_settings.api_calls_base_url = "https://api.example.com"
+            mock_settings.api_calls_allowed_urls_list = ["https://api.example.com"]
             mock_response = MagicMock()
             mock_response.ok = True
             mock_response.json.return_value = {"result": "success"}
@@ -185,10 +182,7 @@ class TestHTTPTool:
                 tool = GetTool()  # Default fallback
 
             tool._run(
-                url="https://api.example.com/test",
-                config=mock_config,
-                run_manager=mock_run_manager,
-                input_data=case_data["input"]["input_data"],
+                {"url": "https://api.example.com/test", "input_data": case_data["input"]["input_data"]}
             )
 
             # Verify request was made with correct payload
@@ -224,6 +218,7 @@ class TestHTTPTool:
             patch("requests.request") as mock_request,
         ):
             mock_settings.api_calls_base_url = "https://api.example.com"
+            mock_settings.api_calls_allowed_urls_list = ["https://api.example.com"]
 
             if case_data["expected"]["success"]:
                 mock_response = MagicMock()
@@ -241,9 +236,7 @@ class TestHTTPTool:
 
                 tool = GetTool()
                 result = tool._run(
-                    url="https://api.example.com/test",
-                    config=mock_config,
-                    run_manager=mock_run_manager,
+                    {"url": "https://api.example.com/test"}
                 )
 
                 assert result == case_data["expected"]["data"]
@@ -263,9 +256,7 @@ class TestHTTPTool:
 
                 with pytest.raises(requests.HTTPError):
                     tool._run(
-                        url="https://api.example.com/test",
-                        config=mock_config,
-                        run_manager=mock_run_manager,
+                        {"url": "https://api.example.com/test"}
                     )
 
                 mock_run_manager.on_tool_error.assert_called_once()
@@ -285,16 +276,14 @@ class TestHTTPTool:
 
             with pytest.raises(Exception):  # noqa: B017
                 tool._run(
-                    url="https://api.example.com/test",
-                    config=mock_config,
-                    run_manager=mock_run_manager,
+                    {"url": "https://api.example.com/test"}
                 )
 
             # Verify error was logged with context
             mock_logger.error.assert_called_once()
             error_call = mock_logger.error.call_args[0][0]
             assert "Error context" in error_call
-            assert "test_tool" in error_call
+            assert "get_http_requests" in error_call
             assert "test-thread" in error_call
 
 
