@@ -63,7 +63,7 @@ class StandardAuthService(AuthService):
         self.issuer = config.get("issuer", settings.auth_oidc_issuer)
         self.audience = config.get("audience", settings.auth_oidc_audience)
         self.client_credentials = config.get(
-            "client_credentials", settings.client_credentials
+            "client_credentials", settings.auth_client_credentials
         )
         self.mode = config.get("mode", settings.auth_mode)
 

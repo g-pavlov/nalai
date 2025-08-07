@@ -1,4 +1,5 @@
 import os
+from typing import Any
 
 import dotenv
 from dotenv import load_dotenv
@@ -122,6 +123,13 @@ class Settings(BaseSettings):
         alias="AUTH_OIDC_AUDIENCE",
         default="",
         description="OIDC audience (API identifier)",
+    )
+    
+    # Client credentials configuration
+    auth_client_credentials: dict[str, Any] = Field(
+        alias="AUTH_CLIENT_CREDENTIALS",
+        default={},
+        description="Client credentials for API services",
     )
 
     # ===== PROMPT CACHE CONFIGURATION =====
