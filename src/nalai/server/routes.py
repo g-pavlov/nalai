@@ -150,6 +150,7 @@ def create_agent_routes(
             ]
             agent_input = request.input.model_dump()
 
+            event_count = 0
             async for event in agent.astream_events(
                 agent_input, config=agent_config, stream_mode="values"
             ):
@@ -158,6 +159,7 @@ def create_agent_routes(
                     logger.debug(f"Raw event type: {type(event)}, event: {event}")
 
                     if event is not None:
+                        event_count += 1
                         # Debug mode: bypass filtering and pass through all events
                         if getattr(request, "debug", False):
                             formatted_event = format_sse_event(
@@ -185,6 +187,12 @@ def create_agent_routes(
                     )
                     if formatted_event:
                         yield formatted_event
+
+            # Log event count for debugging
+            logger.debug(f"Stream completed with {event_count} events")
+            
+            # Send [DONE] event to properly terminate the stream
+            yield "data: [DONE]\n\n"
 
         return StreamingResponse(
             generate(),
