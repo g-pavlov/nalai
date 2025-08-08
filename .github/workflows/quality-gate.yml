@@ -33,7 +33,7 @@ on:
       - '!CODEOWNERS'
   pull_request_target:
     branches: [ main ]
-    types: [ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   # Lint and Test Job
