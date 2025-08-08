@@ -345,7 +345,10 @@ jobs:
       - name: Verify image
         run: |
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }} --help
+          docker run --rm -d --name test-verify -p 8080:8080 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
+          sleep 5
+          curl -f http://localhost:8080/healthz || exit 1
+          docker stop test-verify
           
           echo "Published Docker images:"
           echo "- ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }} (semantic version)"
@@ -437,17 +440,12 @@ jobs:
             The Python package has been published to GitHub Package Registry:
             
             ```bash
-            # Install from GitHub Packages
-            pip install --index-url https://pypi.org/simple/ --extra-index-url https://npm.pkg.github.com/ ${{ github.repository }}==${{ needs.version-management.outputs.version }}
+            # Install from PyPI
+            pip install --index-url https://pypi.org/simple/ ${{ github.repository }}==${{ needs.version-management.outputs.version }}
             
             # Or add to your pyproject.toml
             [tool.poetry.dependencies]
-            nalai = { version = "${{ needs.version-management.outputs.version }}", source = "github" }
-            
-            [[tool.poetry.source]]
-            name = "github"
-            url = "https://npm.pkg.github.com/"
-            priority = "explicit"
+            nalai = { version = "${{ needs.version-management.outputs.version }}" }            
             ```
             
             <!-- TODO: When PyPI account is ready, update to:
@@ -478,7 +476,7 @@ jobs:
             ### Python Package
             ```bash
             # Install and use as Python package
-            pip install --index-url https://pypi.org/simple/ --extra-index-url https://npm.pkg.github.com/ ${{ github.repository }}==${{ needs.version-management.outputs.version }}
+            pip install --index-url https://pypi.org/simple/ ${{ github.repository }}==${{ needs.version-management.outputs.version }}
             ```
             
             <!-- TODO: When PyPI account is ready, update to:
