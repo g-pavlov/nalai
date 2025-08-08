@@ -40,13 +40,18 @@ cd nalai
 make ui-run
 ```
 
-* Select your **LLM provider** when prompted
-* Provide your **API key**
+#### 2.1. Select LLM Provider
+
+![llm provider choice](docs/demo-setup-1.png)
+ 
+#### 2.2. Provide an API key (Optional - Depends on LLM Provider Choice) 
+ ![](docs/demo-setup-2.png) 
 
 ✅ **Result:**
 
 * **Web UI:** [http://localhost:3001](http://localhost:3001)
 * **Backend API:** [http://localhost:8000](http://localhost:8000)
+* **Environment:** .env in the project root directory.
 
 
 ### 3. Chat with nalAI

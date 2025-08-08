@@ -247,7 +247,7 @@ build: install
 
 # Start API Assistant with UI demo
 ui-run:
-	@echo "🚀 Starting API Assistant with Custom UI (Demo)..."
+	@echo "🚀 Starting Demo Agent Application..."
 	@echo "=============================================="
 	@./scripts/check_env.sh
 	@echo ""
