@@ -104,7 +104,7 @@ jobs:
 
       - name: Test Docker image
         run: |
-          docker run --rm -d --name test-nalai nalai:${{ github.sha }}
+          docker run --rm -d --name test-nalai -p 8080:8080 nalai:${{ github.sha }}
           sleep 5
           curl -f http://localhost:8080/healthz || exit 1
           docker stop test-nalai
