@@ -1,8 +1,39 @@
-name: Pull Request Checks
+name: Quality Gate
 
 on:
-  pull_request:
+  push:
+    branches-ignore:
+      - 'main'
+      - 'docs'
+      - 'docs/**'
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'poetry.lock'
+      - 'Dockerfile'
+      - 'Makefile'
+      - '.github/workflows/**'
+      - 'scripts/**'
+      - 'data/**'
+      - 'models/**'
+      - '!**/*.md'
+      - '!**/*.txt'
+      - '!**/*.png'
+      - '!**/*.jpg'
+      - '!**/*.jpeg'
+      - '!**/*.gif'
+      - '!**/*.svg'
+      - '!docs/**'
+      - '!LICENSE'
+      - '!README.md'
+      - '!SUPPORT.md'
+      - '!CODE_OF_CONDUCT.md'
+      - '!CONTRIBUTING.md'
+      - '!CODEOWNERS'
+  pull_request_target:
     branches: [ main ]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   # Lint and Test Job
@@ -35,23 +66,23 @@ jobs:
 
       - name: Install dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --with=testing
+        run: make install
 
-      - name: Lint with ruff
-        run: |
-          poetry run ruff check src/ tests/
-          poetry run ruff format --check src/ tests/
+      - name: Run linting and formatting
+        run: make lint
 
-      - name: Run tests
-        run: |
-          poetry run pytest tests/ -v --cov=src --cov-report=xml
+      - name: Run unit tests with coverage
+        run: make test
+
+      - name: Validate dependencies
+        run: make validate-deps
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
           file: ./coverage.xml
-          flags: unittests
-          name: codecov-umbrella
+          flags: quality-gate
+          name: codecov-quality-gate
 
   # Security check
   security-check:
@@ -69,7 +100,7 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif' 

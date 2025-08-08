@@ -1,9 +1,8 @@
-name: CI/CD Pipeline
-
+name: Publish Release 
 on:
   push:
     branches: [ main ]
-    tags: [ 'v*' ]
+    tags: [ '[0-9]*.[0-9]*.[0-9]*' ]
     paths:
       - 'src/**'
       - 'tests/**'
@@ -95,9 +94,9 @@ jobs:
           # Determine version increment type
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             INCREMENT_TYPE="${{ github.event.inputs.version_type }}"
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            # Manual tag push - extract version from tag
-            MANUAL_VERSION="${GITHUB_REF#refs/tags/v}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # Manual tag push - extract version from tag (no v prefix)
+            MANUAL_VERSION="${GITHUB_REF#refs/tags/}"
             echo "Manual version tag detected: $MANUAL_VERSION"
             
             # Validate semantic version format
@@ -179,7 +178,7 @@ jobs:
           
           # Determine if we should deploy
           SHOULD_DEPLOY="false"
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
             SHOULD_DEPLOY="true"
           fi
           
@@ -195,59 +194,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Lint and Test Job
-  lint-and-test:
-    runs-on: ubuntu-latest
-    needs: version-management
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: 2.1.3
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Load cached venv
-        id: cached-poetry-dependencies
-        uses: actions/cache@v3
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-
-
-      - name: Install dependencies
-        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: make install
-
-      - name: Run linting and formatting
-        run: make lint
-
-      - name: Run unit tests with coverage
-        run: make test
-
-      - name: Validate dependencies
-        run: make validate-deps
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.xml
-          flags: unittests
-          name: codecov-umbrella
-
   # Build and Push Python Package
   build-and-push-package:
     runs-on: ubuntu-latest
-    needs: [version-management, lint-and-test]
+    needs: [version-management]
     if: needs.version-management.outputs.should-deploy == 'true'
     permissions:
       contents: read
@@ -301,7 +251,7 @@ jobs:
   # Build and Push Docker Image
   build-and-push:
     runs-on: ubuntu-latest
-    needs: [version-management, lint-and-test, build-and-push-package]
+    needs: [version-management, build-and-push-package]
     if: needs.version-management.outputs.should-deploy == 'true'
     permissions:
       contents: read
@@ -345,7 +295,10 @@ jobs:
       - name: Verify image
         run: |
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }} --help
+          docker run --rm -d --name test-verify -p 8080:8080 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
+          sleep 5
+          curl -f http://localhost:8080/healthz || exit 1
+          docker stop test-verify
           
           echo "Published Docker images:"
           echo "- ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }} (semantic version)"
@@ -361,19 +314,54 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 2.1.3
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v3
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: make install
+
+      - name: Install Trivy
+        run: |
+          chmod +x ./scripts/install_trivy.sh
+          ./scripts/install_trivy.sh
+
+      - name: Debug version output
+        run: |
+          echo "Version management output: ${{ needs.version-management.outputs.version }}"
+          echo "Should deploy: ${{ needs.version-management.outputs.should-deploy }}"
+
       - name: Run security scan on Docker image
         run: |
+          if [ -z "${{ needs.version-management.outputs.version }}" ]; then
+            echo "❌ Error: Version is empty. Cannot scan image."
+            exit 1
+          fi
           make security-image IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} VERSION=${{ needs.version-management.outputs.version }}
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
-
-
-
-
 
   # Create Release
   create-release:
@@ -437,29 +425,13 @@ jobs:
             The Python package has been published to GitHub Package Registry:
             
             ```bash
-            # Install from GitHub Packages
-            pip install --index-url https://pypi.org/simple/ --extra-index-url https://npm.pkg.github.com/ ${{ github.repository }}==${{ needs.version-management.outputs.version }}
-            
-            # Or add to your pyproject.toml
-            [tool.poetry.dependencies]
-            nalai = { version = "${{ needs.version-management.outputs.version }}", source = "github" }
-            
-            [[tool.poetry.source]]
-            name = "github"
-            url = "https://npm.pkg.github.com/"
-            priority = "explicit"
-            ```
-            
-            <!-- TODO: When PyPI account is ready, update to:
-            ```bash
             # Install from PyPI
-            pip install nalai==${{ needs.version-management.outputs.version }}
+            pip install --index-url https://pypi.org/simple/ ${{ github.repository }}==${{ needs.version-management.outputs.version }}
             
             # Or add to your pyproject.toml
             [tool.poetry.dependencies]
-            nalai = "${{ needs.version-management.outputs.version }}"
+            nalai = { version = "${{ needs.version-management.outputs.version }}" }            
             ```
-            -->
             
             ### Docker Image
             
@@ -478,15 +450,8 @@ jobs:
             ### Python Package
             ```bash
             # Install and use as Python package
-            pip install --index-url https://pypi.org/simple/ --extra-index-url https://npm.pkg.github.com/ ${{ github.repository }}==${{ needs.version-management.outputs.version }}
+            pip install --index-url https://pypi.org/simple/ ${{ github.repository }}==${{ needs.version-management.outputs.version }}
             ```
-            
-            <!-- TODO: When PyPI account is ready, update to:
-            ```bash
-            # Install and use as Python package
-            pip install nalai==${{ needs.version-management.outputs.version }}
-            ```
-            -->
             
             ### Docker Container
             ```bash
@@ -495,12 +460,10 @@ jobs:
           draft: false
           prerelease: false
 
-
-
   # Cleanup Job (runs on failure)
   cleanup-on-failure:
     runs-on: ubuntu-latest
-    needs: [version-management, lint-and-test, build-and-push-package, build-and-push, security-scan, create-release]
+    needs: [version-management, build-and-push-package, build-and-push, security-scan, create-release]
     if: failure() && needs.version-management.outputs.should-deploy == 'true'
     permissions:
       contents: read
