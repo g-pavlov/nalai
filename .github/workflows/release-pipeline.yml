@@ -281,23 +281,22 @@ jobs:
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: make install
 
-      - name: Configure Poetry for GitHub Packages
+      - name: Configure Poetry for PyPI
         run: |
-          # Configure for GitHub Packages PyPI
-          poetry config repositories.github https://npm.pkg.github.com
-          poetry config http-basic.github ${{ github.actor }} ${{ secrets.GITHUB_TOKEN }}
-
+          # Configure for PyPI (commented out until PyPI account is ready)
+          # poetry config repositories.pypi https://pypi.org/
+          # poetry config http-basic.pypi ${{ secrets.PYPI_USERNAME }} ${{ secrets.PYPI_PASSWORD }}
       - name: Build package
         run: make build
 
-      - name: Publish package to GitHub Packages
+      - name: Publish package to PyPI (commented out until account is ready)
         run: |
-          # Publish with both version and commit SHA for traceability
-          poetry publish --repository github --username ${{ github.actor }} --password ${{ secrets.GITHUB_TOKEN }}
-          
-          echo "Published package: ${{ github.repository }}==${{ needs.version-management.outputs.version }}"
-          echo "Commit SHA: ${{ github.sha }}"
-          echo "Note: Git tag will be created after all checks pass"
+          # Publish to PyPI (commented out until PyPI account is ready)
+          # poetry publish --repository pypi --username ${{ secrets.PYPI_USERNAME }} --password ${{ secrets.PYPI_PASSWORD }}
+                    
+          # echo "Published package: ${{ github.repository }}==${{ needs.version-management.outputs.version }}"
+          #echo "Commit SHA: ${{ github.sha }}"
+          # echo "Note: Git tag will be created after all checks pass"
 
   # Build and Push Docker Image
   build-and-push:
@@ -451,6 +450,17 @@ jobs:
             priority = "explicit"
             ```
             
+            <!-- TODO: When PyPI account is ready, update to:
+            ```bash
+            # Install from PyPI
+            pip install nalai==${{ needs.version-management.outputs.version }}
+            
+            # Or add to your pyproject.toml
+            [tool.poetry.dependencies]
+            nalai = "${{ needs.version-management.outputs.version }}"
+            ```
+            -->
+            
             ### Docker Image
             
             The Docker image has been published to GitHub Container Registry:
@@ -470,6 +480,13 @@ jobs:
             # Install and use as Python package
             pip install --index-url https://pypi.org/simple/ --extra-index-url https://npm.pkg.github.com/ ${{ github.repository }}==${{ needs.version-management.outputs.version }}
             ```
+            
+            <!-- TODO: When PyPI account is ready, update to:
+            ```bash
+            # Install and use as Python package
+            pip install nalai==${{ needs.version-management.outputs.version }}
+            ```
+            -->
             
             ### Docker Container
             ```bash
