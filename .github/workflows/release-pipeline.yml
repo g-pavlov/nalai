@@ -339,6 +339,10 @@ jobs:
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: make install
 
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.48.0
+
       - name: Run security scan on Docker image
         run: |
           make security-image IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} VERSION=${{ needs.version-management.outputs.version }}
