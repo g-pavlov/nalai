@@ -339,6 +339,11 @@ jobs:
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: make install
 
+      - name: Install Trivy
+        run: |
+          chmod +x ./scripts/install_trivy.sh
+          ./scripts/install_trivy.sh
+
       - name: Run security scan on Docker image
         run: |
           make security-image IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} VERSION=${{ needs.version-management.outputs.version }}
