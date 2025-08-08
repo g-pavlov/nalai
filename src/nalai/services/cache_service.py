@@ -272,15 +272,28 @@ class InMemoryCacheBackend(CacheBackend):
 class TokenSimilarityMatcher:
     """Enhanced token-based similarity matching using comprehensive word corpora.
 
-    Uses NLTK WordNet and spaCy for:
+    Uses injected corpus data for:
     - Comprehensive verb/noun classification
     - Antonym detection for false positive prevention
     - Domain-agnostic word coverage
     - Semantic relationship understanding
     """
 
-    def __init__(self):
-        """Initialize the enhanced token similarity matcher."""
+    def __init__(
+        self,
+        verbs: set[str] | None = None,
+        nouns: set[str] | None = None,
+        adjectives: set[str] | None = None,
+        antonyms: dict[str, list[str]] | None = None,
+    ):
+        """Initialize the enhanced token similarity matcher.
+
+        Args:
+            verbs: Set of verb words for weighting
+            nouns: Set of noun words for weighting
+            adjectives: Set of adjective words for weighting
+            antonyms: Dictionary mapping words to their antonyms for false positive detection
+        """
         # Token weights for different word types
         self.token_weights = {
             "verb": 2.0,  # Action words
@@ -291,138 +304,29 @@ class TokenSimilarityMatcher:
             "other": 1.0,  # everything else
         }
 
-        # Initialize NLP components
-        self._init_nlp_components()
-
-        # Only initialize fallback words if NLP components failed
-        if not self.verbs and not self.nouns:
+        # Initialize corpus from injected data or load fallback
+        if (
+            verbs is not None
+            and nouns is not None
+            and adjectives is not None
+            and antonyms is not None
+        ):
+            # Use injected corpus data
+            self.verbs = verbs
+            self.nouns = nouns
+            self.adjectives = adjectives
+            self.antonyms = antonyms
+        else:
+            # Load fallback corpus (for backward compatibility and default behavior)
             self._init_fallback_words()
-
-    def _init_nlp_components(self):
-        """Initialize NLP components with comprehensive word coverage."""
-        self.verbs = set()
-        self.nouns = set()
-        self.adjectives = set()
-        self.antonyms = {}
-
-        if NLTK_AVAILABLE:
-            try:
-                # Download required NLTK data
-                nltk.download("punkt", quiet=True)
-                nltk.download("averaged_perceptron_tagger", quiet=True)
-                nltk.download("wordnet", quiet=True)
-
-                # Build comprehensive verb set from WordNet
-                for synset in wordnet.all_synsets(wordnet.VERB):
-                    for lemma in synset.lemmas():
-                        self.verbs.add(lemma.name().lower())
-
-                # Build comprehensive noun set from WordNet
-                for synset in wordnet.all_synsets(wordnet.NOUN):
-                    for lemma in synset.lemmas():
-                        self.nouns.add(lemma.name().lower())
-
-                # Build comprehensive adjective set from WordNet
-                for synset in wordnet.all_synsets(wordnet.ADJ):
-                    for lemma in synset.lemmas():
-                        self.adjectives.add(lemma.name().lower())
-
-                # Build antonym dictionary for false positive detection
-                for synset in wordnet.all_synsets():
-                    for lemma in synset.lemmas():
-                        if lemma.antonyms():
-                            self.antonyms[lemma.name().lower()] = [
-                                antonym.name().lower() for antonym in lemma.antonyms()
-                            ]
-
-                logger.debug(
-                    f"Initialized NLP components: {len(self.verbs)} verbs, {len(self.nouns)} nouns, {len(self.adjectives)} adjectives"
-                )
-
-            except Exception as e:
-                logger.warning(f"Failed to initialize NLTK components: {e}")
-                self.verbs = set()
-                self.nouns = set()
-                self.adjectives = set()
-                self.antonyms = {}
-
-        if SPACY_AVAILABLE:
-            try:
-                # Load spaCy model for additional word classification
-                nlp = spacy.load("en_core_web_sm")
-
-                # Add spaCy verbs and nouns to our sets
-                for token in nlp("create get set add remove list show find"):
-                    if token.pos_ == "VERB":
-                        self.verbs.add(token.lemma_.lower())
-                    elif token.pos_ == "NOUN":
-                        self.nouns.add(token.lemma_.lower())
-
-                logger.debug("Initialized spaCy components")
-
-            except Exception as e:
-                logger.warning(f"Failed to initialize spaCy components: {e}")
 
     def _init_fallback_words(self):
         """Initialize fallback word corpora from files."""
-        try:
-            # Load fallback words from data files
-            from pathlib import Path
-
-            data_dir = (
-                Path(__file__).parent.parent.parent.parent / "data" / "word_corpus"
-            )
-
-            def load_words_from_file(filename: str) -> set[str]:
-                file_path = data_dir / filename
-                if file_path.exists():
-                    with open(file_path, encoding="utf-8") as f:
-                        return {
-                            line.strip().lower()
-                            for line in f
-                            if line.strip() and not line.strip().startswith("#")
-                        }
-                return set()
-
-            def load_antonyms_from_file(filename: str) -> dict[str, list[str]]:
-                file_path = data_dir / filename
-                antonyms = {}
-                if file_path.exists():
-                    with open(file_path, encoding="utf-8") as f:
-                        for line in f:
-                            if ":" in line:
-                                word, antonyms_str = line.strip().split(":", 1)
-                                antonyms[word.lower()] = [
-                                    a.strip().lower() for a in antonyms_str.split(",")
-                                ]
-                return antonyms
-
-            # Load fallback word sets
-            self.verbs = load_words_from_file("fallback_verbs.txt")
-            self.nouns = load_words_from_file("fallback_nouns.txt")
-            self.adjectives = load_words_from_file("fallback_adjectives.txt")
-            self.antonyms = load_antonyms_from_file("fallback_antonyms.txt")
-
-            logger.debug(
-                f"Loaded fallback words: {len(self.verbs)} verbs, {len(self.nouns)} nouns, {len(self.adjectives)} adjectives"
-            )
-
-        except Exception as e:
-            logger.warning(f"Failed to load fallback words: {e}")
-            # Ensure we have at least basic word sets
-            self.verbs = {
-                "create",
-                "get",
-                "set",
-                "add",
-                "remove",
-                "list",
-                "show",
-                "find",
-            }
-            self.nouns = {"product", "user", "item", "data", "information"}
-            self.adjectives = {"new", "old", "big", "small", "good", "bad"}
-            self.antonyms = {}
+        verbs, nouns, adjectives, antonyms = load_fallback_corpus()
+        self.verbs = verbs
+        self.nouns = nouns
+        self.adjectives = adjectives
+        self.antonyms = antonyms
 
     def similarity(self, intent1: str, intent2: str) -> float:
         """
@@ -1023,6 +927,145 @@ class CacheService:
 
 # Global cache instance
 _cache_service: CacheService | None = None
+
+
+def load_fallback_corpus() -> tuple[set[str], set[str], set[str], dict[str, list[str]]]:
+    """Load fallback word corpus from files.
+
+    Returns:
+        Tuple of (verbs, nouns, adjectives, antonyms)
+    """
+    try:
+        # Load fallback words from data files
+        from pathlib import Path
+
+        data_dir = Path(__file__).parent.parent.parent.parent / "data" / "word_corpus"
+
+        def load_words_from_file(filename: str) -> set[str]:
+            file_path = data_dir / filename
+            if file_path.exists():
+                with open(file_path, encoding="utf-8") as f:
+                    return {
+                        line.strip().lower()
+                        for line in f
+                        if line.strip() and not line.strip().startswith("#")
+                    }
+            return set()
+
+        def load_antonyms_from_file(filename: str) -> dict[str, list[str]]:
+            file_path = data_dir / filename
+            antonyms = {}
+            if file_path.exists():
+                with open(file_path, encoding="utf-8") as f:
+                    for line in f:
+                        if ":" in line:
+                            word, antonyms_str = line.strip().split(":", 1)
+                            antonyms[word.lower()] = [
+                                a.strip().lower() for a in antonyms_str.split(",")
+                            ]
+            return antonyms
+
+        # Load fallback word sets
+        verbs = load_words_from_file("fallback_verbs.txt")
+        nouns = load_words_from_file("fallback_nouns.txt")
+        adjectives = load_words_from_file("fallback_adjectives.txt")
+        antonyms = load_antonyms_from_file("fallback_antonyms.txt")
+
+        logger.debug(
+            f"Loaded fallback words: {len(verbs)} verbs, {len(nouns)} nouns, {len(adjectives)} adjectives"
+        )
+
+        return verbs, nouns, adjectives, antonyms
+
+    except Exception as e:
+        logger.warning(f"Failed to load fallback words: {e}")
+        # Ensure we have at least basic word sets
+        verbs = {
+            "create",
+            "get",
+            "set",
+            "add",
+            "remove",
+            "list",
+            "show",
+            "find",
+        }
+        nouns = {"product", "user", "item", "data", "information"}
+        adjectives = {"new", "old", "big", "small", "good", "bad"}
+        antonyms = {}
+        return verbs, nouns, adjectives, antonyms
+
+
+def load_nlp_corpus() -> tuple[set[str], set[str], set[str], dict[str, list[str]]]:
+    """Load comprehensive NLP corpus using NLTK and spaCy.
+
+    Returns:
+        Tuple of (verbs, nouns, adjectives, antonyms)
+    """
+    verbs = set()
+    nouns = set()
+    adjectives = set()
+    antonyms = {}
+
+    if NLTK_AVAILABLE:
+        try:
+            # Download required NLTK data
+            nltk.download("punkt", quiet=True)
+            nltk.download("averaged_perceptron_tagger", quiet=True)
+            nltk.download("wordnet", quiet=True)
+
+            # Build comprehensive verb set from WordNet
+            for synset in wordnet.all_synsets(wordnet.VERB):
+                for lemma in synset.lemmas():
+                    verbs.add(lemma.name().lower())
+
+            # Build comprehensive noun set from WordNet
+            for synset in wordnet.all_synsets(wordnet.NOUN):
+                for lemma in synset.lemmas():
+                    nouns.add(lemma.name().lower())
+
+            # Build comprehensive adjective set from WordNet
+            for synset in wordnet.all_synsets(wordnet.ADJ):
+                for lemma in synset.lemmas():
+                    adjectives.add(lemma.name().lower())
+
+            # Build antonym dictionary for false positive detection
+            for synset in wordnet.all_synsets():
+                for lemma in synset.lemmas():
+                    if lemma.antonyms():
+                        antonyms[lemma.name().lower()] = [
+                            antonym.name().lower() for antonym in lemma.antonyms()
+                        ]
+
+            logger.debug(
+                f"Initialized NLP components: {len(verbs)} verbs, {len(nouns)} nouns, {len(adjectives)} adjectives"
+            )
+
+        except Exception as e:
+            logger.warning(f"Failed to initialize NLTK components: {e}")
+            verbs = set()
+            nouns = set()
+            adjectives = set()
+            antonyms = {}
+
+    if SPACY_AVAILABLE:
+        try:
+            # Load spaCy model for additional word classification
+            nlp = spacy.load("en_core_web_sm")
+
+            # Add spaCy verbs and nouns to our sets
+            for token in nlp("create get set add remove list show find"):
+                if token.pos_ == "VERB":
+                    verbs.add(token.lemma_.lower())
+                elif token.pos_ == "NOUN":
+                    nouns.add(token.lemma_.lower())
+
+            logger.debug("Initialized spaCy components")
+
+        except Exception as e:
+            logger.warning(f"Failed to initialize spaCy components: {e}")
+
+    return verbs, nouns, adjectives, antonyms
 
 
 def get_cache_service() -> CacheService:
