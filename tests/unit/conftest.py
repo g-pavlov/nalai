@@ -19,6 +19,9 @@ from langchain_core.runnables import RunnableConfig
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
 
+# Import after path setup
+from nalai.services.cache_service import TokenSimilarityMatcher, load_fallback_corpus
+
 
 @pytest.fixture(scope="session")
 def test_data_dir():
@@ -331,3 +334,19 @@ class TestDataHelper:
 def test_data_helper():
     """Provide access to TestDataHelper utilities."""
     return TestDataHelper
+
+
+@pytest.fixture(scope="session")
+def token_similarity_matcher():
+    """Provide a TokenSimilarityMatcher instance that uses only fallback corpus.
+
+    This fixture ensures tests don't depend on external NLP libraries and
+    provides consistent, fast initialization for all tests.
+    """
+    verbs, nouns, adjectives, antonyms = load_fallback_corpus()
+    return TokenSimilarityMatcher(
+        verbs=verbs, nouns=nouns, adjectives=adjectives, antonyms=antonyms
+    )
+
+
+# Pytest configuration

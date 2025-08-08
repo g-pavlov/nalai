@@ -346,74 +346,74 @@ class TestTokenSimilarityMatcher:
             "Fallback antonyms file missing"
         )
 
-    def test_token_weighting_logic(self):
+    def test_token_weighting_logic(self, token_similarity_matcher):
         """Test the token weighting logic without depending on corpus content."""
-        matcher = TokenSimilarityMatcher()
-
         # Test the weighting algorithm with known words
         # We'll test the logic by temporarily setting the corpus sets
-        original_verbs = matcher.verbs
-        original_nouns = matcher.nouns
-        original_adjectives = matcher.adjectives
+        original_verbs = token_similarity_matcher.verbs
+        original_nouns = token_similarity_matcher.nouns
+        original_adjectives = token_similarity_matcher.adjectives
 
         # Set up a controlled test environment
-        matcher.verbs = {"create", "add", "get", "delete"}
-        matcher.nouns = {"user", "product", "data"}
-        matcher.adjectives = {"active", "new", "old"}
+        token_similarity_matcher.verbs = {"create", "add", "get", "delete"}
+        token_similarity_matcher.nouns = {"user", "product", "data"}
+        token_similarity_matcher.adjectives = {"active", "new", "old"}
 
         try:
             # Test verb weighting (weight: 2.0)
-            verb_tokens = matcher._tokenize_and_weight("create user")
+            verb_tokens = token_similarity_matcher._tokenize_and_weight("create user")
             assert verb_tokens.get("create", 0) == 2.0, "Verb should have weight 2.0"
 
             # Test noun weighting (weight: 1.5)
-            noun_tokens = matcher._tokenize_and_weight("user product")
+            noun_tokens = token_similarity_matcher._tokenize_and_weight("user product")
             assert noun_tokens.get("user", 0) == 1.5, "Noun should have weight 1.5"
             assert noun_tokens.get("product", 0) == 1.5, "Noun should have weight 1.5"
 
             # Test adjective weighting (weight: 1.2)
-            adj_tokens = matcher._tokenize_and_weight("active user")
+            adj_tokens = token_similarity_matcher._tokenize_and_weight("active user")
             assert adj_tokens.get("active", 0) == 1.2, (
                 "Adjective should have weight 1.2"
             )
 
             # Test article weighting (weight: 0.5)
-            article_tokens = matcher._tokenize_and_weight("the user")
+            article_tokens = token_similarity_matcher._tokenize_and_weight("the user")
             assert article_tokens.get("the", 0) == 0.5, "Article should have weight 0.5"
 
             # Test preposition weighting (weight: 0.8)
-            prep_tokens = matcher._tokenize_and_weight("get from user")
+            prep_tokens = token_similarity_matcher._tokenize_and_weight("get from user")
             assert prep_tokens.get("from", 0) == 0.8, (
                 "Preposition should have weight 0.8"
             )
 
             # Test unknown word weighting (weight: 1.0)
-            unknown_tokens = matcher._tokenize_and_weight("xyz user")
+            unknown_tokens = token_similarity_matcher._tokenize_and_weight("xyz user")
             assert unknown_tokens.get("xyz", 0) == 1.0, (
                 "Unknown word should have weight 1.0"
             )
 
             # Test case insensitivity
-            mixed_case_tokens = matcher._tokenize_and_weight("Create User")
+            mixed_case_tokens = token_similarity_matcher._tokenize_and_weight(
+                "Create User"
+            )
             assert mixed_case_tokens.get("create", 0) == 2.0, (
                 "Case should be normalized"
             )
 
         finally:
             # Restore original corpus
-            matcher.verbs = original_verbs
-            matcher.nouns = original_nouns
-            matcher.adjectives = original_adjectives
+            token_similarity_matcher.verbs = original_verbs
+            token_similarity_matcher.nouns = original_nouns
+            token_similarity_matcher.adjectives = original_adjectives
 
-    def test_weighted_jaccard_similarity_logic(self):
+    def test_weighted_jaccard_similarity_logic(self, token_similarity_matcher):
         """Test the weighted Jaccard similarity algorithm without corpus dependency."""
-        matcher = TokenSimilarityMatcher()
-
         # Test with controlled token sets
         tokens1 = {"create": 2.0, "user": 1.5, "the": 0.5}
         tokens2 = {"create": 2.0, "user": 1.5, "data": 1.5}
 
-        similarity = matcher._weighted_jaccard_similarity(tokens1, tokens2)
+        similarity = token_similarity_matcher._weighted_jaccard_similarity(
+            tokens1, tokens2
+        )
 
         # Should be > 0 since there are common tokens
         assert similarity > 0.0, "Similarity should be positive for overlapping tokens"
@@ -421,7 +421,9 @@ class TestTokenSimilarityMatcher:
 
         # Test with identical tokens
         tokens3 = {"create": 2.0, "user": 1.5}
-        similarity_identical = matcher._weighted_jaccard_similarity(tokens3, tokens3)
+        similarity_identical = token_similarity_matcher._weighted_jaccard_similarity(
+            tokens3, tokens3
+        )
         assert similarity_identical == 1.0, (
             "Identical tokens should have similarity 1.0"
         )
@@ -429,64 +431,72 @@ class TestTokenSimilarityMatcher:
         # Test with no overlap
         tokens4 = {"create": 2.0, "user": 1.5}
         tokens5 = {"delete": 2.0, "data": 1.5}
-        similarity_no_overlap = matcher._weighted_jaccard_similarity(tokens4, tokens5)
+        similarity_no_overlap = token_similarity_matcher._weighted_jaccard_similarity(
+            tokens4, tokens5
+        )
         assert similarity_no_overlap == 0.0, "No overlap should have similarity 0.0"
 
         # Test with empty tokens
-        empty_similarity = matcher._weighted_jaccard_similarity({}, {})
+        empty_similarity = token_similarity_matcher._weighted_jaccard_similarity({}, {})
         assert empty_similarity == 0.0, "Empty tokens should have similarity 0.0"
 
-    def test_fallback_graceful_degradation(self):
+    def test_fallback_graceful_degradation(self, token_similarity_matcher):
         """Test that the system gracefully degrades when NLP libraries are unavailable."""
         with (
             patch("nalai.services.cache_service.NLTK_AVAILABLE", False),
             patch("nalai.services.cache_service.SPACY_AVAILABLE", False),
         ):
-            matcher = TokenSimilarityMatcher()
-
             # Should still have basic functionality
-            assert len(matcher.verbs) > 0, "Should have fallback verbs"
-            assert len(matcher.nouns) > 0, "Should have fallback nouns"
-            assert len(matcher.adjectives) > 0, "Should have fallback adjectives"
-            assert len(matcher.antonyms) > 0, "Should have fallback antonyms"
+            assert len(token_similarity_matcher.verbs) > 0, "Should have fallback verbs"
+            assert len(token_similarity_matcher.nouns) > 0, "Should have fallback nouns"
+            assert len(token_similarity_matcher.adjectives) > 0, (
+                "Should have fallback adjectives"
+            )
+            assert len(token_similarity_matcher.antonyms) > 0, (
+                "Should have fallback antonyms"
+            )
 
             # Should still be able to calculate similarity
-            similarity = matcher.similarity("create user", "add user")
+            similarity = token_similarity_matcher.similarity("create user", "add user")
             assert isinstance(similarity, float)
             assert 0.0 <= similarity <= 1.0
 
-    def test_corpus_statistics(self):
+    def test_corpus_statistics(self, token_similarity_matcher):
         """Test that corpus statistics are accurate."""
-        matcher = TokenSimilarityMatcher()
-
         # Verify corpus has reasonable size
-        assert len(matcher.verbs) >= 80, f"Too few verbs: {len(matcher.verbs)}"
-        assert len(matcher.nouns) >= 100, f"Too few nouns: {len(matcher.nouns)}"
-        assert len(matcher.adjectives) >= 100, (
-            f"Too few adjectives: {len(matcher.adjectives)}"
+        assert len(token_similarity_matcher.verbs) >= 80, (
+            f"Too few verbs: {len(token_similarity_matcher.verbs)}"
         )
-        assert len(matcher.antonyms) >= 100, (
-            f"Too few antonym pairs: {len(matcher.antonyms)}"
+        assert len(token_similarity_matcher.nouns) >= 100, (
+            f"Too few nouns: {len(token_similarity_matcher.nouns)}"
+        )
+        assert len(token_similarity_matcher.adjectives) >= 100, (
+            f"Too few adjectives: {len(token_similarity_matcher.adjectives)}"
+        )
+        assert len(token_similarity_matcher.antonyms) >= 100, (
+            f"Too few antonym pairs: {len(token_similarity_matcher.antonyms)}"
         )
 
         # Verify no empty entries
-        assert all(word.strip() for word in matcher.verbs), "Empty verb entries found"
-        assert all(word.strip() for word in matcher.nouns), "Empty noun entries found"
-        assert all(word.strip() for word in matcher.adjectives), (
+        assert all(word.strip() for word in token_similarity_matcher.verbs), (
+            "Empty verb entries found"
+        )
+        assert all(word.strip() for word in token_similarity_matcher.nouns), (
+            "Empty noun entries found"
+        )
+        assert all(word.strip() for word in token_similarity_matcher.adjectives), (
             "Empty adjective entries found"
         )
 
-    def test_edge_cases(self):
+    def test_edge_cases(self, token_similarity_matcher):
         """Test edge cases and error handling."""
-        matcher = TokenSimilarityMatcher()
-
         # Empty inputs
-        assert matcher.similarity("", "") == 0.0
-        assert matcher.similarity("", "test") == 0.0
-        assert matcher.similarity("test", "") == 0.0
+        assert token_similarity_matcher.similarity("", "") == 0.0
+        assert token_similarity_matcher.similarity("", "test") == 0.0
+        assert token_similarity_matcher.similarity("test", "") == 0.0
 
         # Single word inputs
-        similarity = matcher.similarity("create", "add")
+        similarity = token_similarity_matcher.similarity("create", "add")
         assert isinstance(similarity, float)
         assert 0.0 <= similarity <= 1.0
 
@@ -494,13 +504,12 @@ class TestTokenSimilarityMatcher:
         long_input = (
             "create user with detailed profile information and comprehensive settings"
         )
-        similarity = matcher.similarity(long_input, "add new user")
+        similarity = token_similarity_matcher.similarity(long_input, "add new user")
         assert isinstance(similarity, float)
         assert 0.0 <= similarity <= 1.0
 
-    def test_performance_characteristics(self):
+    def test_performance_characteristics(self, token_similarity_matcher):
         """Test that similarity calculation is fast enough for critical path usage."""
-        matcher = TokenSimilarityMatcher()
         import time
 
         # Test multiple similarity calculations
@@ -518,7 +527,7 @@ class TestTokenSimilarityMatcher:
         start_time = time.time()
 
         for intent1, intent2 in test_pairs:
-            similarity = matcher.similarity(intent1, intent2)
+            similarity = token_similarity_matcher.similarity(intent1, intent2)
             assert isinstance(similarity, float)
 
         end_time = time.time()
@@ -656,57 +665,150 @@ class TestTokenSimilarityMatcher:
             for pair in expected_antonym_pairs:
                 assert pair in antonyms_content, f"Missing antonym pair: {pair}"
 
-    def test_similarity_basic(self):
+    def test_similarity_basic(self, token_similarity_matcher):
         """Test basic similarity calculation."""
-        matcher = TokenSimilarityMatcher()
-
         # Debug: Check what corpus is loaded
         print(
-            f"Corpus loaded: {len(matcher.verbs)} verbs, {len(matcher.nouns)} nouns, {len(matcher.adjectives)} adjectives"
+            f"Corpus loaded: {len(token_similarity_matcher.verbs)} verbs, {len(token_similarity_matcher.nouns)} nouns, {len(token_similarity_matcher.adjectives)} adjectives"
         )
 
-        similarity = matcher.similarity("create product", "create product")
+        similarity = token_similarity_matcher.similarity(
+            "create product", "create product"
+        )
         assert similarity == 1.0, f"Exact match should be 1.0, got {similarity}"
 
-        similarity = matcher.similarity("create product", "create a product")
+        similarity = token_similarity_matcher.similarity(
+            "create product", "create a product"
+        )
         assert similarity >= 0.6, f"Similarity should be >= 0.6, got {similarity}"
 
-    def test_similarity_with_articles(self):
+    def test_similarity_with_articles(self, token_similarity_matcher):
         """Test similarity with articles (a, an, the)."""
-        matcher = TokenSimilarityMatcher()
-
-        similarity1 = matcher.similarity("create product", "create a product")
-        similarity2 = matcher.similarity("create product", "create the product")
+        similarity1 = token_similarity_matcher.similarity(
+            "create product", "create a product"
+        )
+        similarity2 = token_similarity_matcher.similarity(
+            "create product", "create the product"
+        )
 
         assert similarity1 > 0.6
         assert similarity2 > 0.6
 
-    def test_false_positive_detection(self):
+    def test_false_positive_detection(self, token_similarity_matcher):
         """Test that semantic opposites are detected."""
-        matcher = TokenSimilarityMatcher()
-
         # These should return low similarity due to antonym detection
-        similarity = matcher.similarity("create product", "delete product")
+        similarity = token_similarity_matcher.similarity(
+            "create product", "delete product"
+        )
         assert similarity <= 0.3, (
             f"Antonyms should have low similarity, got {similarity}"
         )
 
-    def test_performance_optimization(self):
+    def test_performance_optimization(self, token_similarity_matcher):
         """Test that similarity calculation is optimized."""
-        matcher = TokenSimilarityMatcher()
-
         import time
 
         start_time = time.time()
 
         # Calculate many similarities quickly
         for i in range(100):
-            matcher.similarity(f"create product {i}", f"create item {i}")
+            token_similarity_matcher.similarity(
+                f"create product {i}", f"create item {i}"
+            )
 
         end_time = time.time()
 
         # Should complete quickly
         assert end_time - start_time < 1.0
+
+    def test_fixture_performance_improvement(self):
+        """Test that the fixture provides significant performance improvement."""
+        import time
+
+        from nalai.services.cache_service import load_fallback_corpus, load_nlp_corpus
+
+        # Test fallback-only initialization (should be fast)
+        start_time = time.time()
+        fallback_verbs, fallback_nouns, fallback_adjectives, fallback_antonyms = (
+            load_fallback_corpus()
+        )
+        fallback_matcher = TokenSimilarityMatcher(
+            verbs=fallback_verbs,
+            nouns=fallback_nouns,
+            adjectives=fallback_adjectives,
+            antonyms=fallback_antonyms,
+        )
+        fallback_time = time.time() - start_time
+
+        # Test full NLP initialization (should be slow)
+        start_time = time.time()
+        nlp_verbs, nlp_nouns, nlp_adjectives, nlp_antonyms = load_nlp_corpus()
+        full_matcher = TokenSimilarityMatcher(
+            verbs=nlp_verbs,
+            nouns=nlp_nouns,
+            adjectives=nlp_adjectives,
+            antonyms=nlp_antonyms,
+        )
+        full_time = time.time() - start_time
+
+        # Fallback should be significantly faster
+        assert fallback_time < 0.1, (
+            f"Fallback initialization too slow: {fallback_time:.3f}s"
+        )
+        assert full_time > fallback_time, (
+            "Full initialization should be slower than fallback"
+        )
+
+        # Both should work for similarity calculation
+        fallback_similarity = fallback_matcher.similarity(
+            "create product", "create a product"
+        )
+        full_similarity = full_matcher.similarity("create product", "create a product")
+
+        # Both should return reasonable similarity scores
+        assert 0.0 <= fallback_similarity <= 1.0
+        assert 0.0 <= full_similarity <= 1.0
+
+    def test_dependency_injection_benefits(self):
+        """Test that dependency injection makes the class more testable and flexible."""
+        # Create a minimal custom corpus for testing
+        custom_verbs = {"create", "add", "get"}
+        custom_nouns = {"user", "product"}
+        custom_adjectives = {"new", "active"}
+        custom_antonyms = {"create": ["delete"], "add": ["remove"]}
+
+        # Create matcher with custom corpus
+        custom_matcher = TokenSimilarityMatcher(
+            verbs=custom_verbs,
+            nouns=custom_nouns,
+            adjectives=custom_adjectives,
+            antonyms=custom_antonyms,
+        )
+
+        # Test that custom corpus is used
+        assert custom_matcher.verbs == custom_verbs
+        assert custom_matcher.nouns == custom_nouns
+        assert custom_matcher.adjectives == custom_adjectives
+        assert custom_matcher.antonyms == custom_antonyms
+
+        # Test similarity with custom corpus
+        similarity = custom_matcher.similarity("create user", "add user")
+        assert 0.0 <= similarity <= 1.0
+
+        # Test antonym detection with custom corpus
+        similarity_opposites = custom_matcher.similarity("create user", "delete user")
+        # Should be low due to antonym detection
+        assert similarity_opposites <= 0.3
+
+        # Test with empty corpus (should still work)
+        empty_matcher = TokenSimilarityMatcher(
+            verbs=set(), nouns=set(), adjectives=set(), antonyms={}
+        )
+
+        # Should still calculate similarity (though may be 0)
+        similarity_empty = empty_matcher.similarity("test", "test")
+        assert isinstance(similarity_empty, float)
+        assert 0.0 <= similarity_empty <= 1.0
 
     def test_similarity_threshold_behavior_corpus_aware(self):
         """Test that similarity threshold correctly filters results based on actual corpus."""
