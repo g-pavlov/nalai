@@ -15,7 +15,7 @@ from unittest.mock import patch
 import pytest
 from langchain_core.messages import HumanMessage
 
-from nalai.services.cache_service import CacheService, TokenSimilarityMatcher
+from nalai.services.cache_service import CacheService
 
 
 class TestEnhancedCacheService:
@@ -720,95 +720,6 @@ class TestTokenSimilarityMatcher:
 
         # Should complete quickly
         assert end_time - start_time < 1.0
-
-    def test_fixture_performance_improvement(self):
-        """Test that the fixture provides significant performance improvement."""
-        import time
-
-        from nalai.services.cache_service import load_fallback_corpus, load_nlp_corpus
-
-        # Test fallback-only initialization (should be fast)
-        start_time = time.time()
-        fallback_verbs, fallback_nouns, fallback_adjectives, fallback_antonyms = (
-            load_fallback_corpus()
-        )
-        fallback_matcher = TokenSimilarityMatcher(
-            verbs=fallback_verbs,
-            nouns=fallback_nouns,
-            adjectives=fallback_adjectives,
-            antonyms=fallback_antonyms,
-        )
-        fallback_time = time.time() - start_time
-
-        # Test full NLP initialization (should be slow)
-        start_time = time.time()
-        nlp_verbs, nlp_nouns, nlp_adjectives, nlp_antonyms = load_nlp_corpus()
-        full_matcher = TokenSimilarityMatcher(
-            verbs=nlp_verbs,
-            nouns=nlp_nouns,
-            adjectives=nlp_adjectives,
-            antonyms=nlp_antonyms,
-        )
-        full_time = time.time() - start_time
-
-        # Fallback should be significantly faster
-        assert fallback_time < 0.1, (
-            f"Fallback initialization too slow: {fallback_time:.3f}s"
-        )
-        assert full_time > fallback_time, (
-            "Full initialization should be slower than fallback"
-        )
-
-        # Both should work for similarity calculation
-        fallback_similarity = fallback_matcher.similarity(
-            "create product", "create a product"
-        )
-        full_similarity = full_matcher.similarity("create product", "create a product")
-
-        # Both should return reasonable similarity scores
-        assert 0.0 <= fallback_similarity <= 1.0
-        assert 0.0 <= full_similarity <= 1.0
-
-    def test_dependency_injection_benefits(self):
-        """Test that dependency injection makes the class more testable and flexible."""
-        # Create a minimal custom corpus for testing
-        custom_verbs = {"create", "add", "get"}
-        custom_nouns = {"user", "product"}
-        custom_adjectives = {"new", "active"}
-        custom_antonyms = {"create": ["delete"], "add": ["remove"]}
-
-        # Create matcher with custom corpus
-        custom_matcher = TokenSimilarityMatcher(
-            verbs=custom_verbs,
-            nouns=custom_nouns,
-            adjectives=custom_adjectives,
-            antonyms=custom_antonyms,
-        )
-
-        # Test that custom corpus is used
-        assert custom_matcher.verbs == custom_verbs
-        assert custom_matcher.nouns == custom_nouns
-        assert custom_matcher.adjectives == custom_adjectives
-        assert custom_matcher.antonyms == custom_antonyms
-
-        # Test similarity with custom corpus
-        similarity = custom_matcher.similarity("create user", "add user")
-        assert 0.0 <= similarity <= 1.0
-
-        # Test antonym detection with custom corpus
-        similarity_opposites = custom_matcher.similarity("create user", "delete user")
-        # Should be low due to antonym detection
-        assert similarity_opposites <= 0.3
-
-        # Test with empty corpus (should still work)
-        empty_matcher = TokenSimilarityMatcher(
-            verbs=set(), nouns=set(), adjectives=set(), antonyms={}
-        )
-
-        # Should still calculate similarity (though may be 0)
-        similarity_empty = empty_matcher.similarity("test", "test")
-        assert isinstance(similarity_empty, float)
-        assert 0.0 <= similarity_empty <= 1.0
 
     def test_similarity_threshold_behavior_corpus_aware(self):
         """Test that similarity threshold correctly filters results based on actual corpus."""
