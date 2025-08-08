@@ -120,11 +120,11 @@ class TestAuthService:
 
             # Handle time-based fields
             if payload.get("iat") == "now":
-                payload["iat"] = datetime.utcnow()
+                payload["iat"] = datetime.now(UTC)
             if payload.get("exp") == "now+1h":
-                payload["exp"] = datetime.utcnow() + timedelta(hours=1)
+                payload["exp"] = datetime.now(UTC) + timedelta(hours=1)
             elif payload.get("exp") == "now-1h":
-                payload["exp"] = datetime.utcnow() - timedelta(hours=1)
+                payload["exp"] = datetime.now(UTC) - timedelta(hours=1)
 
             token = jwt.encode(payload, "test-secret", algorithm="HS256")
 
@@ -239,9 +239,9 @@ class TestAuthService:
 
             # Handle time-based fields
             if payload.get("exp") == "now+1h":
-                payload["exp"] = datetime.utcnow() + timedelta(hours=1)
+                payload["exp"] = datetime.now(UTC) + timedelta(hours=1)
             elif payload.get("exp") == "now-1h":
-                payload["exp"] = datetime.utcnow() - timedelta(hours=1)
+                payload["exp"] = datetime.now(UTC) - timedelta(hours=1)
 
             token = jwt.encode(payload, "test-secret", algorithm="HS256")
         else:
@@ -312,7 +312,7 @@ class TestAuthService:
         # Generate token
         payload = case_data["input"]["token_payload"].copy()
         if payload.get("exp") == "now+1h":
-            payload["exp"] = datetime.utcnow() + timedelta(hours=1)
+            payload["exp"] = datetime.now(UTC) + timedelta(hours=1)
 
         token = jwt.encode(payload, "test-secret", algorithm="HS256")
 
