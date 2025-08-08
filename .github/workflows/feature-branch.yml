@@ -104,7 +104,10 @@ jobs:
 
       - name: Test Docker image
         run: |
-          docker run --rm nalai:${{ github.sha }} --help
+          docker run --rm -d --name test-nalai nalai:${{ github.sha }}
+          sleep 5
+          curl -f http://localhost:8080/healthz || exit 1
+          docker stop test-nalai
 
   # Security check
   security-check:
@@ -122,7 +125,7 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif' 
