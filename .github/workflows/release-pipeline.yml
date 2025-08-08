@@ -344,8 +344,17 @@ jobs:
           chmod +x ./scripts/install_trivy.sh
           ./scripts/install_trivy.sh
 
+      - name: Debug version output
+        run: |
+          echo "Version management output: ${{ needs.version-management.outputs.version }}"
+          echo "Should deploy: ${{ needs.version-management.outputs.should-deploy }}"
+
       - name: Run security scan on Docker image
         run: |
+          if [ -z "${{ needs.version-management.outputs.version }}" ]; then
+            echo "❌ Error: Version is empty. Cannot scan image."
+            exit 1
+          fi
           make security-image IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} VERSION=${{ needs.version-management.outputs.version }}
 
       - name: Upload Trivy scan results to GitHub Security tab
