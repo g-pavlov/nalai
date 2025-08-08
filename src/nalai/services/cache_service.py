@@ -369,13 +369,19 @@ class TokenSimilarityMatcher:
             # Load fallback words from data files
             from pathlib import Path
 
-            data_dir = Path(__file__).parent.parent.parent / "data" / "word_corpus"
+            data_dir = (
+                Path(__file__).parent.parent.parent.parent / "data" / "word_corpus"
+            )
 
             def load_words_from_file(filename: str) -> set[str]:
                 file_path = data_dir / filename
                 if file_path.exists():
                     with open(file_path, encoding="utf-8") as f:
-                        return {line.strip().lower() for line in f if line.strip()}
+                        return {
+                            line.strip().lower()
+                            for line in f
+                            if line.strip() and not line.strip().startswith("#")
+                        }
                 return set()
 
             def load_antonyms_from_file(filename: str) -> dict[str, list[str]]:

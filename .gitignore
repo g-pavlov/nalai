@@ -31,6 +31,9 @@ venv
 # deepeval tests
 .deepeval*
 .temp-deepeval*
+
+# Evaluation scripts
+eval/
 temp_test_run_data.json
 
 # Test artifacts
@@ -53,4 +56,4 @@ build.env
 .coverage
 .coverage.*
 
-*.sarif
+trivy-results.sarif

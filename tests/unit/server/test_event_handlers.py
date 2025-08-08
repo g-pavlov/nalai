@@ -47,9 +47,22 @@ class TestSerializeEventDefault:
         result = serialize_event_default(event)
         assert result == expected
 
+    def test_serialize_event_default_with_model_dump_method(self):
+        """Test serialization of objects with model_dump method (Pydantic models)."""
+        mock_obj = MagicMock()
+        mock_obj.model_dump.return_value = {"serialized": "pydantic_data"}
+
+        result = serialize_event_default(mock_obj)
+
+        assert result == {"serialized": "pydantic_data"}
+        mock_obj.model_dump.assert_called_once()
+
     def test_serialize_event_default_with_to_dict_method(self):
         """Test serialization of objects with to_dict method."""
         mock_obj = MagicMock()
+        # The function checks for model_dump() first, then to_dict()
+        # Since we want to test to_dict(), we need to ensure model_dump() doesn't exist
+        del mock_obj.model_dump
         mock_obj.to_dict.return_value = {"serialized": "data"}
 
         result = serialize_event_default(mock_obj)

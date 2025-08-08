@@ -18,7 +18,6 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-import logging
 
 from nalai.core.constants import NODE_CALL_API, NODE_CALL_MODEL
 from nalai.core.interrupts import ABORT_MESSAGE, process_human_review
@@ -168,24 +167,20 @@ class TestProcessHumanReview:
         assert result.update == {}
 
     @patch("nalai.core.interrupts.interrupt")
+    @patch("nalai.core.interrupts.logger")
     def test_unknown_action_logging(
-        self, mock_interrupt, mock_state, mock_config, caplog
+        self, mock_logger, mock_interrupt, mock_state, mock_config
     ):
         """Test that unknown actions are logged as warnings."""
         mock_interrupt.return_value = {"action": "unknown_action"}
 
-        with caplog.at_level(logging.WARNING):
-            result = process_human_review(mock_state, mock_config)
+        result = process_human_review(mock_state, mock_config)
 
         # Verify warning was logged
-        warning_found = any(
-            "unknown review action" in record.message.lower()
-            and record.levelname == "WARNING"
-            for record in caplog.records
-        )
-        assert warning_found, (
-            f"No warning found for unknown action. Log records: {[r.message for r in caplog.records]}"
-        )
+        mock_logger.warning.assert_called_once()
+        warning_call = mock_logger.warning.call_args[0][0]
+        assert "unknown review action" in warning_call.lower()
+        assert "unknown_action" in warning_call
 
         # Should still return continue action
         assert isinstance(result, Command)

@@ -1,0 +1,193 @@
+test_cases:
+  - intent1: "create product"
+    intent2: "create a product"
+    nltk_min_similarity: 0.7
+    nltk_max_similarity: 0.7
+    comprehensive_min_similarity: 0.9
+    comprehensive_max_similarity: 1.0
+    fallback_min_similarity: 0.7
+    fallback_max_similarity: 0.8
+    
+  - intent1: "list products"
+    intent2: "list all products"
+    nltk_min_similarity: 0.714
+    nltk_max_similarity: 0.715
+    comprehensive_min_similarity: 0.8
+    comprehensive_max_similarity: 0.9
+    fallback_min_similarity: 0.6
+    fallback_max_similarity: 0.7
+    
+  - intent1: "get user"
+    intent2: "fetch user"
+    nltk_min_similarity: 0.272
+    nltk_max_similarity: 0.273
+    comprehensive_min_similarity: 0.4
+    comprehensive_max_similarity: 0.5
+    fallback_min_similarity: 0.3
+    fallback_max_similarity: 0.4
+    
+  - intent1: "add product"
+    intent2: "insert product"
+    nltk_min_similarity: 0.272
+    nltk_max_similarity: 0.273
+    comprehensive_min_similarity: 0.4
+    comprehensive_max_similarity: 0.5
+    fallback_min_similarity: 0.3
+    fallback_max_similarity: 0.4
+    
+  - intent1: "create product"
+    intent2: "create item"
+    nltk_min_similarity: 0.400
+    nltk_max_similarity: 0.5
+    comprehensive_min_similarity: 0.5
+    comprehensive_max_similarity: 0.6
+    fallback_min_similarity: 0.4
+    fallback_max_similarity: 0.5
+    
+  - intent1: "list products"
+    intent2: "show products"
+    nltk_min_similarity: 0.200
+    nltk_max_similarity: 0.3
+    comprehensive_min_similarity: 0.3
+    comprehensive_max_similarity: 0.4
+    fallback_min_similarity: 0.2
+    fallback_max_similarity: 0.3
+    
+  - intent1: "create product"
+    intent2: "create the product"
+    nltk_min_similarity: 0.875
+    nltk_max_similarity: 0.9
+    comprehensive_min_similarity: 0.9
+    comprehensive_max_similarity: 1.0
+    fallback_min_similarity: 0.7
+    fallback_max_similarity: 0.8
+    
+  - intent1: "create a product"
+    intent2: "create the product"
+    nltk_min_similarity: 0.636
+    nltk_max_similarity: 0.637
+    comprehensive_min_similarity: 0.8
+    comprehensive_max_similarity: 0.9
+    fallback_min_similarity: 0.7
+    fallback_max_similarity: 0.8
+    
+  - intent1: "create product"
+    intent2: "create products"
+    nltk_min_similarity: 0.444
+    nltk_max_similarity: 0.5
+    comprehensive_min_similarity: 0.5
+    comprehensive_max_similarity: 0.6
+    fallback_min_similarity: 0.4
+    fallback_max_similarity: 0.5
+    
+  - intent1: "list product"
+    intent2: "list products"
+    nltk_min_similarity: 0.444
+    nltk_max_similarity: 0.5
+    comprehensive_min_similarity: 0.5
+    comprehensive_max_similarity: 0.6
+    fallback_min_similarity: 0.4
+    fallback_max_similarity: 0.5
+    
+  - intent1: "get user"
+    intent2: "get users"
+    nltk_min_similarity: 0.444
+    nltk_max_similarity: 0.5
+    comprehensive_min_similarity: 0.5
+    comprehensive_max_similarity: 0.6
+    fallback_min_similarity: 0.4
+    fallback_max_similarity: 0.5
+    
+  - intent1: "single"
+    intent2: "single word"
+    nltk_min_similarity: 0.500
+    nltk_max_similarity: 0.6
+    comprehensive_min_similarity: 0.6
+    comprehensive_max_similarity: 0.7
+    fallback_min_similarity: 0.5
+    fallback_max_similarity: 0.6
+    
+  # Antonym pairs - should have very low similarity
+  - intent1: "create product"
+    intent2: "delete product"
+    nltk_min_similarity: 0.272
+    nltk_max_similarity: 0.273
+    comprehensive_min_similarity: 0.0
+    comprehensive_max_similarity: 0.1
+    fallback_min_similarity: 0.0
+    fallback_max_similarity: 0.2
+    
+  - intent1: "add user"
+    intent2: "remove user"
+    nltk_min_similarity: 0.272
+    nltk_max_similarity: 0.273
+    comprehensive_min_similarity: 0.0
+    comprehensive_max_similarity: 0.1
+    fallback_min_similarity: 0.0
+    fallback_max_similarity: 0.2
+    
+  - intent1: "enable service"
+    intent2: "disable service"
+    nltk_min_similarity: 0.0
+    nltk_max_similarity: 0.1
+    comprehensive_min_similarity: 0.0
+    comprehensive_max_similarity: 0.1
+    fallback_min_similarity: 0.0
+    fallback_max_similarity: 0.2
+    
+  # Different intents - should have low similarity
+  - intent1: "create product"
+    intent2: "list orders"
+    nltk_min_similarity: 0.0
+    nltk_max_similarity: 0.3
+    comprehensive_min_similarity: 0.0
+    comprehensive_max_similarity: 0.3
+    fallback_min_similarity: 0.0
+    fallback_max_similarity: 0.4
+    
+  - intent1: "get user"
+    intent2: "create product"
+    nltk_min_similarity: 0.0
+    nltk_max_similarity: 0.3
+    comprehensive_min_similarity: 0.0
+    comprehensive_max_similarity: 0.3
+    fallback_min_similarity: 0.0
+    fallback_max_similarity: 0.4
+    
+  # Edge cases
+  - intent1: ""
+    intent2: "create product"
+    nltk_min_similarity: 0.0
+    nltk_max_similarity: 0.0
+    comprehensive_min_similarity: 0.0
+    comprehensive_max_similarity: 0.0
+    fallback_min_similarity: 0.0
+    fallback_max_similarity: 0.0
+    
+  - intent1: "create product"
+    intent2: ""
+    nltk_min_similarity: 0.0
+    nltk_max_similarity: 0.0
+    comprehensive_min_similarity: 0.0
+    comprehensive_max_similarity: 0.0
+    fallback_min_similarity: 0.0
+    fallback_max_similarity: 0.0
+    
+  # Exact matches - should always be 1.0
+  - intent1: "create product"
+    intent2: "create product"
+    nltk_min_similarity: 1.0
+    nltk_max_similarity: 1.0
+    comprehensive_min_similarity: 1.0
+    comprehensive_max_similarity: 1.0
+    fallback_min_similarity: 1.0
+    fallback_max_similarity: 1.0
+    
+  - intent1: "list all products"
+    intent2: "list all products"
+    nltk_min_similarity: 1.0
+    nltk_max_similarity: 1.0
+    comprehensive_min_similarity: 1.0
+    comprehensive_max_similarity: 1.0
+    fallback_min_similarity: 1.0
+    fallback_max_similarity: 1.0 

@@ -1,0 +1,332 @@
+# Test cases for authentication service functionality
+
+auth_service_initialization:
+  - name: "standard_initialization"
+    input:
+      config:
+        issuer: "https://custom.auth0.com/"
+        audience: "custom-audience"
+        mode: "delegation"
+    expected:
+      issuer: "https://custom.auth0.com/"
+      audience: "custom-audience"
+      mode: "delegation"
+      should_raise: false
+  
+  - name: "default_initialization"
+    input:
+      config: {}
+    expected:
+      issuer: "https://test.auth0.com/"
+      audience: "test-audience"
+      mode: "client_credentials"
+      should_raise: false
+
+authentication_scenarios:
+  - name: "id_token_authentication"
+    input:
+      headers:
+        X-Id-Token: "valid_jwt_token"
+      token_payload:
+        sub: "test-user-123"
+        email: "test@example.com"
+        given_name: "Test"
+        family_name: "User"
+        org_unit_id: "test-org"
+        roles: ["developer", "admin"]
+        permissions: ["read", "write"]
+        iss: "https://test.auth0.com/"
+        aud: "test-audience"
+        iat: "now"
+        exp: "now+1h"
+    expected:
+      user_id: "test-user-123"
+      email: "test@example.com"
+      given_name: "Test"
+      family_name: "User"
+      org_unit_id: "test-org"
+      roles: ["developer", "admin"]
+      permissions: ["read", "write"]
+      token_type: "id_token"
+      is_authenticated: true
+      should_raise: false
+  
+  - name: "authorization_header_authentication"
+    input:
+      headers:
+        Authorization: "Bearer valid_jwt_token"
+      token_payload:
+        sub: "test-user-123"
+        email: "test@example.com"
+        exp: "now+1h"
+    expected:
+      user_id: "test-user-123"
+      email: "test@example.com"
+      token_type: "access_token"
+      is_authenticated: true
+      should_raise: false
+  
+  - name: "no_token_authentication"
+    input:
+      headers: {}
+    expected:
+      should_raise: true
+      exception_type: "HTTPException"
+      status_code: 401
+      detail_contains: "Authentication required"
+  
+  - name: "invalid_token_authentication"
+    input:
+      headers:
+        Authorization: "Bearer invalid.token.here"
+    expected:
+      should_raise: true
+      exception_type: "HTTPException"
+      status_code: 401
+      detail_contains: "Invalid token format"
+  
+  - name: "missing_sub_claim"
+    input:
+      headers:
+        Authorization: "Bearer valid_jwt_token"
+      token_payload:
+        email: "test@example.com"
+        given_name: "Test"
+        family_name: "User"
+        exp: "now+1h"
+    expected:
+      should_raise: true
+      exception_type: "HTTPException"
+      status_code: 401
+      detail_contains: "missing sub claim"
+  
+  - name: "development_mode"
+    input:
+      headers: {}
+      auth_enabled: false
+    expected:
+      user_id: "dev-user"
+      email: "dev@example.com"
+      given_name: "Development"
+      family_name: "User"
+      org_unit_id: "dev-org"
+      roles: ["developer"]
+      permissions: ["read", "write"]
+      token_type: "dev_token"
+      is_authenticated: true
+      metadata:
+        dev_mode: true
+      should_raise: false
+
+api_token_scenarios:
+  - name: "client_credentials_mode"
+    input:
+      mode: "client_credentials"
+      service: "service_a"
+      identity:
+        user_id: "test-user"
+        token_type: "access_token"
+    expected:
+      token: "cc_token_for_service_a"
+      should_raise: false
+  
+  - name: "delegation_mode"
+    input:
+      mode: "delegation"
+      service: "service_a"
+      identity:
+        user_id: "test-user"
+        token_type: "access_token"
+    expected:
+      token: "delegated_token_for_service_a"
+      should_raise: false
+  
+  - name: "unsupported_mode"
+    input:
+      mode: "unsupported"
+      service: "service_a"
+      identity:
+        user_id: "test-user"
+        token_type: "access_token"
+    expected:
+      should_raise: true
+      exception_type: "ValueError"
+      message_contains: "Unsupported auth mode"
+  
+  - name: "service_not_configured"
+    input:
+      mode: "client_credentials"
+      service: "unconfigured_service"
+      identity:
+        user_id: "test-user"
+        token_type: "access_token"
+    expected:
+      should_raise: true
+      exception_type: "ValueError"
+      message_contains: "No client credentials configured"
+
+token_validation_scenarios:
+  - name: "valid_token_enabled"
+    input:
+      token: "valid_jwt_token"
+      validate_tokens: true
+      token_payload:
+        sub: "test-user-123"
+        exp: "now+1h"
+    expected:
+      result: true
+      should_raise: false
+  
+  - name: "invalid_token_disabled"
+    input:
+      token: "invalid.token.here"
+      validate_tokens: false
+    expected:
+      result: true
+      should_raise: false
+  
+  - name: "expired_token"
+    input:
+      token: "expired_jwt_token"
+      validate_tokens: true
+      token_payload:
+        sub: "test-user-123"
+        exp: "now-1h"
+    expected:
+      result: false
+      should_raise: false
+  
+  - name: "invalid_token_enabled"
+    input:
+      token: "invalid.token.here"
+      validate_tokens: true
+    expected:
+      result: false
+      should_raise: false
+
+identity_context_scenarios:
+  - name: "complete_identity"
+    input:
+      user_id: "test-user"
+      email: "test@example.com"
+      given_name: "Test"
+      family_name: "User"
+      token_type: "access_token"
+      token_expires_at: "now+1h"
+    expected:
+      full_name: "Test User"
+      is_authenticated: true
+      is_token_expired: false
+  
+  - name: "missing_given_name"
+    input:
+      user_id: "test-user"
+      email: "test@example.com"
+      family_name: "User"
+      token_type: "access_token"
+    expected:
+      full_name: "User"
+      is_authenticated: true
+  
+  - name: "missing_family_name"
+    input:
+      user_id: "test-user"
+      email: "test@example.com"
+      given_name: "Test"
+      token_type: "access_token"
+    expected:
+      full_name: "Test"
+      is_authenticated: true
+  
+  - name: "missing_names"
+    input:
+      user_id: "test-user"
+      email: "test@example.com"
+      token_type: "access_token"
+    expected:
+      full_name: "test-user"
+      is_authenticated: true
+  
+  - name: "expired_token"
+    input:
+      user_id: "test-user"
+      email: "test@example.com"
+      token_type: "access_token"
+      token_expires_at: "now-1h"
+    expected:
+      is_token_expired: true
+
+string_roles_scenarios:
+  - name: "string_roles"
+    input:
+      headers:
+        Authorization: "Bearer valid_jwt_token"
+      token_payload:
+        sub: "test-user-123"
+        email: "test@example.com"
+        roles: "developer"
+        permissions: "read"
+        exp: "now+1h"
+    expected:
+      roles: ["developer"]
+      permissions: ["read"]
+      should_raise: false
+  
+  - name: "missing_optional_fields"
+    input:
+      headers:
+        Authorization: "Bearer valid_jwt_token"
+      token_payload:
+        sub: "test-user-123"
+        exp: "now+1h"
+    expected:
+      user_id: "test-user-123"
+      email: null
+      given_name: null
+      family_name: null
+      org_unit_id: null
+      roles: []
+      permissions: []
+      is_authenticated: true
+      should_raise: false
+
+factory_scenarios:
+  - name: "standard_provider"
+    input:
+      provider: "standard"
+      config: {}
+    expected:
+      service_type: "StandardAuthService"
+      should_raise: false
+  
+  - name: "unsupported_provider"
+    input:
+      provider: "unsupported"
+      config: {}
+    expected:
+      should_raise: true
+      exception_type: "ValueError"
+      message_contains: "Unsupported auth provider"
+  
+  - name: "default_provider"
+    input:
+      provider: null
+      config: null
+    expected:
+      service_type: "StandardAuthService"
+      should_raise: false
+
+caching_scenarios:
+  - name: "token_caching"
+    input:
+      mode: "client_credentials"
+      service: "service_a"
+      identity:
+        user_id: "test-user"
+        token_type: "access_token"
+      calls: 2
+    expected:
+      first_token: "cc_token_for_service_a"
+      second_token: "cc_token_for_service_a"
+      tokens_equal: true
+      should_raise: false 

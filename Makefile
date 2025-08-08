@@ -9,7 +9,7 @@ CACHE_SEMANTIC_CORPUS ?= fallback
 # Setup Commands
 # ==============
 
-.PHONY: setup-dev install validate-env install-corpus test-corpus
+.PHONY: setup-dev install validate-env install-corpus
 
 # Setup development environment
 setup-dev:
@@ -89,11 +89,6 @@ install-corpus:
 		echo "📦 Using fallback corpus (no additional packages)"; \
 	fi
 
-# Test corpus installation
-test-corpus:
-	@echo "🧪 Testing corpus installation..."
-	@poetry run python -c "from nalai.services.cache_service import TokenSimilarityMatcher; m = TokenSimilarityMatcher(); print(f'✅ Corpus loaded: {len(m.verbs)} verbs, {len(m.nouns)} nouns, {len(m.adjectives)} adjectives')"
-
 # Validate environment (Python version, Poetry version, etc.)
 validate-env:
 	@echo "🔍 Validating environment..."
@@ -127,19 +122,22 @@ lint-fix: install
 
 .PHONY: test test-integration test-coverage
 
-# Run unit tests
+# Run unit tests with coverage (fast, parallel)
 test: install
-	poetry run pytest tests/unit/ -v
+	@echo "🧪 Running unit tests with coverage..."
+	@time poetry run pytest tests/unit/ -v -n auto --dist=loadfile --tb=short --cov=src/nalai --cov-report=term-missing --cov-report=html
+	@echo "✅ Unit tests with coverage completed"
 
-# Run integration tests
+# Run integration tests (slower, sequential)
 test-integration: install
-	poetry run pytest tests/integration/ -v
+	@echo "🔗 Running integration tests..."
+	@time poetry run pytest tests/integration/ -v --tb=short -q
 
-# Run all tests with coverage
-test-coverage: install
-	@echo "🧪 Running tests with coverage..."
-	@time poetry run pytest tests/ -v --cov=src/nalai --cov-report=term-missing --cov-report=html --ignore=tests/unit/core/test_tool_node.py --ignore=tests/unit/tools/test_http_requests.py --ignore=tests/integration/test_chunk_accumulation.py
-	@echo "✅ Tests completed"
+# Run all tests with coverage (for full validation)
+test-coverage-full: install
+	@echo "🧪 Running all tests with coverage..."
+	@time poetry run pytest tests/ -v --cov=src/nalai --cov-report=term-missing --cov-report=html
+	@echo "✅ All tests with coverage completed"
 
 # Security Commands
 # ================
@@ -161,20 +159,16 @@ security-image: install
 # Docker Commands
 # ==============
 
-.PHONY: docker-build docker-run build-docker
+.PHONY: docker-build docker-run
 
-# Build Docker image (development)
+# Build Docker image (development - fast, minimal corpus)
 docker-build: install
 	docker build -t $(IMAGE_NAME):latest .
 
-# Build Docker image with corpus configuration
-build-docker: install
-	@echo "🐳 Building Docker image with corpus: $(CACHE_SEMANTIC_CORPUS)"
-	docker build --build-arg CACHE_SEMANTIC_CORPUS=$(CACHE_SEMANTIC_CORPUS) -t $(IMAGE_NAME):$(VERSION) .
-
-# Build production Docker image
+# Build Docker image (production - configurable corpus)
 docker-build-prod: install
-	docker build -t $(IMAGE_NAME):prod --target runtime .
+	@echo "🐳 Building production Docker image with corpus: $(CACHE_SEMANTIC_CORPUS)"
+	docker build --build-arg CACHE_SEMANTIC_CORPUS=$(CACHE_SEMANTIC_CORPUS) -t $(IMAGE_NAME):$(VERSION) --target runtime .
 
 # Run Docker container
 docker-run: docker-build
@@ -359,6 +353,16 @@ install-git-hooks:
 	@echo '#!/bin/bash' > .git/hooks/pre-push
 	@echo '# Pre-push hook to automatically push version tags' >> .git/hooks/pre-push
 	@echo '' >> .git/hooks/pre-push
+	@echo '# Check if we'\''re pushing tags directly to avoid infinite loop' >> .git/hooks/pre-push
+	@echo 'if [[ "$$1" == *"refs/tags/"* ]]; then' >> .git/hooks/pre-push
+	@echo '    exit 0' >> .git/hooks/pre-push
+	@echo 'fi' >> .git/hooks/pre-push
+	@echo '' >> .git/hooks/pre-push
+	@echo '# Check if we'\''re already in a tag push to prevent infinite loop' >> .git/hooks/pre-push
+	@echo 'if [ "$$GIT_PUSHING_TAGS" = "1" ]; then' >> .git/hooks/pre-push
+	@echo '    exit 0' >> .git/hooks/pre-push
+	@echo 'fi' >> .git/hooks/pre-push
+	@echo '' >> .git/hooks/pre-push
 	@echo '# Get all local version tags that are not on remote' >> .git/hooks/pre-push
 	@echo 'local_tags=$$(git tag --list | grep -E "^[0-9]+\.[0-9]+\.[0-9]+$$" | while read tag; do' >> .git/hooks/pre-push
 	@echo '    if ! git ls-remote --tags origin | grep -q "refs/tags/$$tag$$"; then' >> .git/hooks/pre-push
@@ -369,7 +373,7 @@ install-git-hooks:
 	@echo '# If we have local version tags, push them' >> .git/hooks/pre-push
 	@echo 'if [ -n "$$local_tags" ]; then' >> .git/hooks/pre-push
 	@echo '    echo "Pushing version tags: $$local_tags"' >> .git/hooks/pre-push
-	@echo '    git push origin $$local_tags' >> .git/hooks/pre-push
+	@echo '    GIT_PUSHING_TAGS=1 git push origin $$local_tags' >> .git/hooks/pre-push
 	@echo 'fi' >> .git/hooks/pre-push
 	@chmod +x .git/hooks/pre-push
 	
@@ -419,17 +423,16 @@ help:
 	@echo "  make lint                - Format code and run linting (CI-safe)"
 	@echo "  make lint-fix            - Format code and run linting with auto-fix"
 	@echo "  make serve               - Start development server"
-	@echo "  make docker-build        - Build Docker image (development)"
-	@echo "  make build-docker        - Build Docker image with corpus configuration"
+	@echo "  make docker-build        - Build Docker image (development - fast)"
+	@echo "  make docker-build-prod   - Build Docker image (production - configurable)"
 	@echo "  make docker-run          - Run Docker container"
 	@echo "  make ui-run              - Start API Assistant with UI demo"
 	@echo "  make ui-stop             - Stop all demo services"
 	@echo ""
 	@echo "\033[1m🧪 Testing:\033[0m"
-	@echo "  make test                - Run unit tests"
-	@echo "  make test-integration    - Run integration tests"
-	@echo "  make test-coverage       - Run all tests with coverage"
-	@echo "  make test-corpus         - Test corpus installation and functionality"
+	@echo "  make test                - Run unit tests with coverage (fast, parallel)"
+	@echo "  make test-integration    - Run integration tests (slower, sequential)"
+	@echo "  make test-coverage-full  - Run all tests with coverage (full validation)"
 	@echo "  make security            - Run security scan (filesystem)"
 	@echo "  make security-image      - Run security scan on Docker image"
 	@echo "  make validate-deps       - Validate dependencies"
@@ -461,5 +464,4 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make install-corpus CACHE_SEMANTIC_CORPUS=wordnet"
-	@echo "  make build-docker CACHE_SEMANTIC_CORPUS=comprehensive"
-	@echo "  make test-corpus"
+	@echo "  make docker-build-prod CACHE_SEMANTIC_CORPUS=comprehensive"

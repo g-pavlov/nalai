@@ -2,8 +2,35 @@ name: Feature Branch Pipeline
 
 on:
   push:
-    branches-ignore: [ main ]
-    tags-ignore: [ 'v*' ]
+    branches-ignore:
+      - 'main'
+      - 'docs'
+      - 'docs/**'
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'poetry.lock'
+      - 'Dockerfile'
+      - 'Makefile'
+      - '.github/workflows/**'
+      - 'scripts/**'
+      - 'data/**'
+      - 'models/**'
+      - '!**/*.md'
+      - '!**/*.txt'
+      - '!**/*.png'
+      - '!**/*.jpg'
+      - '!**/*.jpeg'
+      - '!**/*.gif'
+      - '!**/*.svg'
+      - '!docs/**'
+      - '!LICENSE'
+      - '!README.md'
+      - '!SUPPORT.md'
+      - '!CODE_OF_CONDUCT.md'
+      - '!CONTRIBUTING.md'
+      - '!CODEOWNERS'
 
 jobs:
   # Lint and Test Job
@@ -36,16 +63,16 @@ jobs:
 
       - name: Install dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --with=testing
+        run: make install
 
-      - name: Lint with ruff
-        run: |
-          poetry run ruff check src/ tests/
-          poetry run ruff format --check src/ tests/
+      - name: Run linting and formatting
+        run: make lint
 
-      - name: Run tests
-        run: |
-          poetry run pytest tests/ -v --cov=src --cov-report=xml
+      - name: Run unit tests with coverage
+        run: make test
+
+      - name: Validate dependencies
+        run: make validate-deps
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3

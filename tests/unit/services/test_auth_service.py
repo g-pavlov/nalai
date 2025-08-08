@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import jwt
 import pytest
+import yaml
 from fastapi import HTTPException
 
 # Add src to path for imports
@@ -29,330 +30,395 @@ from nalai.services.auth_service import (
 )
 
 
+@pytest.fixture
+def test_data():
+    """Load test data from YAML file."""
+    test_data_path = os.path.join(
+        os.path.dirname(__file__), "..", "test_data", "auth_service_test_cases.yaml"
+    )
+    with open(test_data_path) as f:
+        return yaml.safe_load(f)
+
+
+@pytest.fixture
+def mock_settings():
+    """Mock settings for testing."""
+    with patch("nalai.services.auth_service.settings") as mock_settings:
+        mock_settings.auth_enabled = True
+        mock_settings.auth_validate_tokens = True
+        mock_settings.auth_provider = "standard"
+        mock_settings.auth_mode = "client_credentials"
+        mock_settings.auth_oidc_issuer = "https://test.auth0.com/"
+        mock_settings.auth_oidc_audience = "test-audience"
+        mock_settings.auth_client_credentials = {
+            "service_a": {
+                "client_id": "test-client-id",
+                "client_secret": "test-client-secret",
+            }
+        }
+        yield mock_settings
+
+
 class TestAuthService:
     """Test cases for authentication service."""
-
-    @pytest.fixture
-    def mock_settings(self):
-        """Mock settings for testing."""
-        with patch("nalai.services.auth_service.settings") as mock_settings:
-            mock_settings.auth_enabled = True
-            mock_settings.auth_validate_tokens = True
-            mock_settings.auth_provider = "standard"
-            mock_settings.auth_mode = "client_credentials"
-            mock_settings.auth_oidc_issuer = "https://test.auth0.com/"
-            mock_settings.auth_oidc_audience = "test-audience"
-            mock_settings.client_credentials = {
-                "service_a": {
-                    "client_id": "test-client-id",
-                    "client_secret": "test-client-secret",
-                }
-            }
-            yield mock_settings
-
-    @pytest.fixture
-    def valid_jwt_token(self):
-        """Generate a valid JWT token for testing."""
-        payload = {
-            "sub": "test-user-123",
-            "email": "test@example.com",
-            "given_name": "Test",
-            "family_name": "User",
-            "org_unit_id": "test-org",
-            "roles": ["developer", "admin"],
-            "permissions": ["read", "write"],
-            "iss": "https://test.auth0.com/",
-            "aud": "test-audience",
-            "iat": datetime.utcnow(),
-            "exp": datetime.utcnow() + timedelta(hours=1),
-        }
-        return jwt.encode(payload, "test-secret", algorithm="HS256")
-
-    @pytest.fixture
-    def expired_jwt_token(self):
-        """Generate an expired JWT token for testing."""
-        payload = {
-            "sub": "test-user-123",
-            "email": "test@example.com",
-            "given_name": "Test",
-            "family_name": "User",
-            "org_unit_id": "test-org",
-            "roles": ["developer"],
-            "permissions": ["read"],
-            "iss": "https://test.auth0.com/",
-            "aud": "test-audience",
-            "iat": datetime.utcnow() - timedelta(hours=2),
-            "exp": datetime.utcnow() - timedelta(hours=1),
-        }
-        return jwt.encode(payload, "test-secret", algorithm="HS256")
-
-    @pytest.fixture
-    def invalid_jwt_token(self):
-        """Generate an invalid JWT token for testing."""
-        return "invalid.token.here"
-
-    @pytest.fixture
-    def mock_request(self):
-        """Mock FastAPI request object."""
-        request = MagicMock()
-        request.headers = {}
-        request.client = MagicMock()
-        request.client.host = "127.0.0.1"
-        return request
 
     def test_auth_service_abstract_methods(self):
         """Test that AuthService is abstract and cannot be instantiated."""
         with pytest.raises(TypeError):
             AuthService({})
 
-    def test_standard_auth_service_initialization(self, mock_settings):
+    @pytest.mark.parametrize(
+        "test_case", ["standard_initialization", "default_initialization"]
+    )
+    def test_auth_service_initialization(self, test_case, test_data, mock_settings):
         """Test StandardAuthService initialization."""
-        config = {
-            "issuer": "https://custom.auth0.com/",
-            "audience": "custom-audience",
-            "mode": "delegation",
-        }
-
-        auth_service = StandardAuthService(config)
-
-        assert auth_service.issuer == "https://custom.auth0.com/"
-        assert auth_service.audience == "custom-audience"
-        assert auth_service.mode == "delegation"
-        assert auth_service.client_credentials == mock_settings.client_credentials
-
-    def test_standard_auth_service_default_initialization(self, mock_settings):
-        """Test StandardAuthService initialization with defaults."""
-        auth_service = StandardAuthService({})
-
-        assert auth_service.issuer == mock_settings.auth_oidc_issuer
-        assert auth_service.audience == mock_settings.auth_oidc_audience
-        assert auth_service.mode == mock_settings.auth_mode
-
-    @pytest.mark.asyncio
-    async def test_authenticate_request_with_id_token(
-        self, mock_settings, valid_jwt_token, mock_request
-    ):
-        """Test authentication with ID token."""
-        mock_request.headers = {"X-Id-Token": valid_jwt_token}
-
-        auth_service = StandardAuthService({})
-        identity = await auth_service.authenticate_request(mock_request)
-
-        assert isinstance(identity, IdentityContext)
-        assert identity.user_id == "test-user-123"
-        assert identity.email == "test@example.com"
-        assert identity.given_name == "Test"
-        assert identity.family_name == "User"
-        assert identity.org_unit_id == "test-org"
-        assert identity.roles == ["developer", "admin"]
-        assert identity.permissions == ["read", "write"]
-        assert identity.token_type == "id_token"
-        assert identity.is_authenticated is True
-
-    @pytest.mark.asyncio
-    async def test_authenticate_request_with_authorization_header(
-        self, mock_settings, valid_jwt_token, mock_request
-    ):
-        """Test authentication with Authorization header."""
-        mock_request.headers = {"Authorization": f"Bearer {valid_jwt_token}"}
-
-        auth_service = StandardAuthService({})
-        identity = await auth_service.authenticate_request(mock_request)
-
-        assert isinstance(identity, IdentityContext)
-        assert identity.user_id == "test-user-123"
-        assert identity.token_type == "access_token"
-
-    @pytest.mark.asyncio
-    async def test_authenticate_request_no_token(self, mock_settings, mock_request):
-        """Test authentication with no token."""
-        auth_service = StandardAuthService({})
-
-        with pytest.raises(HTTPException) as exc_info:
-            await auth_service.authenticate_request(mock_request)
-
-        assert exc_info.value.status_code == 401
-        assert "Authentication required" in str(exc_info.value.detail)
-
-    @pytest.mark.asyncio
-    async def test_authenticate_request_invalid_token(
-        self, mock_settings, invalid_jwt_token, mock_request
-    ):
-        """Test authentication with invalid token."""
-        mock_request.headers = {"Authorization": f"Bearer {invalid_jwt_token}"}
-
-        auth_service = StandardAuthService({})
-
-        with pytest.raises(HTTPException) as exc_info:
-            await auth_service.authenticate_request(mock_request)
-
-        assert exc_info.value.status_code == 401
-        assert "Invalid token format" in str(exc_info.value.detail)
-
-    @pytest.mark.asyncio
-    async def test_authenticate_request_missing_sub_claim(
-        self, mock_settings, mock_request
-    ):
-        """Test authentication with token missing sub claim."""
-        payload = {
-            "email": "test@example.com",
-            "given_name": "Test",
-            "family_name": "User",
-            "exp": datetime.utcnow() + timedelta(hours=1),
-        }
-        token = jwt.encode(payload, "test-secret", algorithm="HS256")
-        mock_request.headers = {"Authorization": f"Bearer {token}"}
-
-        auth_service = StandardAuthService({})
-
-        with pytest.raises(HTTPException) as exc_info:
-            await auth_service.authenticate_request(mock_request)
-
-        assert exc_info.value.status_code == 401
-        assert "missing sub claim" in str(exc_info.value.detail)
-
-    @pytest.mark.asyncio
-    async def test_authenticate_request_development_mode(self, mock_request):
-        """Test authentication in development mode."""
-        with patch("nalai.services.auth_service.settings") as mock_settings:
-            mock_settings.auth_enabled = False
-
-            auth_service = StandardAuthService({})
-            identity = await auth_service.authenticate_request(mock_request)
-
-            assert identity.user_id == "dev-user"
-            assert identity.email == "dev@example.com"
-            assert identity.given_name == "Development"
-            assert identity.family_name == "User"
-            assert identity.org_unit_id == "dev-org"
-            assert identity.roles == ["developer"]
-            assert identity.permissions == ["read", "write"]
-            assert identity.token_type == "dev_token"
-            assert identity.metadata["dev_mode"] is True
-
-    @pytest.mark.asyncio
-    async def test_get_api_token_client_credentials_mode(self, mock_settings):
-        """Test getting API token in client credentials mode."""
-        auth_service = StandardAuthService({"mode": "client_credentials"})
-        identity = IdentityContext(user_id="test-user", token_type="access_token")
-
-        token = await auth_service.get_api_token(identity, "service_a")
-
-        assert token == "cc_token_for_service_a"
-
-    @pytest.mark.asyncio
-    async def test_get_api_token_delegation_mode(self, mock_settings):
-        """Test getting API token in delegation mode."""
-        auth_service = StandardAuthService({"mode": "delegation"})
-        identity = IdentityContext(user_id="test-user", token_type="access_token")
-
-        token = await auth_service.get_api_token(identity, "service_a")
-
-        assert token == "delegated_token_for_service_a"
-
-    @pytest.mark.asyncio
-    async def test_get_api_token_unsupported_mode(self, mock_settings):
-        """Test getting API token with unsupported mode."""
-        auth_service = StandardAuthService({"mode": "unsupported"})
-        identity = IdentityContext(user_id="test-user", token_type="access_token")
-
-        with pytest.raises(ValueError, match="Unsupported auth mode"):
-            await auth_service.get_api_token(identity, "service_a")
-
-    @pytest.mark.asyncio
-    async def test_get_api_token_service_not_configured(self, mock_settings):
-        """Test getting API token for unconfigured service."""
-        auth_service = StandardAuthService({"mode": "client_credentials"})
-        identity = IdentityContext(user_id="test-user", token_type="access_token")
-
-        with pytest.raises(ValueError, match="No client credentials configured"):
-            await auth_service.get_api_token(identity, "unconfigured_service")
-
-    @pytest.mark.asyncio
-    async def test_validate_token_enabled(self, mock_settings, valid_jwt_token):
-        """Test token validation when enabled."""
-        with patch("nalai.services.auth_service.settings") as mock_settings:
-            mock_settings.auth_validate_tokens = True
-
-            auth_service = StandardAuthService({})
-            result = await auth_service.validate_token(valid_jwt_token)
-
-            assert result is True
-
-    @pytest.mark.asyncio
-    async def test_validate_token_disabled(self, mock_settings, invalid_jwt_token):
-        """Test token validation when disabled."""
-        with patch("nalai.services.auth_service.settings") as mock_settings:
-            mock_settings.auth_validate_tokens = False
-
-            auth_service = StandardAuthService({})
-            result = await auth_service.validate_token(invalid_jwt_token)
-
-            assert result is True  # Should skip validation
-
-    @pytest.mark.asyncio
-    async def test_validate_token_expired(self, mock_settings, expired_jwt_token):
-        """Test token validation with expired token."""
-        with patch("nalai.services.auth_service.settings") as mock_settings:
-            mock_settings.auth_validate_tokens = True
-
-            auth_service = StandardAuthService({})
-            result = await auth_service.validate_token(expired_jwt_token)
-
-            assert result is False
-
-    @pytest.mark.asyncio
-    async def test_validate_token_invalid(self, mock_settings, invalid_jwt_token):
-        """Test token validation with invalid token."""
-        with patch("nalai.services.auth_service.settings") as mock_settings:
-            mock_settings.auth_validate_tokens = True
-
-            auth_service = StandardAuthService({})
-            result = await auth_service.validate_token(invalid_jwt_token)
-
-            assert result is False
-
-    def test_identity_context_properties(self):
-        """Test IdentityContext properties."""
-        identity = IdentityContext(
-            user_id="test-user",
-            email="test@example.com",
-            given_name="Test",
-            family_name="User",
-            token_type="access_token",
+        case_data = next(
+            c
+            for c in test_data["auth_service_initialization"]
+            if c["name"] == test_case
         )
 
-        assert identity.full_name == "Test User"
-        assert identity.is_authenticated is True
+        config = case_data["input"]["config"]
+        auth_service = StandardAuthService(config)
 
-        # Test with missing names
-        identity.given_name = None
-        assert identity.full_name == "User"
+        expected = case_data["expected"]
+        assert auth_service.issuer == expected["issuer"]
+        assert auth_service.audience == expected["audience"]
+        assert auth_service.mode == expected["mode"]
 
-        identity.family_name = None
-        assert identity.full_name == "test-user"
+    @pytest.mark.parametrize(
+        "test_case",
+        [
+            "id_token_authentication",
+            "authorization_header_authentication",
+            "no_token_authentication",
+            "invalid_token_authentication",
+            "missing_sub_claim",
+            "development_mode",
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_authentication_scenarios(self, test_case, test_data, mock_settings):
+        """Test various authentication scenarios."""
+        case_data = next(
+            c for c in test_data["authentication_scenarios"] if c["name"] == test_case
+        )
 
-        # Test token expiration
-        identity.token_expires_at = datetime.now(UTC) + timedelta(hours=1)
-        assert identity.is_token_expired is False
+        # Setup request mock
+        request = MagicMock()
+        request.headers = case_data["input"]["headers"].copy()
+        request.client = MagicMock()
+        request.client.host = "127.0.0.1"
 
-        identity.token_expires_at = datetime.now(UTC) - timedelta(hours=1)
-        assert identity.is_token_expired is True
+        # Setup settings based on test case
+        if case_data["name"] == "development_mode":
+            mock_settings.auth_enabled = case_data["input"]["auth_enabled"]
 
-    def test_auth_service_factory_standard_provider(self, mock_settings):
-        """Test AuthServiceFactory with standard provider."""
-        auth_service = AuthServiceFactory.create_auth_service("standard", {})
-        assert isinstance(auth_service, StandardAuthService)
+        # Generate token if needed
+        if "token_payload" in case_data["input"]:
+            payload = case_data["input"]["token_payload"].copy()
 
-    def test_auth_service_factory_unsupported_provider(self, mock_settings):
-        """Test AuthServiceFactory with unsupported provider."""
-        with pytest.raises(ValueError, match="Unsupported auth provider"):
-            AuthServiceFactory.create_auth_service("unsupported", {})
+            # Handle time-based fields
+            if payload.get("iat") == "now":
+                payload["iat"] = datetime.utcnow()
+            if payload.get("exp") == "now+1h":
+                payload["exp"] = datetime.utcnow() + timedelta(hours=1)
+            elif payload.get("exp") == "now-1h":
+                payload["exp"] = datetime.utcnow() - timedelta(hours=1)
 
-    def test_auth_service_factory_default_provider(self, mock_settings):
-        """Test AuthServiceFactory with default provider."""
-        auth_service = AuthServiceFactory.create_auth_service()
-        assert isinstance(auth_service, StandardAuthService)
+            token = jwt.encode(payload, "test-secret", algorithm="HS256")
+
+            # Replace token placeholders in headers
+            for header_name, header_value in request.headers.items():
+                if header_value == "valid_jwt_token":
+                    request.headers[header_name] = token
+                elif header_value == "Bearer valid_jwt_token":
+                    request.headers[header_name] = f"Bearer {token}"
+
+        # Execute authentication
+        auth_service = StandardAuthService({})
+
+        if case_data["expected"]["should_raise"]:
+            with pytest.raises(HTTPException) as exc_info:
+                await auth_service.authenticate_request(request)
+
+            assert exc_info.value.status_code == case_data["expected"]["status_code"]
+            assert case_data["expected"]["detail_contains"] in str(
+                exc_info.value.detail
+            )
+        else:
+            identity = await auth_service.authenticate_request(request)
+
+            # Verify identity properties
+            expected = case_data["expected"]
+            assert identity.user_id == expected["user_id"]
+            if "email" in expected:
+                assert identity.email == expected["email"]
+            if "given_name" in expected:
+                assert identity.given_name == expected["given_name"]
+            if "family_name" in expected:
+                assert identity.family_name == expected["family_name"]
+            if "org_unit_id" in expected:
+                assert identity.org_unit_id == expected["org_unit_id"]
+            if "roles" in expected:
+                assert identity.roles == expected["roles"]
+            if "permissions" in expected:
+                assert identity.permissions == expected["permissions"]
+            if "token_type" in expected:
+                assert identity.token_type == expected["token_type"]
+            if "is_authenticated" in expected:
+                assert identity.is_authenticated == expected["is_authenticated"]
+            if "metadata" in expected:
+                for key, value in expected["metadata"].items():
+                    assert identity.metadata[key] == value
+
+    @pytest.mark.parametrize(
+        "test_case",
+        [
+            "client_credentials_mode",
+            "delegation_mode",
+            "unsupported_mode",
+            "service_not_configured",
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_api_token_scenarios(self, test_case, test_data, mock_settings):
+        """Test API token scenarios."""
+        case_data = next(
+            c for c in test_data["api_token_scenarios"] if c["name"] == test_case
+        )
+
+        # Create auth service with specified mode
+        auth_service = StandardAuthService({"mode": case_data["input"]["mode"]})
+
+        # Create identity context
+        identity_data = case_data["input"]["identity"]
+        identity = IdentityContext(
+            user_id=identity_data["user_id"],
+            token_type=identity_data["token_type"],
+        )
+
+        # Execute API token request
+        if case_data["expected"]["should_raise"]:
+            with pytest.raises(ValueError) as exc_info:
+                await auth_service.get_api_token(
+                    identity, case_data["input"]["service"]
+                )
+
+            assert case_data["expected"]["message_contains"] in str(exc_info.value)
+        else:
+            token = await auth_service.get_api_token(
+                identity, case_data["input"]["service"]
+            )
+            assert token == case_data["expected"]["token"]
+
+    @pytest.mark.parametrize(
+        "test_case",
+        [
+            "valid_token_enabled",
+            "invalid_token_disabled",
+            "expired_token",
+            "invalid_token_enabled",
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_token_validation_scenarios(
+        self, test_case, test_data, mock_settings
+    ):
+        """Test token validation scenarios."""
+        case_data = next(
+            c for c in test_data["token_validation_scenarios"] if c["name"] == test_case
+        )
+
+        # Setup settings
+        mock_settings.auth_validate_tokens = case_data["input"]["validate_tokens"]
+
+        # Generate token if needed
+        if "token_payload" in case_data["input"]:
+            payload = case_data["input"]["token_payload"].copy()
+
+            # Handle time-based fields
+            if payload.get("exp") == "now+1h":
+                payload["exp"] = datetime.utcnow() + timedelta(hours=1)
+            elif payload.get("exp") == "now-1h":
+                payload["exp"] = datetime.utcnow() - timedelta(hours=1)
+
+            token = jwt.encode(payload, "test-secret", algorithm="HS256")
+        else:
+            token = case_data["input"]["token"]
+
+        # Execute token validation
+        auth_service = StandardAuthService({})
+        result = await auth_service.validate_token(token)
+
+        assert result == case_data["expected"]["result"]
+
+    @pytest.mark.parametrize(
+        "test_case",
+        [
+            "complete_identity",
+            "missing_given_name",
+            "missing_family_name",
+            "missing_names",
+            "expired_token",
+        ],
+    )
+    def test_identity_context_scenarios(self, test_case, test_data):
+        """Test IdentityContext properties."""
+        case_data = next(
+            c for c in test_data["identity_context_scenarios"] if c["name"] == test_case
+        )
+
+        # Create identity context
+        input_data = case_data["input"]
+        identity = IdentityContext(
+            user_id=input_data["user_id"],
+            email=input_data.get("email"),
+            given_name=input_data.get("given_name"),
+            family_name=input_data.get("family_name"),
+            token_type=input_data["token_type"],
+        )
+
+        # Set token expiration if specified
+        if "token_expires_at" in input_data:
+            if input_data["token_expires_at"] == "now+1h":
+                identity.token_expires_at = datetime.now(UTC) + timedelta(hours=1)
+            elif input_data["token_expires_at"] == "now-1h":
+                identity.token_expires_at = datetime.now(UTC) - timedelta(hours=1)
+
+        # Verify expected properties
+        expected = case_data["expected"]
+        if "full_name" in expected:
+            assert identity.full_name == expected["full_name"]
+        if "is_authenticated" in expected:
+            assert identity.is_authenticated == expected["is_authenticated"]
+        if "is_token_expired" in expected:
+            assert identity.is_token_expired == expected["is_token_expired"]
+
+    @pytest.mark.parametrize("test_case", ["string_roles", "missing_optional_fields"])
+    @pytest.mark.asyncio
+    async def test_string_roles_scenarios(self, test_case, test_data, mock_settings):
+        """Test identity extraction with string roles and missing fields."""
+        case_data = next(
+            c for c in test_data["string_roles_scenarios"] if c["name"] == test_case
+        )
+
+        # Setup request mock
+        request = MagicMock()
+        request.headers = case_data["input"]["headers"]
+        request.client = MagicMock()
+        request.client.host = "127.0.0.1"
+
+        # Generate token
+        payload = case_data["input"]["token_payload"].copy()
+        if payload.get("exp") == "now+1h":
+            payload["exp"] = datetime.utcnow() + timedelta(hours=1)
+
+        token = jwt.encode(payload, "test-secret", algorithm="HS256")
+
+        # Replace token placeholder
+        for header_name, header_value in request.headers.items():
+            if header_value == "Bearer valid_jwt_token":
+                request.headers[header_name] = f"Bearer {token}"
+
+        # Execute authentication
+        auth_service = StandardAuthService({})
+
+        if case_data["expected"]["should_raise"]:
+            with pytest.raises(HTTPException):
+                await auth_service.authenticate_request(request)
+        else:
+            identity = await auth_service.authenticate_request(request)
+
+            # Verify expected properties
+            expected = case_data["expected"]
+            if "user_id" in expected:
+                assert identity.user_id == expected["user_id"]
+            if "email" in expected:
+                assert identity.email == expected["email"]
+            if "given_name" in expected:
+                assert identity.given_name == expected["given_name"]
+            if "family_name" in expected:
+                assert identity.family_name == expected["family_name"]
+            if "org_unit_id" in expected:
+                assert identity.org_unit_id == expected["org_unit_id"]
+            if "roles" in expected:
+                assert identity.roles == expected["roles"]
+            if "permissions" in expected:
+                assert identity.permissions == expected["permissions"]
+            if "is_authenticated" in expected:
+                assert identity.is_authenticated == expected["is_authenticated"]
+
+    @pytest.mark.parametrize(
+        "test_case", ["standard_provider", "unsupported_provider", "default_provider"]
+    )
+    def test_factory_scenarios(self, test_case, test_data, mock_settings):
+        """Test AuthServiceFactory scenarios."""
+        case_data = next(
+            c for c in test_data["factory_scenarios"] if c["name"] == test_case
+        )
+
+        input_data = case_data["input"]
+        provider = input_data["provider"]
+        config = input_data["config"]
+
+        if case_data["expected"]["should_raise"]:
+            with pytest.raises(ValueError) as exc_info:
+                AuthServiceFactory.create_auth_service(provider, config)
+
+            assert case_data["expected"]["message_contains"] in str(exc_info.value)
+        else:
+            auth_service = AuthServiceFactory.create_auth_service(provider, config)
+            assert isinstance(auth_service, StandardAuthService)
+
+    @pytest.mark.asyncio
+    async def test_caching_scenarios(self, test_data, mock_settings):
+        """Test token caching scenarios."""
+        case_data = next(
+            c for c in test_data["caching_scenarios"] if c["name"] == "token_caching"
+        )
+
+        # Create auth service
+        auth_service = StandardAuthService({"mode": case_data["input"]["mode"]})
+
+        # Create identity context
+        identity_data = case_data["input"]["identity"]
+        identity = IdentityContext(
+            user_id=identity_data["user_id"],
+            token_type=identity_data["token_type"],
+        )
+
+        # Make multiple calls
+        calls = case_data["input"]["calls"]
+        tokens = []
+        for _ in range(calls):
+            token = await auth_service.get_api_token(
+                identity, case_data["input"]["service"]
+            )
+            tokens.append(token)
+
+        # Verify results
+        expected = case_data["expected"]
+        assert tokens[0] == expected["first_token"]
+        assert tokens[1] == expected["second_token"]
+        assert tokens[0] == tokens[1]  # Tokens should be equal due to caching
+
+    def test_user_context_properties(self):
+        """Test UserContext properties."""
+        identity = IdentityContext(
+            user_id="test-user", email="test@example.com", token_type="access_token"
+        )
+        user_context = UserContext(
+            identity=identity,
+            session_id="test-session",
+            request_id="test-request",
+            ip_address="127.0.0.1",
+            user_agent="test-agent",
+        )
+
+        assert user_context.user_id == "test-user"
+        assert user_context.email == "test@example.com"
+        assert user_context.is_authenticated is True
 
     def test_get_auth_service_singleton(self, mock_settings):
         """Test get_auth_service returns singleton instance."""
@@ -372,80 +438,3 @@ class TestAuthService:
 
         service = get_auth_service()
         assert service is custom_service
-
-    def test_user_context_properties(self):
-        """Test UserContext properties."""
-        identity = IdentityContext(
-            user_id="test-user", email="test@example.com", token_type="access_token"
-        )
-        user_context = UserContext(
-            identity=identity,
-            session_id="test-session",
-            request_id="test-request",
-            ip_address="127.0.0.1",
-            user_agent="test-agent",
-        )
-
-        assert user_context.user_id == "test-user"
-        assert user_context.email == "test@example.com"
-        assert user_context.is_authenticated is True
-
-    @pytest.mark.asyncio
-    async def test_token_caching(self, mock_settings):
-        """Test token caching in client credentials mode."""
-        auth_service = StandardAuthService({"mode": "client_credentials"})
-        identity = IdentityContext(user_id="test-user", token_type="access_token")
-
-        # First call should create token
-        token1 = await auth_service.get_api_token(identity, "service_a")
-
-        # Second call should return cached token
-        token2 = await auth_service.get_api_token(identity, "service_a")
-
-        assert token1 == token2
-        assert "cc_token_for_service_a" in token1
-
-    @pytest.mark.asyncio
-    async def test_extract_identity_with_string_roles(
-        self, mock_settings, mock_request
-    ):
-        """Test identity extraction with string roles instead of list."""
-        payload = {
-            "sub": "test-user-123",
-            "email": "test@example.com",
-            "roles": "developer",  # String instead of list
-            "permissions": "read",  # String instead of list
-            "exp": datetime.utcnow() + timedelta(hours=1),
-        }
-        token = jwt.encode(payload, "test-secret", algorithm="HS256")
-        mock_request.headers = {"Authorization": f"Bearer {token}"}
-
-        auth_service = StandardAuthService({})
-        identity = await auth_service.authenticate_request(mock_request)
-
-        assert identity.roles == ["developer"]
-        assert identity.permissions == ["read"]
-
-    @pytest.mark.asyncio
-    async def test_extract_identity_with_missing_optional_fields(
-        self, mock_settings, mock_request
-    ):
-        """Test identity extraction with missing optional fields."""
-        payload = {
-            "sub": "test-user-123",
-            "exp": datetime.utcnow() + timedelta(hours=1),
-        }
-        token = jwt.encode(payload, "test-secret", algorithm="HS256")
-        mock_request.headers = {"Authorization": f"Bearer {token}"}
-
-        auth_service = StandardAuthService({})
-        identity = await auth_service.authenticate_request(mock_request)
-
-        assert identity.user_id == "test-user-123"
-        assert identity.email is None
-        assert identity.given_name is None
-        assert identity.family_name is None
-        assert identity.org_unit_id is None
-        assert identity.roles == []
-        assert identity.permissions == []
-        assert identity.is_authenticated is True

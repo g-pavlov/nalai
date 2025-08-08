@@ -46,7 +46,7 @@ def create_basic_routes(app: FastAPI) -> None:
 
     @app.get("/")
     async def redirect_root_to_docs() -> RedirectResponse:
-        return RedirectResponse("/ui")
+        return RedirectResponse("/docs")
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -190,7 +190,7 @@ def create_agent_routes(
 
             # Log event count for debugging
             logger.debug(f"Stream completed with {event_count} events")
-            
+
             # Send [DONE] event to properly terminate the stream
             yield "data: [DONE]\n\n"
 

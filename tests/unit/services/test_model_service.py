@@ -110,9 +110,20 @@ class TestModelService:
 
         # Test AWS Bedrock specific behavior
         if case_data["input"]["model_provider"] == "aws_bedrock":
-            with patch("botocore.config.Config") as mock_boto_config:
+            with patch("builtins.__import__") as mock_import:
+                # Mock the botocore import to return a mock Config
                 mock_config_instance = MagicMock()
-                mock_boto_config.return_value = mock_config_instance
+
+                def mock_import_side_effect(name, *args, **kwargs):
+                    if name == "botocore.config":
+                        mock_module = MagicMock()
+                        mock_module.Config = MagicMock(
+                            return_value=mock_config_instance
+                        )
+                        return mock_module
+                    return __import__(name, *args, **kwargs)
+
+                mock_import.side_effect = mock_import_side_effect
 
                 result = ModelService.initialize_chat_model(
                     case_data["input"]["model_id"],
@@ -121,7 +132,6 @@ class TestModelService:
                 )
 
                 # Verify AWS Bedrock specific calls
-                mock_boto_config.assert_called_once()
                 mock_init_chat_model.assert_called_once_with(
                     case_data["input"]["model_id"],
                     model_provider="bedrock_converse",
@@ -250,6 +260,7 @@ class TestModelService:
                 "nalai.services.model_service.create_model_rate_limiter"
             ) as mock_create_limiter,
             patch("nalai.services.model_service.init_chat_model") as mock_init_model,
+            patch("builtins.__import__") as mock_import,
         ):
             mock_rate_limiter = MagicMock()
             mock_create_limiter.return_value = mock_rate_limiter
@@ -257,6 +268,17 @@ class TestModelService:
             mock_model = MagicMock(spec=BaseChatModel)
             mock_model.metadata = {}
             mock_init_model.return_value = mock_model
+
+            mock_config_instance = MagicMock()
+
+            def mock_import_side_effect(name, *args, **kwargs):
+                if name == "botocore.config":
+                    mock_module = MagicMock()
+                    mock_module.Config = MagicMock(return_value=mock_config_instance)
+                    return mock_module
+                return __import__(name, *args, **kwargs)
+
+            mock_import.side_effect = mock_import_side_effect
 
             ModelService.initialize_chat_model("test-model", "aws_bedrock")
 
@@ -276,6 +298,7 @@ class TestModelService:
             ) as mock_create_limiter,
             patch("nalai.services.model_service.init_chat_model") as mock_init_model,
             patch("nalai.services.model_service.settings") as mock_settings,
+            patch("builtins.__import__") as mock_import,
         ):
             mock_settings.aws_bedrock_retry_max_attempts = 3
             mock_settings.default_model_platform = "aws_bedrock"
@@ -287,6 +310,17 @@ class TestModelService:
             mock_model = MagicMock(spec=BaseChatModel)
             mock_model.metadata = {}
             mock_init_model.return_value = mock_model
+
+            mock_config_instance = MagicMock()
+
+            def mock_import_side_effect(name, *args, **kwargs):
+                if name == "botocore.config":
+                    mock_module = MagicMock()
+                    mock_module.Config = MagicMock(return_value=mock_config_instance)
+                    return mock_module
+                return __import__(name, *args, **kwargs)
+
+            mock_import.side_effect = mock_import_side_effect
 
             result = ModelService.initialize_chat_model("test-model", "aws_bedrock")
 

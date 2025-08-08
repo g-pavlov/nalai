@@ -124,7 +124,7 @@ class Settings(BaseSettings):
         default="",
         description="OIDC audience (API identifier)",
     )
-    
+
     # Client credentials configuration
     auth_client_credentials: dict[str, Any] = Field(
         alias="AUTH_CLIENT_CREDENTIALS",

@@ -1,8 +1,8 @@
 """
-API Assistant Server Entry Point.
+Web Server servicing the Agent API.
 
-This module provides the main FastAPI application with access control,
-middleware, and route configuration.
+This module sets up the FastAPI application with middleware,
+routes, and agent initialization.
 """
 
 import logging
@@ -10,10 +10,10 @@ import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from langgraph.prebuilt import ToolNode
 
 from ..config import settings
 from ..core.agent import APIAgent
-from ..core.tool_node import create_chunk_accumulating_tool_node
 from ..core.workflow import create_and_compile_workflow
 from ..services.checkpointing_service import get_checkpointer
 from ..utils.logging import setup_logging
@@ -103,8 +103,8 @@ def initialize_app():
     # Initialize agent and create agent routes
     memory_store = get_checkpointer()
     agent = APIAgent()
-    # Create the tool node for streaming processor
-    tool_node = create_chunk_accumulating_tool_node(agent.http_toolkit.get_tools())
+    # Create the tool node
+    tool_node = ToolNode(agent.http_toolkit.get_tools())
     agent_workflow = create_and_compile_workflow(
         agent, memory_store, available_tools={"call_api": tool_node}
     )

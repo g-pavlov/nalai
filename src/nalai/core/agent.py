@@ -127,9 +127,11 @@ class APIAgent:
         cache_disabled = False
         if config and "configurable" in config:
             cache_disabled = config["configurable"].get("cache_disabled", False)
-        
+
         if cache_disabled:
-            logger.debug("Cache disabled for this request - proceeding to load API summaries")
+            logger.debug(
+                "Cache disabled for this request - proceeding to load API summaries"
+            )
             return {"messages": conversation_messages, "cache_miss": True}
 
         if not conversation_messages:
@@ -333,7 +335,7 @@ class APIAgent:
             cache_disabled = False
             if config and "configurable" in config:
                 cache_disabled = config["configurable"].get("cache_disabled", False)
-            
+
             if not cache_disabled:
                 # Don't cache responses with empty content (especially tool-only responses)
                 if response.content and response.content.strip():

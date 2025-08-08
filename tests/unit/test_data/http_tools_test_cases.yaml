@@ -27,18 +27,24 @@ http_request_headers:
       user_headers:
         Content-Type: "application/json"
         Accept: "application/json"
+      url: "https://api.example.com/test"
     expected:
-      Authorization: "Bearer test-token"
-      Content-Type: "application/json"
-      Accept: "application/json"
+      headers:
+        Authorization: "Bearer test-token"
+        Content-Type: "application/json"
+        Accept: "application/json"
+      should_raise: false
   
   - name: "no_auth_token"
     input:
       configurable: {}
       user_headers:
         Content-Type: "application/json"
+      url: "https://api.example.com/test"
     expected:
-      Content-Type: "application/json"
+      headers:
+        Content-Type: "application/json"
+      should_raise: false
   
   - name: "user_headers_override_internal"
     input:
@@ -47,14 +53,18 @@ http_request_headers:
       user_headers:
         Authorization: "Bearer user-token"
         Content-Type: "application/json"
+      url: "https://api.example.com/test"
     expected:
-      Authorization: "Bearer test-token"
-      Content-Type: "application/json"
+      headers:
+        Authorization: "Bearer test-token"
+        Content-Type: "application/json"
+      should_raise: false
 
 http_request_payloads:
   - name: "get_request_params"
     input:
       method: "GET"
+      url: "https://api.example.com/test"
       input_data:
         page: 1
         limit: 10
@@ -63,10 +73,12 @@ http_request_payloads:
         page: 1
         limit: 10
       json: null
+      should_raise: false
   
   - name: "post_request_json"
     input:
       method: "POST"
+      url: "https://api.example.com/test"
       input_data:
         name: "John Doe"
         email: "john@example.com"
@@ -75,10 +87,12 @@ http_request_payloads:
       json:
         name: "John Doe"
         email: "john@example.com"
+      should_raise: false
   
   - name: "put_request_json"
     input:
       method: "PUT"
+      url: "https://api.example.com/test"
       input_data:
         id: 123
         name: "Jane Doe"
@@ -87,29 +101,33 @@ http_request_payloads:
       json:
         id: 123
         name: "Jane Doe"
+      should_raise: false
 
 http_response_handling:
   - name: "successful_response"
     input:
+      url: "https://api.example.com/test"
       status_code: 200
       json_data: {"users": [{"id": 1, "name": "John"}]}
     expected:
-      success: true
-      data: {"users": [{"id": 1, "name": "John"}]}
+      result: {"users": [{"id": 1, "name": "John"}]}
+      should_raise: false
   
   - name: "empty_response"
     input:
+      url: "https://api.example.com/test"
       status_code: 204
       json_data: null
     expected:
-      success: true
-      data: {}
+      result: {}
+      should_raise: false
   
   - name: "http_error"
     input:
+      url: "https://api.example.com/test"
       status_code: 404
       error_message: "Not Found"
     expected:
-      success: false
-      error_type: "HTTPError"
-      status_code: 404 
+      result: null
+      should_raise: true
+      exception_type: "HTTPError" 

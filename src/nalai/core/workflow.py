@@ -11,6 +11,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import END
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.prebuilt import ToolNode
 
 from ..config import BaseRuntimeConfiguration
 from ..services.api_docs_service import APIService
@@ -26,7 +27,6 @@ from .constants import (
 )
 from .interrupts import process_human_review
 from .schemas import AgentState, InputSchema, OutputSchema
-from .tool_node import create_chunk_accumulating_tool_node
 
 
 def create_and_compile_workflow(
@@ -47,10 +47,8 @@ def create_and_compile_workflow(
     """
     if available_tools is None or NODE_CALL_API not in available_tools:
         available_tools = available_tools or {}
-        # Use custom tool node with delayed execution for better streaming support
-        available_tools[NODE_CALL_API] = create_chunk_accumulating_tool_node(
-            agent.http_toolkit.get_tools()
-        )
+        # Use standard tool node
+        available_tools[NODE_CALL_API] = ToolNode(agent.http_toolkit.get_tools())
 
     workflow_graph = StateGraph(
         AgentState,

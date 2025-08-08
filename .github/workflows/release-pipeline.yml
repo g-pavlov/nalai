@@ -4,6 +4,31 @@ on:
   push:
     branches: [ main ]
     tags: [ 'v*' ]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'poetry.lock'
+      - 'Dockerfile'
+      - 'Makefile'
+      - '.github/workflows/**'
+      - 'scripts/**'
+      - 'data/**'
+      - 'models/**'
+      - '!**/*.md'
+      - '!**/*.txt'
+      - '!**/*.png'
+      - '!**/*.jpg'
+      - '!**/*.jpeg'
+      - '!**/*.gif'
+      - '!**/*.svg'
+      - '!docs/**'
+      - '!LICENSE'
+      - '!README.md'
+      - '!SUPPORT.md'
+      - '!CODE_OF_CONDUCT.md'
+      - '!CONTRIBUTING.md'
+      - '!CODEOWNERS'
   workflow_dispatch:
     inputs:
       version_type:
@@ -206,8 +231,8 @@ jobs:
       - name: Run linting and formatting
         run: make lint
 
-      - name: Run tests with coverage
-        run: make test-coverage
+      - name: Run unit tests with coverage
+        run: make test
 
       - name: Validate dependencies
         run: make validate-deps
@@ -258,6 +283,7 @@ jobs:
 
       - name: Configure Poetry for GitHub Packages
         run: |
+          # Configure for GitHub Packages PyPI
           poetry config repositories.github https://npm.pkg.github.com
           poetry config http-basic.github ${{ github.actor }} ${{ secrets.GITHUB_TOKEN }}
 

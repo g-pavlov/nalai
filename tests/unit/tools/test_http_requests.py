@@ -42,24 +42,6 @@ def test_data():
         return yaml.safe_load(f)
 
 
-@pytest.fixture
-def mock_config():
-    """Create a mock configuration for testing."""
-    return RunnableConfig(
-        configurable={
-            "thread_id": "test-thread",
-            "org_unit_id": "test-org",
-            "user_email": "test@example.com",
-        }
-    )
-
-
-@pytest.fixture
-def mock_run_manager():
-    """Create a mock run manager for testing."""
-    return MagicMock()
-
-
 class TestHTTPTool:
     """Test suite for base HTTPTool class."""
 
@@ -95,15 +77,17 @@ class TestHTTPTool:
             else:
                 # Should raise ValueError for invalid URLs
                 with pytest.raises(ValueError):
-                    tool._run({"url": case_data["input"]["url"], "input_data": {}})
+                    tool._run.func(
+                        case_data["input"]["url"],
+                        input_data={},
+                        config=RunnableConfig(configurable={}),
+                    )
 
     @pytest.mark.parametrize(
         "test_case",
         ["with_auth_token", "no_auth_token", "user_headers_override_internal"],
     )
-    def test_header_processing(
-        self, test_case, test_data, mock_config, mock_run_manager
-    ):
+    def test_header_processing(self, test_case, test_data):
         """Test header processing and merging."""
         case_data = next(
             c for c in test_data["http_request_headers"] if c["name"] == test_case
@@ -113,43 +97,51 @@ class TestHTTPTool:
             patch("nalai.tools.http_requests.settings") as mock_settings,
             patch("requests.request") as mock_request,
         ):
+            # Setup mocks
             mock_settings.api_calls_allowed_urls_list = ["https://api.example.com"]
             mock_response = MagicMock()
             mock_response.ok = True
             mock_response.json.return_value = {"result": "success"}
             mock_request.return_value = mock_response
 
+            # Create tool and config
             tool = GetTool()
+            config = RunnableConfig(configurable=case_data["input"]["configurable"])
 
-            # Update config with auth token if present
-            if "auth_token" in case_data["input"]["configurable"]:
-                mock_config["configurable"]["auth_token"] = case_data["input"][
-                    "configurable"
-                ]["auth_token"]
-
-            # Prepare input data with headers
+            # Prepare input data
             input_data = {}
             if "user_headers" in case_data["input"]:
                 input_data["headers"] = case_data["input"]["user_headers"]
 
-            tool._run({"url": "https://api.example.com/test", "input_data": input_data})
+            # Execute the tool by calling the underlying function directly
+            if case_data["expected"]["should_raise"]:
+                with pytest.raises((ValueError, requests.RequestException)):
+                    tool._run.func(
+                        case_data["input"]["url"],
+                        input_data=input_data,
+                        config=config,
+                    )
+            else:
+                tool._run.func(
+                    case_data["input"]["url"],
+                    input_data=input_data,
+                    config=config,
+                )
 
-            # Verify request was made with correct headers
-            call_args = mock_request.call_args
-            assert call_args is not None
+                # Verify request was made with correct headers
+                call_args = mock_request.call_args
+                assert call_args is not None
 
-            headers = call_args[1]["headers"]
-            expected_headers = case_data["expected"]
+                actual_headers = call_args[1]["headers"]
+                expected_headers = case_data["expected"]["headers"]
 
-            for key, value in expected_headers.items():
-                assert headers[key] == value
+                for key, value in expected_headers.items():
+                    assert actual_headers[key] == value
 
     @pytest.mark.parametrize(
         "test_case", ["get_request_params", "post_request_json", "put_request_json"]
     )
-    def test_payload_processing(
-        self, test_case, test_data, mock_config, mock_run_manager
-    ):
+    def test_payload_processing(self, test_case, test_data):
         """Test payload processing for different HTTP methods."""
         case_data = next(
             c for c in test_data["http_request_payloads"] if c["name"] == test_case
@@ -159,52 +151,62 @@ class TestHTTPTool:
             patch("nalai.tools.http_requests.settings") as mock_settings,
             patch("requests.request") as mock_request,
         ):
+            # Setup mocks
             mock_settings.api_calls_allowed_urls_list = ["https://api.example.com"]
             mock_response = MagicMock()
             mock_response.ok = True
             mock_response.json.return_value = {"result": "success"}
             mock_request.return_value = mock_response
 
-            # Create tool with specific method
-            if case_data["input"]["method"] == "GET":
+            # Create tool based on method
+            method = case_data["input"]["method"]
+            if method == "GET":
                 tool = GetTool()
-            elif case_data["input"]["method"] == "POST":
+            elif method == "POST":
                 tool = PostTool()
-            elif case_data["input"]["method"] == "PUT":
+            elif method == "PUT":
                 tool = PutTool()
             else:
                 tool = GetTool()  # Default fallback
 
-            tool._run(
-                {
-                    "url": "https://api.example.com/test",
-                    "input_data": case_data["input"]["input_data"],
-                }
-            )
-
-            # Verify request was made with correct payload
-            call_args = mock_request.call_args
-            assert call_args is not None
-
-            expected_params = case_data["expected"]["params"]
-            expected_json = case_data["expected"]["json"]
-
-            if expected_params is not None:
-                assert call_args[1]["params"] == expected_params
+            # Execute the tool by calling the underlying function directly
+            if case_data["expected"]["should_raise"]:
+                with pytest.raises((ValueError, requests.RequestException)):
+                    tool._run.func(
+                        case_data["input"]["url"],
+                        input_data=case_data["input"]["input_data"],
+                        config=RunnableConfig(configurable={}),
+                    )
             else:
-                assert "params" not in call_args[1] or call_args[1]["params"] is None
+                tool._run.func(
+                    case_data["input"]["url"],
+                    input_data=case_data["input"]["input_data"],
+                    config=RunnableConfig(configurable={}),
+                )
 
-            if expected_json is not None:
-                assert call_args[1]["json"] == expected_json
-            else:
-                assert "json" not in call_args[1] or call_args[1]["json"] is None
+                # Verify request was made with correct payload
+                call_args = mock_request.call_args
+                assert call_args is not None
+
+                expected_params = case_data["expected"]["params"]
+                expected_json = case_data["expected"]["json"]
+
+                if expected_params is not None:
+                    assert call_args[1]["params"] == expected_params
+                else:
+                    assert (
+                        "params" not in call_args[1] or call_args[1]["params"] is None
+                    )
+
+                if expected_json is not None:
+                    assert call_args[1]["json"] == expected_json
+                else:
+                    assert "json" not in call_args[1] or call_args[1]["json"] is None
 
     @pytest.mark.parametrize(
         "test_case", ["successful_response", "empty_response", "http_error"]
     )
-    def test_response_handling(
-        self, test_case, test_data, mock_config, mock_run_manager
-    ):
+    def test_response_handling(self, test_case, test_data):
         """Test response handling for different scenarios."""
         case_data = next(
             c for c in test_data["http_response_handling"] if c["name"] == test_case
@@ -214,53 +216,65 @@ class TestHTTPTool:
             patch("nalai.tools.http_requests.settings") as mock_settings,
             patch("requests.request") as mock_request,
         ):
+            # Setup mocks
             mock_settings.api_calls_allowed_urls_list = ["https://api.example.com"]
             mock_response = MagicMock()
             mock_response.ok = True
-            mock_response.json.return_value = {"result": "success"}
             mock_request.return_value = mock_response
 
+            # Setup response based on test case
+            if case_data["name"] == "http_error":
+                mock_response.raise_for_status.side_effect = requests.HTTPError(
+                    "HTTP Error", response=mock_response
+                )
+                mock_response.status_code = case_data["input"]["status_code"]
+            elif case_data["name"] == "empty_response":
+                mock_response.text = ""
+                mock_response.json.side_effect = ValueError(
+                    "No JSON object could be decoded"
+                )
+            else:
+                # successful_response
+                mock_response.json.return_value = case_data["input"]["json_data"]
+
+            # Create tool and execute
             tool = GetTool()
 
             if case_data["expected"]["should_raise"]:
-                # Mock response to raise exception
-                if case_data["name"] == "http_error":
-                    mock_response.raise_for_status.side_effect = requests.HTTPError(
-                        "HTTP Error", response=mock_response
-                    )
-                elif case_data["name"] == "empty_response":
-                    mock_response.text = ""
-                    mock_response.json.side_effect = ValueError(
-                        "No JSON object could be decoded"
-                    )
-
                 with pytest.raises((ValueError, requests.RequestException)):
-                    tool._run({"url": "https://api.example.com/test", "input_data": {}})
+                    tool._run.func(
+                        case_data["input"]["url"],
+                        input_data={},
+                        config=RunnableConfig(configurable={}),
+                    )
             else:
-                # Mock response based on test case
-                if case_data["name"] == "empty_response":
-                    mock_response.text = ""
-                    mock_response.json.return_value = {}
-
-                result = tool._run(
-                    {"url": "https://api.example.com/test", "input_data": {}}
+                result = tool._run.func(
+                    case_data["input"]["url"],
+                    input_data={},
+                    config=RunnableConfig(configurable={}),
                 )
                 assert result == case_data["expected"]["result"]
 
-    def test_error_context_logging(self, mock_config, mock_run_manager):
+    def test_error_context_logging(self):
         """Test that error context is properly logged."""
         with (
             patch("nalai.tools.http_requests.settings") as mock_settings,
             patch("requests.request") as mock_request,
             patch("nalai.tools.http_requests.logger") as mock_logger,
         ):
+            # Setup mocks
             mock_settings.api_calls_allowed_urls_list = ["https://api.example.com"]
-            mock_request.side_effect = Exception("Test error")
+            mock_request.side_effect = requests.RequestException("Test error")
 
+            # Execute tool
             tool = GetTool()
 
-            with pytest.raises((ValueError, requests.RequestException)):
-                tool._run({"url": "https://api.example.com/test", "input_data": {}})
+            with pytest.raises(requests.RequestException):
+                tool._run.func(
+                    "https://api.example.com/test",
+                    input_data={},
+                    config=RunnableConfig(configurable={}),
+                )
 
             # Verify error was logged
             mock_logger.error.assert_called()
