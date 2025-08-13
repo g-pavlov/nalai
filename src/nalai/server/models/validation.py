@@ -5,7 +5,6 @@ This module contains functions for validating input data, requests,
 and configuration parameters used by the API endpoints.
 """
 
-import json
 import logging
 
 from fastapi import HTTPException
@@ -111,44 +110,22 @@ def validate_api_messages(messages: list[MessageInput]) -> None:
             )
 
 
-def validate_human_review_action(action: str) -> None:
+def validate_tool_interrupt_response_type(response_type: str) -> None:
     """
-    Validate human review action.
+    Validate tool interrupt response type.
 
     Args:
-        action: Action to validate
+        response_type: Response type to validate
 
     Raises:
-        HTTPException: If action is invalid
+        HTTPException: If response type is invalid
     """
-    valid_actions = ["continue", "abort", "update", "feedback"]
-    if action not in valid_actions:
+    valid_response_types = ["accept", "edit", "response"]
+    if response_type not in valid_response_types:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid action. Choose from: {', '.join(valid_actions)}",
+            detail=f"Invalid response type. Choose from: {', '.join(valid_response_types)}",
         )
-
-
-def validate_json_body(raw_body: str) -> dict:
-    """
-    Validate and parse JSON body from request.
-
-    Args:
-        raw_body: Raw JSON string from request body
-
-    Returns:
-        Parsed JSON dictionary
-
-    Raises:
-        HTTPException: If JSON parsing fails
-    """
-    try:
-        parsed_body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
-        return parsed_body
-    except Exception as e:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid JSON input: {str(e)}"
-        ) from e
 
 
 def validate_runtime_config(config: dict) -> BaseRuntimeConfiguration:

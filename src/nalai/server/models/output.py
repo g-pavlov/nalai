@@ -3,7 +3,8 @@ Output models for API Assistant server.
 
 This module contains models for outgoing responses:
 - AgentInvokeResponse: Synchronous agent response
-- ErrorResponse: Error response structure
+- ToolInterruptSyncResponse: Synchronous tool interrupt response
+- ToolInterruptStreamEvent: Schema for streaming tool interrupt events
 """
 
 from typing import Any
@@ -29,11 +30,23 @@ class AgentInvokeResponse(BaseModel):
         return v
 
 
-class ErrorResponse(BaseModel):
-    """Error response model."""
+class ToolInterruptSyncResponse(BaseModel):
+    """Synchronous response model for tool interrupt operations."""
 
     model_config = ConfigDict(extra="forbid")
 
-    error: str = Field(..., description="Error message")
-    detail: str | None = Field(None, description="Additional error details")
-    status_code: int = Field(400, description="HTTP status code")
+    output: dict[str, Any] = Field(..., description="Agent response output")
+
+
+class ToolInterruptStreamEvent(BaseModel):
+    """Schema for individual SSE events in tool interrupt stream."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    messages: list[dict[str, Any]] = Field(
+        default_factory=list, description="Array of conversation messages"
+    )
+    selected_apis: list[dict[str, str]] = Field(
+        default_factory=list, description="Selected APIs for the request"
+    )
+    cache_miss: str | None = Field(None, description="Cache status indicator")

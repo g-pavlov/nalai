@@ -20,12 +20,11 @@ from .constants import (
     NODE_CALL_API,
     NODE_CALL_MODEL,
     NODE_CHECK_CACHE,
-    NODE_HUMAN_REVIEW,
     NODE_LOAD_API_SPECS,
     NODE_LOAD_API_SUMMARIES,
     NODE_SELECT_RELEVANT_APIS,
 )
-from .interrupts import process_human_review
+from .interrupts import add_human_in_the_loop
 from .schemas import AgentState, InputSchema, OutputSchema
 
 
@@ -47,8 +46,13 @@ def create_and_compile_workflow(
     """
     if available_tools is None or NODE_CALL_API not in available_tools:
         available_tools = available_tools or {}
-        # Use standard tool node
-        available_tools[NODE_CALL_API] = ToolNode(agent.http_toolkit.get_tools())
+        tools = [
+            add_human_in_the_loop(tool)
+            if not agent.http_toolkit.is_safe_tool(tool.name)
+            else tool
+            for tool in agent.http_toolkit.get_tools()
+        ]
+        available_tools[NODE_CALL_API] = ToolNode(tools)
 
     workflow_graph = StateGraph(
         AgentState,
@@ -65,7 +69,6 @@ def create_and_compile_workflow(
     workflow_graph.add_node(NODE_LOAD_API_SPECS, APIService.load_openapi_specifications)
     workflow_graph.add_node(NODE_CALL_MODEL, agent.generate_model_response)
     workflow_graph.add_node(NODE_CALL_API, available_tools[NODE_CALL_API])
-    workflow_graph.add_node(NODE_HUMAN_REVIEW, process_human_review)
 
     # Add workflow edges
     workflow_graph.add_conditional_edges(
@@ -80,11 +83,11 @@ def create_and_compile_workflow(
         [NODE_LOAD_API_SPECS, NODE_CALL_MODEL],
     )
     workflow_graph.add_edge(NODE_LOAD_API_SPECS, NODE_CALL_MODEL)
+    workflow_graph.add_edge(NODE_CALL_API, NODE_CALL_MODEL)
     workflow_graph.add_conditional_edges(
         NODE_CALL_MODEL,
-        agent.determine_workflow_action,
-        [NODE_HUMAN_REVIEW, END, NODE_CALL_API],
+        agent.should_execute_tools,
+        [NODE_CALL_API, END],
     )
-    workflow_graph.add_edge(NODE_CALL_API, NODE_CALL_MODEL)
 
     return workflow_graph.compile(checkpointer=memory_store)

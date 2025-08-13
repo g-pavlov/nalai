@@ -1,6 +1,7 @@
 """Utility & helper functions."""
 
 import json
+import logging
 from typing import Any, Literal
 
 # WiP
@@ -11,6 +12,10 @@ from langgraph.graph.state import CompiledStateGraph
 # AddableValuesDict is not available in current LangGraph version
 # Using dict[str, Any] as a replacement
 from langgraph.types import Command, Interrupt
+
+from ..server.models import InterruptResponse
+
+logger = logging.getLogger("nalai")
 
 
 def print_streaming_event(
@@ -74,10 +79,17 @@ async def handle_interruption(
     printed_events: set,
 ):
     # We have an interrupt! The agent is trying to use a tool, and the user can approve or deny it
+    # The interrupt value is a list containing the interrupt request
+    interrupt_request = (
+        interrupts.value[0] if isinstance(interrupts.value, list) else interrupts.value
+    )
+    action_request = interrupt_request.get("action_request", {})
+
     user_input = input(
         "\n--------------- Confirmation Needed ---------------"
         "\nAI will perform the following tool invocation:"
-        f"\n{json.dumps(interrupts.value.get('tool_call'), indent=2)}\n"
+        f"\nTool: {action_request.get('action', 'unknown')}"
+        f"\nArgs: {json.dumps(action_request.get('args', {}), indent=2)}\n"
         "\nType 'y' or 'yes' to continue, 'no' or 'n' to abort; otherwise, explain the change you request."
         "\nConfirm: "
     )
@@ -86,13 +98,18 @@ async def handle_interruption(
     # improve this with a more semantic analysis of user intent allowing multiple input optons for 'yes' or 'no'
     if user_input.lower() in ["y", "yes"]:
         # continue
-        resume_input = {"action": "continue"}
+        interrupt_response = InterruptResponse(type="accept")
+        resume_input = [interrupt_response.model_dump()]
     elif user_input.lower() in ["n", "no"]:
         # abort
-        resume_input = {"action": "abort"}
+        interrupt_response = InterruptResponse(
+            type="response", args="User rejected the tool call"
+        )
+        resume_input = [interrupt_response.model_dump()]
     else:
         # needs changes
-        resume_input = {"action": "feedback", "data": user_input.lower()}
+        interrupt_response = InterruptResponse(type="response", args=user_input.lower())
+        resume_input = [interrupt_response.model_dump()]
     # resume the workflow with a command built from the user input
     if interrupts.resumable:
         async for event in graph.astream(

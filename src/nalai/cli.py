@@ -34,10 +34,10 @@ def main():
         "configurable": {
             "thread_id": "thread-1",
             "auth_token": "abcdefg123456789",
-            "model": {
-                "name": "llama3.1:8b",
-                "platform": "ollama",
-            },
+            # "model": {
+            #     "name": "gpt-4.1",
+            #     "platform": "openai",
+            # },
         }
     }
 

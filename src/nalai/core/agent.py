@@ -25,7 +25,6 @@ from ..utils.chat_history import compress_conversation_history_if_needed
 from .constants import (
     NODE_CALL_API,
     NODE_CALL_MODEL,
-    NODE_HUMAN_REVIEW,
     NODE_LOAD_API_SPECS,
     NODE_LOAD_API_SUMMARIES,
     NODE_SELECT_RELEVANT_APIS,
@@ -230,6 +229,29 @@ class APIAgent:
             NODE_LOAD_API_SPECS if state.get("selected_apis", None) else NODE_CALL_MODEL
         )
 
+    def should_execute_tools(self, state: AgentState) -> Literal[NODE_CALL_API, END]:
+        """
+        Determines if tools should be executed based on whether the model requested tool calls.
+        Routes to tool execution or end based on whether the model requested tool calls.
+        """
+        conversation_messages = state.get("messages", [])
+
+        # Check if the last message is an AI message with tool calls
+        if conversation_messages:
+            last_message = conversation_messages[-1]
+            # Check if this is an AI message that requested tool calls
+            if (
+                hasattr(last_message, "tool_calls")
+                and last_message.tool_calls
+                and len(last_message.tool_calls) > 0
+            ):
+                logger.debug("Model requested tool calls, proceeding to API execution")
+                return NODE_CALL_API
+
+        # No tool calls requested, end the workflow
+        logger.debug("No tool calls requested by model, ending workflow")
+        return END
+
     def generate_model_response(
         self, state: AgentState, config: RunnableConfig
     ) -> dict[str, list[AIMessage]]:
@@ -365,32 +387,3 @@ class APIAgent:
             conversation_messages = conversation_messages + compressed_messages
 
         return {"messages": conversation_messages}
-
-    def determine_workflow_action(
-        self, state: AgentState
-    ) -> Literal[END, "human_review", "call_api"]:
-        """
-        Determines the next workflow action based on the model's output and tool calls.
-        """
-        for message in reversed(state["messages"]):
-            if isinstance(message, AIMessage):
-                last_ai_message = message
-                break
-        else:
-            raise ValueError("No AIMessage found in conversation history")
-
-        if not last_ai_message.tool_calls:
-            return END
-
-        tool_call_name = last_ai_message.tool_calls[0]["name"]
-        toolkit = self.http_toolkit
-
-        if settings.api_calls_enabled is True and tool_call_name in (
-            tool.name for tool in toolkit.get_tools()
-        ):
-            if toolkit.is_safe_tool(tool_call_name):
-                return NODE_CALL_API
-            else:
-                return NODE_HUMAN_REVIEW
-        logger.warning(f"Unrecognized tool name: {tool_call_name}")
-        return END

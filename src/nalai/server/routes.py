@@ -10,27 +10,26 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from langgraph.graph.state import CompiledStateGraph
 
 from ..config import BaseRuntimeConfiguration
 from .event_handlers import (
-    format_sse_event_default,
-    process_and_format_event,
     serialize_event_default,
-    stream_interruptable_events,
+    stream_events,
 )
 from .models import (
     AgentInvokeRequest,
     AgentInvokeResponse,
     AgentStreamEventsRequest,
-    HumanReviewRequest,
+    InterruptResponse,
+    ToolInterruptRequest,
+    ToolInterruptSyncResponse,
 )
 from .models.validation import (
     validate_agent_input,
-    validate_human_review_action,
-    validate_json_body,
+    validate_tool_interrupt_response_type,
 )
 from .runtime_config import (
     default_modify_runtime_config_with_access_control,
@@ -39,6 +38,45 @@ from .runtime_config import (
 )
 
 logger = logging.getLogger("nalai")
+
+
+class SSEStreamingResponse(StreamingResponse):
+    """Custom response class for Server-Sent Events with proper media type."""
+
+    media_type = "text/event-stream"
+
+
+# Response examples for streaming endpoints
+streaming_response_examples = {
+    200: {
+        "description": "Server-Sent Events stream with real-time agent updates",
+        "content": {
+            "text/event-stream": {
+                "example": """data: {"messages": [{"content": "Hello", "type": "ai"}], "selected_apis": [], "cache_miss": null}
+
+data: {"messages": [{"content": "Processing your request...", "type": "ai"}], "selected_apis": [{"title": "Ecommerce API", "version": "1.0"}], "cache_miss": "miss"}
+
+data: {"messages": [{"content": "Here are the products:", "type": "ai"}], "selected_apis": [], "cache_miss": null}
+
+"""
+            }
+        },
+        "headers": {
+            "X-Thread-ID": {
+                "description": "Thread ID for conversation management and resume capability",
+                "schema": {"type": "string"},
+            }
+        },
+    },
+    422: {
+        "description": "Validation Error",
+        "content": {
+            "application/json": {
+                "schema": {"$ref": "#/components/schemas/HTTPValidationError"}
+            }
+        },
+    },
+}
 
 
 def create_basic_routes(app: FastAPI) -> None:
@@ -81,17 +119,47 @@ def create_agent_routes(
     modify_runtime_config: Callable[
         [dict, Request], dict
     ] = default_modify_runtime_config_with_access_control,
-    format_sse_event: Callable[[str, str], str] = format_sse_event_default,
     agent_name: str = "nalai",
-    tool_node=None,
 ) -> None:
     """Create agent endpoint routes with access control."""
 
-    @app.post(f"/{agent_name}/invoke", response_model=AgentInvokeResponse)
+    @app.post(
+        f"/{agent_name}/invoke",
+        response_model=AgentInvokeResponse,
+        responses={
+            200: {
+                "description": "Successful Response",
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/AgentInvokeResponse"}
+                    }
+                },
+                "headers": {
+                    "X-Thread-ID": {
+                        "description": "Thread ID for conversation management and resume capability",
+                        "schema": {"type": "string"},
+                    }
+                },
+            },
+            422: {
+                "description": "Validation Error",
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/HTTPValidationError"}
+                    }
+                },
+            },
+        },
+    )
     async def handle_agent_invoke(
         request: AgentInvokeRequest, req: Request
     ) -> AgentInvokeResponse:
-        """Invoke the agent synchronously with access control."""
+        """
+        Invoke the agent synchronously with access control.
+
+        Returns the agent response along with an X-Thread-ID header that can be used
+        for conversation management and resuming interrupted workflows via the tool-interrupt endpoint.
+        """
         # Validate input content
         validate_agent_input(request.input.messages)
 
@@ -102,7 +170,7 @@ def create_agent_routes(
         ) = await setup_runtime_config_with_access_control(
             request.config,
             req,
-            default_modify_runtime_config_with_access_control,
+            modify_runtime_config,
             validate_runtime_config,
         )
 
@@ -115,9 +183,15 @@ def create_agent_routes(
         # Invoke the agent
         result = await agent.ainvoke(agent_input, config=final_config)
 
-        return AgentInvokeResponse(output=result)
+        # Return response with thread_id header for conversation management and resume capability
+        response_data = AgentInvokeResponse(output=result)
+        return Response(
+            content=response_data.model_dump_json(),
+            media_type="application/json",
+            headers={"X-Thread-ID": user_scoped_thread_id},
+        )
 
-    @app.post(f"/{agent_name}/stream_events")
+    @app.post(f"/{agent_name}/stream_events", responses=streaming_response_examples)
     async def handle_agent_stream_events(
         request: AgentStreamEventsRequest, req: Request
     ) -> StreamingResponse:
@@ -132,101 +206,106 @@ def create_agent_routes(
         ) = await setup_runtime_config_with_access_control(
             request.config,
             req,
-            default_modify_runtime_config_with_access_control,
+            modify_runtime_config,
             validate_runtime_config,
         )
 
         async def generate():
-            allowed_events = request.allowed_events or [
-                "on_chat_model_stream",
-                "on_chat_model_start",
-                "on_chat_model_end",
-                "on_tool_start",
-                "on_tool_stream",
-                "on_tool_end",
-                "on_chain_stream",
-                "on_chain_start",
-                "on_chain_end",
-            ]
             agent_input = request.input.model_dump()
-
-            event_count = 0
-            async for event in agent.astream_events(
-                agent_input, config=agent_config, stream_mode="values"
+            # Use stream_events_with_api_interruptions to handle interrupts properly
+            async for event in stream_events(
+                agent,
+                agent_config,
+                agent_input,
+                resume_input=None,  # No resume input for initial request
+                serialize_event=serialize_event,
             ):
-                try:
-                    # Log the raw event for debugging
-                    logger.debug(f"Raw event type: {type(event)}, event: {event}")
+                yield event
 
-                    if event is not None:
-                        event_count += 1
-                        # Debug mode: bypass filtering and pass through all events
-                        if getattr(request, "debug", False):
-                            formatted_event = format_sse_event(
-                                "data", json.dumps(serialize_event(event))
-                            )
-                            logger.debug(
-                                f"Debug mode - passing through all events: {formatted_event}"
-                            )
-                            yield formatted_event
-                        else:
-                            # Normal mode: apply filtering
-                            formatted_event = process_and_format_event(
-                                event, allowed_events, serialize_event, format_sse_event
-                            )
-                            logger.debug(f"Formatted event: {formatted_event}")
-                            if formatted_event:
-                                yield formatted_event
-                    else:
-                        logger.debug("Event was None")
-                except Exception as e:
-                    logger.error(f"Error processing event: {e}", exc_info=True)
-                    # Pass through the original event as fallback
-                    formatted_event = process_and_format_event(
-                        event, allowed_events, serialize_event, format_sse_event
-                    )
-                    if formatted_event:
-                        yield formatted_event
-
-            # Log event count for debugging
-            logger.debug(f"Stream completed with {event_count} events")
-
-            # Send [DONE] event to properly terminate the stream
-            yield "data: [DONE]\n\n"
-
-        return StreamingResponse(
+        return SSEStreamingResponse(
             generate(),
-            media_type="text/event-stream",
             headers={"X-Thread-ID": user_scoped_thread_id},
         )
 
-    @app.post(f"/{agent_name}/human-review")
-    async def handle_human_review(
-        req: Request, raw_body: str = Body(..., media_type="application/json")
+    @app.post(
+        f"/{agent_name}/tool-interrupt/stream", responses=streaming_response_examples
+    )
+    async def handle_tool_interrupt_stream(
+        request: ToolInterruptRequest, req: Request
     ) -> StreamingResponse:
-        """Handle human review requests with access control."""
-        parsed_body = validate_json_body(raw_body)
-        request = HumanReviewRequest(**parsed_body)
-        validate_human_review_action(request.action)
+        """
+        Handle tool-level interrupt requests with streaming response.
+
+        **Use Case**: Resume interrupted streaming workflows from /stream_events endpoint.
+        **Response**: Server-sent events stream with real-time updates.
+        """
+        return await _handle_tool_interrupt_internal(request, req, streaming=True)
+
+    @app.post(
+        f"/{agent_name}/tool-interrupt/batch",
+        response_model=ToolInterruptSyncResponse,
+        summary="Resume interrupted batch workflow",
+        description="Resume an interrupted batch workflow from /invoke endpoint. Returns single JSON response.",
+        responses={
+            200: {
+                "description": "Synchronous response with agent output and X-Thread-ID header",
+                "headers": {
+                    "X-Thread-ID": {
+                        "description": "Thread ID for conversation management and resume capability",
+                        "schema": {"type": "string"},
+                    }
+                },
+            }
+        },
+    )
+    async def handle_tool_interrupt_batch(
+        request: ToolInterruptRequest, req: Request
+    ) -> ToolInterruptSyncResponse:
+        """
+        Handle tool-level interrupt requests with synchronous response.
+
+        **Use Case**: Resume interrupted batch workflows from /invoke endpoint.
+        **Response**: Single JSON response with complete agent output.
+        **Headers**: X-Thread-ID for conversation management.
+        """
+        result = await _handle_tool_interrupt_internal(request, req, streaming=False)
+        # Convert Response to ToolInterruptSyncResponse
+        import json
+
+        response_data = json.loads(result.body.decode())
+        return ToolInterruptSyncResponse(output=response_data["output"])
+
+    async def _handle_tool_interrupt_internal(
+        request: ToolInterruptRequest, req: Request, streaming: bool = True
+    ) -> StreamingResponse | Response:
+        """Handle tool-level interrupt requests with access control (internal)."""
+        validate_tool_interrupt_response_type(request.response_type)
 
         logger.info(
-            f"Human review action: {request.action} for thread: {request.thread_id}"
+            f"Tool interrupt response: {request.response_type} for thread: {request.thread_id}"
         )
 
-        resume_input = {"action": request.action}
-        if request.action in ["update", "feedback"]:
-            resume_input["data"] = request.data
+        # Map tool interrupt response to the format expected by the interrupt system
+        if request.response_type == "accept":
+            interrupt_response = InterruptResponse(type="accept")
+        elif request.response_type == "edit":
+            interrupt_response = InterruptResponse(
+                type="edit", args={"args": request.args}
+            )
+        elif request.response_type == "response":
+            interrupt_response = InterruptResponse(type="response", args=request.args)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported response type: {request.response_type}",
+            )
 
-        request_payload = await req.json()
-        # Ensure thread_id exists (use the one from request if provided)
-        if request.thread_id:
-            # Convert to dict if it's a Pydantic model
-            if hasattr(request_payload, "model_dump"):
-                request_payload = request_payload.model_dump()
-            # Ensure configurable exists
-            if "configurable" not in request_payload:
-                request_payload["configurable"] = {}
-            request_payload["configurable"]["thread_id"] = request.thread_id
+        # Convert request to dict for configuration setup
+        request_payload = request.model_dump()
+        # Ensure configurable exists
+        if "configurable" not in request_payload:
+            request_payload["configurable"] = {}
+        request_payload["configurable"]["thread_id"] = request.thread_id
 
         # Set up runtime configuration with access control
         (
@@ -235,18 +314,35 @@ def create_agent_routes(
         ) = await setup_runtime_config_with_access_control(
             request_payload,
             req,
-            default_modify_runtime_config_with_access_control,
+            modify_runtime_config,
             validate_runtime_config,
         )
 
-        return StreamingResponse(
-            stream_interruptable_events(
-                agent,
-                resume_input,
-                agent_config,
-                serialize_event=serialize_event,
-                format_sse_event=format_sse_event,
-            ),
-            media_type="text/event-stream",
-            headers={"X-Thread-ID": request.thread_id},
-        )
+        if streaming:
+            return SSEStreamingResponse(
+                stream_events(
+                    agent,
+                    agent_config,
+                    agent_input=None,  # No initial input for resume
+                    resume_input=interrupt_response,
+                    serialize_event=serialize_event,
+                ),
+                headers={"X-Thread-ID": user_scoped_thread_id},
+            )
+        else:
+            # For synchronous resume, invoke the agent directly
+            from langgraph.types import Command
+
+            result = await agent.ainvoke(
+                Command(resume=[interrupt_response.model_dump()]), config=agent_config
+            )
+
+            # Serialize the result using the same function as streaming
+            serialized_result = serialize_event(result)
+
+            # Return the result with thread_id header
+            return Response(
+                content=json.dumps({"output": serialized_result}),
+                media_type="application/json",
+                headers={"X-Thread-ID": user_scoped_thread_id},
+            )

@@ -5,18 +5,38 @@ This module contains models for incoming requests and messages:
 - MessageInput: Individual message structure
 - AgentInput: Collection of messages for agent processing
 - AgentInvokeRequest: Synchronous agent invocation request
-- AgentStreamRequest: Streaming agent request
 - AgentStreamEventsRequest: Event streaming request
-- HumanReviewRequest: Human review operation request
+- ToolInterruptRequest: Tool interrupt operation request
 """
 
 import uuid
-from typing import Any, Literal
+from typing import Literal
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .config import AgentConfig
+
+
+class InterruptResponse(BaseModel):
+    """Type-safe model for interrupt response protocol."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["accept", "edit", "response"] = Field(
+        ..., description="Response type"
+    )
+    args: dict | str | None = Field(
+        None, description="Arguments for edit or response types"
+    )
+
+    @field_validator("args")
+    @classmethod
+    def validate_args(cls, args, info):
+        """Validate that args is provided for response types that require it."""
+        if info.data.get("type") in ["edit", "response"] and args is None:
+            raise ValueError("Args are required for 'edit' or 'response' types")
+        return args
 
 
 class MessageInput(BaseModel):
@@ -142,13 +162,6 @@ class AgentInvokeRequest(BaseModel):
     config: AgentConfig | None = Field(None, description="Optional configuration")
 
 
-class AgentStreamRequest(BaseModel):
-    """Request model for agent streaming."""
-
-    input: dict[str, Any]  # Use Dict instead of TypedDict for FastAPI compatibility
-    config: dict[str, Any] | None = None
-
-
 class AgentStreamEventsRequest(BaseModel):
     """Request model for agent stream events."""
 
@@ -191,29 +204,48 @@ class AgentStreamEventsRequest(BaseModel):
         return allowed_events
 
 
-class HumanReviewRequest(BaseModel):
-    """Request model for human review operations."""
+class ToolInterruptRequest(BaseModel):
+    """Request model for tool-level interrupt operations."""
 
     thread_id: str
-    action: Literal["continue", "abort", "update", "feedback"]
-    data: dict | str | None = None  # Only used if action is "update" or "feedback"
+    response_type: Literal["accept", "edit", "response"]
+    args: dict | str | None = (
+        None  # Used for "edit" (updated args) or "response" (feedback)
+    )
 
-    @field_validator("data")
+    @field_validator("args")
     @classmethod
-    def validate_data(cls, data, info):
-        """Validate that data is provided for actions that require it."""
-        if info.data.get("action") in ["update", "feedback"] and data is None:
-            raise ValueError("Data is required for 'update' or 'feedback' actions")
-        return data
+    def validate_args(cls, args, info):
+        """Validate that args is provided for response types that require it."""
+        if info.data.get("response_type") in ["edit", "response"] and args is None:
+            raise ValueError("Args are required for 'edit' or 'response' types")
+        return args
 
     @field_validator("thread_id")
     @classmethod
     def validate_thread_id(cls, thread_id):
-        """Validate that thread_id is a valid UUID4."""
+        """Validate that thread_id is either a valid UUID4 or a user-scoped thread ID."""
+        # Check if it's a user-scoped thread ID (format: user:dev-user:uuid)
+        if ":" in thread_id:
+            parts = thread_id.split(":")
+            if len(parts) == 3 and parts[0] == "user" and parts[1] == "dev-user":
+                try:
+                    uuid.UUID(parts[2], version=4)
+                    return thread_id
+                except ValueError:
+                    raise ValueError("Invalid UUID in user-scoped thread_id") from None
+            else:
+                raise ValueError(
+                    "Invalid user-scoped thread_id format. Expected: user:dev-user:uuid"
+                )
+
+        # Check if it's a plain UUID4
         try:
             uuid_obj = uuid.UUID(thread_id, version=4)
         except ValueError:
-            raise ValueError("thread_id must be a valid UUID4") from None
+            raise ValueError(
+                "thread_id must be a valid UUID4 or user-scoped thread ID"
+            ) from None
         if str(uuid_obj) != thread_id:
             raise ValueError("thread_id must be a canonical UUID4 string")
         return thread_id

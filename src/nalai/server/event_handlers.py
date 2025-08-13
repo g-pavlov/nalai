@@ -10,21 +10,45 @@ import logging
 from collections.abc import AsyncGenerator, Callable
 
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Command
+
+from ..server.models import InterruptResponse
 
 logger = logging.getLogger("nalai")
+
+
+def format_sse_event_default(event_type: str, data: str) -> str:
+    """Default SSE event formatter."""
+    return f"event: {event_type}\ndata: {data}\n\n"
 
 
 def serialize_event_default(event: object) -> object:
     """Default event serializer that handles various object types."""
     try:
         if isinstance(event, dict):
-            return {k: serialize_event_default(v) for k, v in event.items()}
+            # Only filter the irrelavant or sensitive data, keep workflow state
+            filtered_event = {}
+            for k, v in event.items():
+                # Only filter the sensitive data, keep workflow state
+                if k in ["api_specs", "api_summaries"]:
+                    continue  # Skip these entirely
+                elif k == "data" and isinstance(v, dict):
+                    # Recursively filter nested data objects
+                    filtered_data = {}
+                    for data_k, data_v in v.items():
+                        if data_k in ["api_specs", "api_summaries"]:
+                            continue  # Skip these entirely
+                        else:
+                            filtered_data[data_k] = serialize_event_default(data_v)
+                    filtered_event[k] = filtered_data
+                else:
+                    filtered_event[k] = serialize_event_default(v)
+            return filtered_event
         elif hasattr(event, "model_dump"):
-            # Pydantic model - convert to dict
-            return event.model_dump()
+            # Pydantic model - convert to dict and filter
+            event_dict = event.model_dump()
+            return serialize_event_default(event_dict)
         elif hasattr(event, "to_dict"):
-            return event.to_dict()
+            return serialize_event_default(event.to_dict())
         elif hasattr(event, "__dict__"):
             # Handle LangChain message objects specially
             if hasattr(event, "content") and hasattr(event, "__class__"):
@@ -47,119 +71,60 @@ def serialize_event_default(event: object) -> object:
         else:
             # Try to convert to string for other types
             return str(event)
-    except Exception:
-        # Fallback: return string representation
-        return f"<{type(event).__name__}: {str(event)}>"
+    except Exception as e:
+        logger.warning(f"Error serializing event: {e}")
+        return str(event)
 
 
-def format_sse_event_default(event_type: str, data: str) -> str:
-    """Default SSE event formatter."""
-    return f"event: {event_type}\ndata: {data}\n\n"
-
-
-def process_and_format_event(
-    event: dict,
-    allowed_events: list[str],
-    serialize_event: Callable[[object], object],
-    format_sse_event: Callable[[str, str], str],
-) -> str | None:
-    """
-    Process a single event and return formatted SSE data if applicable.
-
-    Args:
-        event: Event dictionary from LangGraph
-        allowed_events: List of allowed event types to process
-        serialize_event: Function to serialize event data
-        format_sse_event: Function to format SSE event
-
-    Returns:
-        Formatted SSE event string or None if event should be filtered out
-    """
-    event_type = event.get("event")
-
-    if not event_type:
-        return None
-
-    # For on_chain_stream events, only include if they contain __interrupt__ in the data chunk
-    if event_type == "on_chain_stream":
-        event_data = event.get("data", {})
-        chunk = event_data.get("chunk", {})
-        if "__interrupt__" in chunk:
-            return format_sse_event("data", json.dumps(serialize_event(event)))
-    # For other event types, check if they're in the allowed list
-    elif event_type in allowed_events:
-        return format_sse_event("data", json.dumps(serialize_event(event)))
-
-    return None
-
-
-async def stream_interruptable_events(
+async def stream_events(
     agent: CompiledStateGraph,
-    resume_input: dict,
     config: dict,
+    agent_input: dict,
+    resume_input: InterruptResponse | None = None,
     *,
     serialize_event: Callable[[object], object] = serialize_event_default,
-    format_sse_event: Callable[[str, str], str] = format_sse_event_default,
-    allowed_events: list[str] | None = None,
 ) -> AsyncGenerator[str, None]:
     """
-    Special event stream handler used by the /human-review endpoint.
-
-    Events are instances of StreamEvent (Union[StandardStreamEvent, CustomStreamEvent]),
-    which are TypedDict types that behave like dictionaries.
+    Stream events with API interruption handling using astream.
 
     Args:
         agent: Compiled LangGraph agent
-        resume_input: Input for resuming the workflow
         config: Runtime configuration with user context
+        agent_input: Input for the agent
+        resume_input: Optional resume input if resuming from interrupt
         serialize_event: Function to serialize event data
-        format_sse_event: Function to format SSE event
-        allowed_events: List of allowed event types (defaults to human review events)
 
     Yields:
         Formatted SSE event strings
     """
-    # Default allowed events for human review
-    if allowed_events is None:
-        allowed_events = ["on_chat_model_stream", "on_tool_end"]
-
     try:
-        async for event in agent.astream_events(
-            Command(resume=resume_input), config, stream_mode="values"
-        ):
-            # Handle both StandardStreamEvent and CustomStreamEvent
-            if isinstance(event, dict):
-                formatted_event = process_and_format_event(
-                    event, allowed_events, serialize_event, format_sse_event
-                )
-                if formatted_event:
-                    yield formatted_event
+        # If we have resume input, this means we're resuming from an interrupt
+        if resume_input:
+            logger.info(f"Resuming workflow with input: {resume_input}")
+            # Resume the workflow with the human's decision
+            from langgraph.types import Command
 
-        # Check for interrupts in the final state
-        snapshot = agent.get_state(config)
-        if snapshot and len(snapshot) > 0 and len(snapshot[-1]) > 0:
-            try:
-                interrupt = snapshot[-1][0].interrupts[0]
-                interruption_data = {
-                    "event": "on_chain_stream",
-                    "data": {
-                        "chunk": {
-                            "__interrupt__": [
-                                {
-                                    "value": interrupt.value,
-                                    "resumable": interrupt.resumable,
-                                    "ns": interrupt.ns,
-                                    "when": interrupt.when,
-                                }
-                            ]
-                        }
-                    },
-                }
-                yield format_sse_event("data", json.dumps(interruption_data))
-            except (IndexError, AttributeError) as e:
-                logger.debug(f"No interrupt found in snapshot: {e}")
-                # No interrupt found, which is normal for completed workflows
+            # Structure resume_input like CLI: wrap in list with model_dump()
+            resume_command = [resume_input.model_dump()]
+            async for chunk in agent.astream(
+                Command(resume=resume_command), config, stream_mode="values"
+            ):
+                # Add response_type to metadata for logging
+                if hasattr(chunk, "metadata"):
+                    chunk.metadata = getattr(chunk, "metadata", {})
+                    chunk.metadata["response_type"] = resume_input.type
+
+                serialized_chunk = serialize_event(chunk)
+                if serialized_chunk:
+                    yield f"data: {json.dumps(serialized_chunk)}\n\n"
+        else:
+            # Start fresh workflow
+            logger.info("Starting fresh workflow")
+            async for chunk in agent.astream(agent_input, config, stream_mode="values"):
+                serialized_chunk = serialize_event(chunk)
+                if serialized_chunk:
+                    yield f"data: {json.dumps(serialized_chunk)}\n\n"
 
     except Exception as e:
-        logger.error(f"Error in event stream: {str(e)}")
-        yield format_sse_event("error", json.dumps({"error": str(e)}))
+        logger.error(f"Error in API event streaming: {str(e)}")
+        yield f"data: {json.dumps({'error': str(e)})}\n\n"

@@ -10,7 +10,6 @@ import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from langgraph.prebuilt import ToolNode
 
 from ..config import settings
 from ..core.agent import APIAgent
@@ -95,22 +94,26 @@ async def audit_middleware_wrapper(request: Request, call_next):
 
 
 # Initialize application components
+_initialized = False
+
+
 def initialize_app():
     """Initialize the application components."""
+    global _initialized
+    if _initialized:
+        return
+
     # Create basic routes
     create_basic_routes(app)
 
     # Initialize agent and create agent routes
     memory_store = get_checkpointer()
     agent = APIAgent()
-    # Create the tool node
-    tool_node = ToolNode(agent.http_toolkit.get_tools())
-    agent_workflow = create_and_compile_workflow(
-        agent, memory_store, available_tools={"call_api": tool_node}
-    )
-    create_agent_routes(app, agent_workflow, tool_node=tool_node)
+    agent_workflow = create_and_compile_workflow(agent, memory_store)
+    create_agent_routes(app, agent_workflow)
 
     logger.info("Application routes initialized")
+    _initialized = True
 
 
 # Initialize the application

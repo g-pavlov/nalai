@@ -5,7 +5,6 @@ This module contains the FastAPI application, middleware,
 and route handlers for the API Assistant server.
 """
 
-from .app import app
 from .middleware import (
     create_audit_middleware,
     create_auth_middleware,
@@ -19,8 +18,6 @@ from .models import (
     AgentInvokeRequest,
     AgentInvokeResponse,
     AgentStreamEventsRequest,
-    AgentStreamRequest,
-    HumanReviewRequest,
     MessageInput,
     convert_api_messages_to_langchain,
     convert_langchain_messages_to_api,
@@ -29,12 +26,9 @@ from .models import (
 )
 
 __all__ = [
-    "app",
     "AgentInvokeRequest",
     "AgentInvokeResponse",
-    "AgentStreamRequest",
     "AgentStreamEventsRequest",
-    "HumanReviewRequest",
     "MessageInput",
     "AgentInput",
     "validate_langchain_messages",
@@ -47,3 +41,10 @@ __all__ = [
     "get_user_context",
     "is_request_processable",
 ]
+
+
+def get_app():
+    """Get the FastAPI application instance (lazy import to avoid circular imports)."""
+    from .app import app
+
+    return app

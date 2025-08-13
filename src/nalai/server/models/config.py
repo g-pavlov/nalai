@@ -41,9 +41,10 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: ModelConfig | None = Field(
-        None,
+        default=None,
         description="Model configuration (optional, can be provided in configurable.model)",
     )
     configurable: dict[str, Any] | None = Field(
-        None, description="Additional configurable options"
+        default=None,
+        description="Additional configurable options",
     )

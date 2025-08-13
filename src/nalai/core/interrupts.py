@@ -1,117 +1,17 @@
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Literal
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langgraph.types import Command, interrupt
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import BaseTool
+from langchain_core.tools import tool as create_tool
+from langgraph.prebuilt.interrupt import HumanInterrupt, HumanInterruptConfig
+from langgraph.types import interrupt
 
 from ..config import BaseRuntimeConfiguration
 from ..utils.pii_masking import mask_pii
-from .constants import NODE_CALL_API, NODE_CALL_MODEL
-from .schemas import AgentState
 
 logger = logging.getLogger(__name__)
-
-# Constants for human review messages
-ABORT_MESSAGE = "Abort this tool call"
-
-
-def process_human_review(
-    state: AgentState, config: BaseRuntimeConfiguration
-) -> Command[Literal["call_model", "call_api"]]:
-    """Process human review of tool calls and return workflow commands.
-    Handles human-in-the-loop review workflow by:
-    - Extracting the latest AI message with tool calls
-    - Presenting tool call for human review
-    - Processing review actions (continue, abort, update, feedback)
-    - Returning appropriate workflow commands
-    Args:
-        state: Current agent state with conversation history
-        config: Runtime configuration with user context
-    Returns:
-        Command directing workflow to next step
-    Raises:
-        ValueError: If no AI message with tool calls is found
-    """
-    last_ai_message = None
-    for message in reversed(state["messages"]):
-        if isinstance(message, AIMessage):
-            last_ai_message = message
-            break
-    else:
-        raise ValueError("No AIMessage found in conversation history")
-    if not last_ai_message.tool_calls:
-        # No tool calls to review - return to model
-        return Command(goto=NODE_CALL_MODEL, update={})
-
-    current_tool_call = last_ai_message.tool_calls[-1]
-
-    # Create human review interrupt for tool call validation
-    human_review_interrupt = interrupt(
-        {
-            "question": "Is this correct?",
-            "tool_call": current_tool_call,
-        }
-    )
-
-    review_action = human_review_interrupt["action"]
-    review_data = human_review_interrupt.get("data")
-
-    # Process review actions
-    if review_action == "continue":
-        # Approved - execute the tool call
-        log_human_review_action(review_action, config, current_tool_call)
-        return Command(goto=NODE_CALL_API, update={})
-
-    elif review_action == "abort":
-        # Aborted - add abort messages and return to model
-        confirmation_message = HumanMessage(content=review_action)
-        tool_message = ToolMessage(
-            content=ABORT_MESSAGE,
-            name=current_tool_call["name"],
-            tool_call_id=current_tool_call["id"],
-        )
-        log_human_review_action(review_action, config, current_tool_call)
-        return Command(
-            goto=NODE_CALL_MODEL,
-            update={"messages": [tool_message, confirmation_message]},
-        )
-
-    elif review_action == "update":
-        # Update tool call arguments and execute
-        updated_ai_message = {
-            "role": "ai",
-            "content": last_ai_message.content,
-            "tool_calls": [
-                {
-                    "id": current_tool_call["id"],
-                    "name": current_tool_call["name"],
-                    "args": review_data,  # Updated arguments from human
-                }
-            ],
-            "id": last_ai_message.id,  # Preserve message ID to avoid duplication
-        }
-        return Command(goto=NODE_CALL_API, update={"messages": [updated_ai_message]})
-
-    elif review_action == "feedback":
-        # Provide feedback to LLM for reconsideration
-        feedback_tool_message = ToolMessage(
-            content=review_data,  # Natural language feedback
-            name=current_tool_call["name"],
-            tool_call_id=current_tool_call["id"],
-        )
-        return Command(
-            goto=NODE_CALL_MODEL, update={"messages": [feedback_tool_message]}
-        )
-
-    else:
-        # Unknown action - log warning and default to continue
-        logger.warning(
-            f"Unknown review action '{review_action}' received. Defaulting to 'continue'. "
-            f"Tool call: {current_tool_call}"
-        )
-        log_human_review_action("continue", config, current_tool_call)
-        return Command(goto=NODE_CALL_API, update={})
 
 
 def log_human_review_action(
@@ -148,3 +48,82 @@ def log_human_review_action(
         f"for threadId: {thread_id} in org_unit_id: {masked_org_unit_id}. "
         f"Planned API to be executed: tool_call: {tool_call}. Timestamp: {timestamp}"
     )
+
+
+def add_human_in_the_loop(
+    tool: Callable | BaseTool,
+    *,
+    interrupt_config: HumanInterruptConfig = None,
+) -> BaseTool:
+    """Wrap a tool to support human-in-the-loop review."""
+    if not isinstance(tool, BaseTool):
+        tool = create_tool(tool)
+
+    if interrupt_config is None:
+        interrupt_config = {
+            "allow_accept": True,
+            "allow_edit": True,
+            "allow_respond": True,
+        }
+
+    @create_tool(tool.name, description=tool.description, args_schema=tool.args_schema)
+    def call_tool_with_interrupt(config: RunnableConfig, **tool_input):
+        request: HumanInterrupt = {
+            "action_request": {"action": tool.name, "args": tool_input},
+            "config": interrupt_config,
+            "description": "Please review the tool call",
+        }
+        logger.info(f"Interrupt request: {request}")
+        response = interrupt([request])[0]
+        # approve the tool call
+        logger.info(f"Interrupt response: {response}")
+        if response["type"] == "accept":
+            # Extract run_manager from config if available
+            run_manager = config.get("run_manager") if config else None
+            # Use the tool's _run method directly to avoid LangGraph context issues
+            tool_response = tool._run(
+                **tool_input, config=config, run_manager=run_manager
+            )
+        # update tool call args
+        elif response["type"] == "edit":
+            tool_input = response["args"]["args"]
+            run_manager = config.get("run_manager") if config else None
+            tool_response = tool._run(
+                **tool_input, config=config, run_manager=run_manager
+            )
+        # respond to the LLM with user feedback
+        elif response["type"] == "response":
+            user_feedback = response["args"]
+            tool_response = user_feedback
+        else:
+            raise ValueError(f"Unsupported interrupt response type: {response['type']}")
+
+        return tool_response
+
+    return call_tool_with_interrupt
+
+
+def detect_interrupt_from_state(workflow, config):
+    """
+    Detect if there's an interrupt in the current workflow state.
+
+    Args:
+        workflow: Compiled LangGraph workflow
+        config: Runtime configuration
+
+    Returns:
+        Interrupt data if found, None otherwise
+    """
+    try:
+        snapshot = workflow.get_state(config)
+        if snapshot.next and len(snapshot) > 0 and len(snapshot[-1]) > 0:
+            interrupt = snapshot[-1][0]
+            return {
+                "id": getattr(interrupt, "id", None),
+                "value": getattr(interrupt, "value", {}),
+                "resumable": getattr(interrupt, "resumable", True),
+            }
+    except Exception as e:
+        logger.error(f"Error detecting interrupt from state: {e}")
+
+    return None

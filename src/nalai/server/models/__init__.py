@@ -11,10 +11,7 @@ This package contains all models organized by message flow:
 
 # Input models
 # Configuration models
-from .config import (
-    AgentConfig,
-    ModelConfig,
-)
+from .config import AgentConfig, ModelConfig
 
 # Conversion utilities
 from .conversions import (
@@ -22,56 +19,37 @@ from .conversions import (
     convert_langchain_messages_to_api,
     validate_langchain_messages,
 )
+from .identity import UserContext
 from .input import (
     AgentInput,
     AgentInvokeRequest,
     AgentStreamEventsRequest,
-    AgentStreamRequest,
-    HumanReviewRequest,
+    InterruptResponse,
     MessageInput,
+    ToolInterruptRequest,
 )
 
 # Output models
 from .output import (
     AgentInvokeResponse,
-    ErrorResponse,
-)
-
-# Validation functions
-from .validation import (
-    validate_agent_input,
-    validate_api_messages,
-    validate_human_review_action,
-    validate_json_body,
-    validate_runtime_config,
-)
-from .validation import (
-    validate_langchain_messages as validate_langchain_messages_func,
+    ToolInterruptStreamEvent,
+    ToolInterruptSyncResponse,
 )
 
 __all__ = [
-    # Input models
-    "MessageInput",
-    "AgentInput",
-    "AgentInvokeRequest",
-    "AgentStreamRequest",
-    "AgentStreamEventsRequest",
-    "HumanReviewRequest",
-    # Output models
-    "AgentInvokeResponse",
-    "ErrorResponse",
-    # Configuration models
-    "ModelConfig",
     "AgentConfig",
-    # Conversion utilities
-    "validate_langchain_messages",
+    "ModelConfig",
     "convert_api_messages_to_langchain",
     "convert_langchain_messages_to_api",
-    # Validation functions
-    "validate_agent_input",
-    "validate_langchain_messages_func",
-    "validate_api_messages",
-    "validate_human_review_action",
-    "validate_json_body",
-    "validate_runtime_config",
+    "validate_langchain_messages",
+    "UserContext",
+    "AgentInput",
+    "AgentInvokeRequest",
+    "AgentStreamEventsRequest",
+    "InterruptResponse",
+    "MessageInput",
+    "ToolInterruptRequest",
+    "AgentInvokeResponse",
+    "ToolInterruptSyncResponse",
+    "ToolInterruptStreamEvent",
 ]

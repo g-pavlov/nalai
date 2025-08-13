@@ -175,20 +175,35 @@ async def validate_thread_access_and_scope(
         has_access = await access_control.validate_thread_access(user_id, thread_id)
 
         if not has_access:
-            # Log failed access attempt
-            await log_thread_access_event(
-                user_id=user_id,
-                thread_id=thread_id,
-                action="access_denied",
-                success=False,
-                ip_address=user_context.ip_address,
-                user_agent=user_context.user_agent,
-                session_id=user_context.session_id,
-                request_id=user_context.request_id,
-            )
-            raise HTTPException(status_code=403, detail="Access denied to thread")
+            # Try to create the thread if it doesn't exist
+            try:
+                await access_control.create_thread(user_id, thread_id)
+                logger.debug(f"Created missing thread {thread_id} for user {user_id}")
+                has_access = True
+            except ValueError:
+                # Thread exists but belongs to different user
+                logger.warning(
+                    f"Thread {thread_id} exists but belongs to different user"
+                )
+                # Log failed access attempt
+                await log_thread_access_event(
+                    user_id=user_id,
+                    thread_id=thread_id,
+                    action="access_denied",
+                    success=False,
+                    ip_address=user_context.ip_address,
+                    user_agent=user_context.user_agent,
+                    session_id=user_context.session_id,
+                    request_id=user_context.request_id,
+                )
+                raise HTTPException(
+                    status_code=403, detail="Access denied to thread"
+                ) from None
 
-        logger.debug(f"User {user_id} granted access to existing thread {thread_id}")
+        if has_access:
+            logger.debug(
+                f"User {user_id} granted access to existing thread {thread_id}"
+            )
 
     else:
         # No thread ID provided - create new thread for user
