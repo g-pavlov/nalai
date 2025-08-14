@@ -57,6 +57,9 @@ def ensure_thread_id_exists(
     thread_id = configurable.get("thread_id")
 
     if thread_id:
+        # Always validate external thread IDs for proper format
+        validate_external_thread_id(thread_id)
+
         if validate_uuid:
             try:
                 uuid.UUID(thread_id, version=4)
@@ -69,6 +72,77 @@ def ensure_thread_id_exists(
         configurable["thread_id"] = thread_id
 
     return config, thread_id
+
+
+def validate_external_thread_id(thread_id: str) -> None:
+    """
+    Validate external thread ID format for security and consistency.
+
+    This function validates that thread IDs received from external sources
+    follow the expected format to prevent injection attacks and ensure
+    data consistency.
+
+    Args:
+        thread_id: Thread ID to validate
+
+    Raises:
+        HTTPException: If thread ID format is invalid
+    """
+    if not thread_id or not isinstance(thread_id, str):
+        raise HTTPException(
+            status_code=400, detail="thread_id must be a non-empty string"
+        )
+
+    # Check for potentially malicious patterns
+    if len(thread_id) > 200:  # Reasonable length limit
+        raise HTTPException(
+            status_code=400, detail="thread_id too long (max 200 characters)"
+        )
+
+    # Check if it's a user-scoped thread ID (format: user:{user_id}:{uuid})
+    if ":" in thread_id:
+        parts = thread_id.split(":")
+        if len(parts) != 3:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid user-scoped thread_id format. Expected: user:{user_id}:{uuid}",
+            )
+
+        if parts[0] != "user":
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid user-scoped thread_id format. Must start with 'user:'",
+            )
+
+        # Validate user_id part (should be non-empty and not contain colons)
+        user_id = parts[1]
+        if not user_id or ":" in user_id:
+            raise HTTPException(
+                status_code=400, detail="Invalid user_id in thread_id format"
+            )
+
+        # Validate UUID part
+        try:
+            uuid.UUID(parts[2], version=4)
+        except ValueError as err:
+            raise HTTPException(
+                status_code=400, detail="Invalid UUID in user-scoped thread_id"
+            ) from err
+
+        return
+
+    # Check if it's a plain UUID4
+    try:
+        uuid_obj = uuid.UUID(thread_id, version=4)
+        if str(uuid_obj) != thread_id:
+            raise HTTPException(
+                status_code=400, detail="thread_id must be a canonical UUID4 string"
+            )
+    except ValueError as err:
+        raise HTTPException(
+            status_code=400,
+            detail="thread_id must be a valid UUID4 or user-scoped thread ID (user:{user_id}:{uuid})",
+        ) from err
 
 
 def add_auth_token_to_config(config: dict | None, req: Request) -> dict:
@@ -219,10 +293,19 @@ async def validate_thread_access_and_scope(
                 status_code=500, detail="Failed to create thread"
             ) from e
 
-    # Create user-scoped thread ID for LangGraph
-    user_scoped_thread_id = await access_control.create_user_scoped_thread_id(
-        user_id, thread_id
-    )
+    # Create user-scoped thread ID for LangGraph (only if not already scoped)
+    if thread_id.startswith("user:"):
+        # Thread ID is already user-scoped, validate it belongs to this user
+        parts = thread_id.split(":", 2)
+        if len(parts) >= 3 and parts[1] == user_id:
+            user_scoped_thread_id = thread_id
+        else:
+            raise HTTPException(status_code=403, detail="Access denied to thread")
+    else:
+        # Thread ID is not scoped, create user-scoped version
+        user_scoped_thread_id = await access_control.create_user_scoped_thread_id(
+            user_id, thread_id
+        )
 
     # Update config with user-scoped thread ID
     configurable = _ensure_configurable(config)

@@ -23,9 +23,7 @@ class ModelConfig(BaseModel):
 
 
 # Add this default instance
-DEFAULT_MODEL_CONFIG = ModelConfig(
-    name="us.anthropic.claude-3-5-sonnet-20241022-v2:0", platform="bedrock"
-)
+DEFAULT_MODEL_CONFIG = ModelConfig(name="gpt-4.1", platform="openai")
 
 
 class ConfigSchema(BaseModel):
@@ -33,7 +31,7 @@ class ConfigSchema(BaseModel):
         default=DEFAULT_MODEL_CONFIG,
         description=(
             "Configuration for the model to be used. "
-            "Defaults to {'name': 'us.anthropic.claude-3-5-sonnet-20241022-v2:0', 'platform': 'bedrock'}."
+            f"Defaults to {{'name': {DEFAULT_MODEL_CONFIG.name}, 'platform': {DEFAULT_MODEL_CONFIG.platform} }} ."
         ),
     )
 

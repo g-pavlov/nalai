@@ -163,8 +163,8 @@ class TestAPIAgent:
     @pytest.mark.parametrize(
         "test_case", ["tool_calls_present", "no_tool_calls", "empty_messages"]
     )
-    def test_determine_workflow_action(self, test_case, test_data, assistant):
-        """Test workflow action determination."""
+    def test_should_execute_tools(self, test_case, test_data, assistant):
+        """Test tool execution determination."""
         case_data = next(
             c for c in test_data["determine_workflow_action"] if c["name"] == test_case
         )
@@ -186,7 +186,7 @@ class TestAPIAgent:
         # Mock settings for tool recognition
         with patch("nalai.core.agent.settings") as mock_settings:
             mock_settings.api_calls_enabled = True
-            result = assistant.determine_workflow_action(state)
+            result = assistant.should_execute_tools(state)
             expected = (
                 END if case_data["expected"] == "__end__" else case_data["expected"]
             )
@@ -298,6 +298,31 @@ class TestAPIAgent:
         )
         mock_model.bind_tools.assert_called_once()
 
+    @patch.object(APIAgent, "_handle_cached_model_response")
+    @patch("nalai.core.agent.settings")
+    def test_generate_model_response_cache_hit(
+        self, mock_settings, mock_handle_cached, assistant, mock_config
+    ):
+        """Test model response generation with cache hit."""
+        mock_settings.cache_enabled = True
+
+        # Setup cache hit scenario
+        cached_messages = [
+            HumanMessage(content="Test message"),
+            AIMessage(content="Cached response"),
+        ]
+        mock_handle_cached.return_value = {"messages": cached_messages}
+
+        state = AgentState(messages=cached_messages, cache_hit=True)
+
+        result = assistant.generate_model_response(state, mock_config)
+
+        # Verify cache handling was called
+        mock_handle_cached.assert_called_once_with(cached_messages, mock_config)
+
+        # Verify result
+        assert result == {"messages": cached_messages}
+
     def test_agent_state_creation(self):
         """Test AgentState creation and validation."""
         messages = [HumanMessage(content="Test message")]
@@ -313,3 +338,104 @@ class TestAPIAgent:
         assert state["messages"] == messages
         assert state["api_specs"] == api_specs
         assert state["api_summaries"] == api_summaries
+
+    @patch("nalai.core.agent.settings")
+    def test_handle_cached_model_response(self, mock_settings, assistant, mock_config):
+        """Test handling of cached model responses."""
+        mock_settings.cache_enabled = True
+
+        # Create test messages with a cached AI response
+        cached_message = AIMessage(content="This is a cached response")
+        messages = [HumanMessage(content="Test question"), cached_message]
+
+        result = assistant._handle_cached_model_response(messages, mock_config)
+
+        # Verify the result contains the messages
+        assert "messages" in result
+        assert len(result["messages"]) == 3  # Original 2 + 1 new response
+        assert result["messages"][-1].content == "This is a cached response"
+
+    @patch("nalai.core.agent.settings")
+    def test_handle_cached_model_response_no_ai_message(
+        self, mock_settings, assistant, mock_config
+    ):
+        """Test handling of cached responses when no AI message is found."""
+        mock_settings.cache_enabled = True
+
+        # Create test messages without AI response
+        messages = [HumanMessage(content="Test question")]
+
+        result = assistant._handle_cached_model_response(messages, mock_config)
+
+        # Verify the result contains the original messages
+        assert "messages" in result
+        assert len(result["messages"]) == 1
+        assert result["messages"][0].content == "Test question"
+
+    @patch("nalai.core.agent.get_cache_service")
+    @patch("nalai.core.agent.settings")
+    def test_cache_model_response_enabled(
+        self, mock_settings, mock_get_cache_service, assistant, mock_config
+    ):
+        """Test caching model responses when enabled."""
+        mock_settings.cache_enabled = True
+        mock_cache_service = MagicMock()
+        mock_get_cache_service.return_value = mock_cache_service
+
+        # Setup config with user_id
+        mock_config["configurable"] = {"user_id": "test-user"}
+
+        messages = [HumanMessage(content="Test message")]
+        response = AIMessage(content="Test response")
+
+        assistant._cache_model_response(messages, response, mock_config)
+
+        # Verify cache service was called
+        mock_cache_service.set.assert_called_once_with(
+            messages=messages,
+            response="Test response",
+            tool_calls=[],
+            user_id="test-user",
+        )
+
+    @patch("nalai.core.agent.settings")
+    def test_cache_model_response_disabled_globally(
+        self, mock_settings, assistant, mock_config
+    ):
+        """Test that caching is skipped when disabled globally."""
+        mock_settings.cache_enabled = False
+
+        messages = [HumanMessage(content="Test message")]
+        response = AIMessage(content="Test response")
+
+        # Should not raise any exceptions and should not call cache service
+        assistant._cache_model_response(messages, response, mock_config)
+
+    @patch("nalai.core.agent.settings")
+    def test_cache_model_response_disabled_per_request(
+        self, mock_settings, assistant, mock_config
+    ):
+        """Test that caching is skipped when disabled per request."""
+        mock_settings.cache_enabled = True
+
+        # Setup config with cache disabled
+        mock_config["configurable"] = {"cache_disabled": True}
+
+        messages = [HumanMessage(content="Test message")]
+        response = AIMessage(content="Test response")
+
+        # Should not raise any exceptions and should not call cache service
+        assistant._cache_model_response(messages, response, mock_config)
+
+    @patch("nalai.core.agent.settings")
+    def test_cache_model_response_empty_content(
+        self, mock_settings, assistant, mock_config
+    ):
+        """Test that caching is skipped for empty content responses."""
+        mock_settings.cache_enabled = True
+
+        messages = [HumanMessage(content="Test message")]
+        response = AIMessage(content="")  # Empty content
+
+        # Should not raise any exceptions and should not call cache service
+        assistant._cache_model_response(messages, response, mock_config)

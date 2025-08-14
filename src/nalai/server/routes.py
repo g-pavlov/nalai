@@ -32,9 +32,10 @@ from .models.validation import (
     validate_tool_interrupt_response_type,
 )
 from .runtime_config import (
-    default_modify_runtime_config_with_access_control,
+    default_modify_runtime_config,
     default_validate_runtime_config,
-    setup_runtime_config_with_access_control,
+    validate_external_thread_id,
+    validate_thread_access_and_scope,
 )
 
 logger = logging.getLogger("nalai")
@@ -94,13 +95,39 @@ def create_basic_routes(app: FastAPI) -> None:
     async def serve_ui() -> HTMLResponse:
         """Serve the demo UI."""
         # Calculate path from the current file location to the demo directory
-        # From src/nalai/server/routes.py -> ../../../../demo/simple_ui.html
-        ui_path = Path(__file__).parent.parent.parent.parent / "demo" / "simple_ui.html"
+        # From src/nalai/server/routes.py -> ../../../../demo/ui/ai-chat.html
+        ui_path = (
+            Path(__file__).parent.parent.parent.parent / "demo" / "ui" / "ai-chat.html"
+        )
         if ui_path.exists():
             with open(ui_path, encoding="utf-8") as f:
                 return HTMLResponse(content=f.read())
         else:
             raise HTTPException(status_code=404, detail="UI file not found")
+
+    @app.get("/ui/styles.css")
+    async def serve_css() -> Response:
+        """Serve the CSS file."""
+        css_path = (
+            Path(__file__).parent.parent.parent.parent / "demo" / "ui" / "styles.css"
+        )
+        if css_path.exists():
+            with open(css_path, encoding="utf-8") as f:
+                return Response(content=f.read(), media_type="text/css")
+        else:
+            raise HTTPException(status_code=404, detail="CSS file not found")
+
+    @app.get("/ui/script.js")
+    async def serve_js() -> Response:
+        """Serve the JavaScript file."""
+        js_path = (
+            Path(__file__).parent.parent.parent.parent / "demo" / "ui" / "script.js"
+        )
+        if js_path.exists():
+            with open(js_path, encoding="utf-8") as f:
+                return Response(content=f.read(), media_type="application/javascript")
+        else:
+            raise HTTPException(status_code=404, detail="JavaScript file not found")
 
     # TODO: Add /metrics endpoint for future metrics collection
     # @app.get("/metrics")
@@ -118,13 +145,40 @@ def create_agent_routes(
     serialize_event: Callable[[object], object] = serialize_event_default,
     modify_runtime_config: Callable[
         [dict, Request], dict
-    ] = default_modify_runtime_config_with_access_control,
+    ] = default_modify_runtime_config,
     agent_name: str = "nalai",
 ) -> None:
-    """Create agent endpoint routes with access control."""
+    """Create agent endpoint routes."""
+
+    async def setup_runtime_config(
+        config: dict, req: Request, is_initial_request: bool = True
+    ) -> tuple[dict, str]:
+        """
+        Lean runtime configuration setup.
+
+        Args:
+            config: Configuration dictionary
+            req: FastAPI request object
+            is_initial_request: True for initial chat requests, False for resume operations
+        """
+        if is_initial_request:
+            # For initial requests: create user-scoped thread ID if needed
+            config, user_scoped_thread_id = await validate_thread_access_and_scope(
+                config, req
+            )
+            validate_runtime_config(config)
+            return config, user_scoped_thread_id
+        else:
+            # For resume operations: validate existing thread ID format only
+            agent_config = await modify_runtime_config(config, req)
+            validate_runtime_config(agent_config)
+            thread_id = agent_config.get("configurable", {}).get("thread_id", "unknown")
+            # Validate the thread ID format without re-scoping
+            validate_external_thread_id(thread_id)
+            return agent_config, thread_id
 
     @app.post(
-        f"/{agent_name}/invoke",
+        f"/{agent_name}/chat/invoke",
         response_model=AgentInvokeResponse,
         responses={
             200: {
@@ -151,63 +205,48 @@ def create_agent_routes(
             },
         },
     )
-    async def handle_agent_invoke(
+    async def handle_chat_invoke(
         request: AgentInvokeRequest, req: Request
     ) -> AgentInvokeResponse:
         """
-        Invoke the agent synchronously with access control.
+        Invoke the agent synchronously.
 
         Returns the agent response along with an X-Thread-ID header that can be used
-        for conversation management and resuming interrupted workflows via the tool-interrupt endpoint.
+        for conversation management and resuming interrupted workflows via the resume endpoint.
         """
         # Validate input content
         validate_agent_input(request.input.messages)
 
-        # Set up runtime configuration with access control
-        (
-            agent_config,
-            user_scoped_thread_id,
-        ) = await setup_runtime_config_with_access_control(
-            request.config,
-            req,
-            modify_runtime_config,
-            validate_runtime_config,
+        # Set up runtime configuration
+        agent_config, thread_id = await setup_runtime_config(
+            request.config, req, is_initial_request=True
         )
 
         # Convert structured input to dict for agent (using LangGraph format)
         agent_input = request.input.model_dump()
 
-        # Use the processed config that has user-scoped thread_id properly set
-        final_config = agent_config
-
         # Invoke the agent
-        result = await agent.ainvoke(agent_input, config=final_config)
+        result = await agent.ainvoke(agent_input, config=agent_config)
 
         # Return response with thread_id header for conversation management and resume capability
         response_data = AgentInvokeResponse(output=result)
         return Response(
             content=response_data.model_dump_json(),
             media_type="application/json",
-            headers={"X-Thread-ID": user_scoped_thread_id},
+            headers={"X-Thread-ID": thread_id},
         )
 
-    @app.post(f"/{agent_name}/stream_events", responses=streaming_response_examples)
-    async def handle_agent_stream_events(
+    @app.post(f"/{agent_name}/chat/stream", responses=streaming_response_examples)
+    async def handle_chat_stream(
         request: AgentStreamEventsRequest, req: Request
     ) -> StreamingResponse:
-        """Stream events from the agent with optional filtering and access control."""
+        """Stream events from the agent with optional filtering."""
         # Validate input content
         validate_agent_input(request.input.messages)
 
-        # Set up runtime configuration with access control
-        (
-            agent_config,
-            user_scoped_thread_id,
-        ) = await setup_runtime_config_with_access_control(
-            request.config,
-            req,
-            modify_runtime_config,
-            validate_runtime_config,
+        # Set up runtime configuration
+        agent_config, thread_id = await setup_runtime_config(
+            request.config, req, is_initial_request=True
         )
 
         async def generate():
@@ -224,28 +263,26 @@ def create_agent_routes(
 
         return SSEStreamingResponse(
             generate(),
-            headers={"X-Thread-ID": user_scoped_thread_id},
+            headers={"X-Thread-ID": thread_id},
         )
 
-    @app.post(
-        f"/{agent_name}/tool-interrupt/stream", responses=streaming_response_examples
-    )
-    async def handle_tool_interrupt_stream(
+    @app.post(f"/{agent_name}/resume/stream", responses=streaming_response_examples)
+    async def handle_resume_stream(
         request: ToolInterruptRequest, req: Request
     ) -> StreamingResponse:
         """
         Handle tool-level interrupt requests with streaming response.
 
-        **Use Case**: Resume interrupted streaming workflows from /stream_events endpoint.
+        **Use Case**: Resume interrupted streaming workflows from /chat/stream endpoint.
         **Response**: Server-sent events stream with real-time updates.
         """
         return await _handle_tool_interrupt_internal(request, req, streaming=True)
 
     @app.post(
-        f"/{agent_name}/tool-interrupt/batch",
+        f"/{agent_name}/resume/invoke",
         response_model=ToolInterruptSyncResponse,
         summary="Resume interrupted batch workflow",
-        description="Resume an interrupted batch workflow from /invoke endpoint. Returns single JSON response.",
+        description="Resume an interrupted batch workflow from /chat/invoke endpoint. Returns single JSON response.",
         responses={
             200: {
                 "description": "Synchronous response with agent output and X-Thread-ID header",
@@ -258,13 +295,13 @@ def create_agent_routes(
             }
         },
     )
-    async def handle_tool_interrupt_batch(
+    async def handle_resume_invoke(
         request: ToolInterruptRequest, req: Request
     ) -> ToolInterruptSyncResponse:
         """
         Handle tool-level interrupt requests with synchronous response.
 
-        **Use Case**: Resume interrupted batch workflows from /invoke endpoint.
+        **Use Case**: Resume interrupted batch workflows from /chat/invoke endpoint.
         **Response**: Single JSON response with complete agent output.
         **Headers**: X-Thread-ID for conversation management.
         """
@@ -305,17 +342,14 @@ def create_agent_routes(
         # Ensure configurable exists
         if "configurable" not in request_payload:
             request_payload["configurable"] = {}
+
+        # Use the already scoped thread ID directly - no need to re-process
+        # The thread ID from the request is already scoped and validated
         request_payload["configurable"]["thread_id"] = request.thread_id
 
-        # Set up runtime configuration with access control
-        (
-            agent_config,
-            user_scoped_thread_id,
-        ) = await setup_runtime_config_with_access_control(
-            request_payload,
-            req,
-            modify_runtime_config,
-            validate_runtime_config,
+        # For resume operations: validate existing thread ID format without re-scoping
+        agent_config, thread_id = await setup_runtime_config(
+            request_payload, req, is_initial_request=False
         )
 
         if streaming:
@@ -327,7 +361,9 @@ def create_agent_routes(
                     resume_input=interrupt_response,
                     serialize_event=serialize_event,
                 ),
-                headers={"X-Thread-ID": user_scoped_thread_id},
+                headers={
+                    "X-Thread-ID": request.thread_id
+                },  # Use the same scoped thread ID
             )
         else:
             # For synchronous resume, invoke the agent directly
@@ -344,5 +380,7 @@ def create_agent_routes(
             return Response(
                 content=json.dumps({"output": serialized_result}),
                 media_type="application/json",
-                headers={"X-Thread-ID": user_scoped_thread_id},
+                headers={
+                    "X-Thread-ID": request.thread_id
+                },  # Use the same scoped thread ID
             )

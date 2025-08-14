@@ -85,7 +85,7 @@ The `X-No-Cache` header accepts these values (case-insensitive):
 
 ### Files Modified
 
-1. **`demo/simple_ui.html`**
+1. **`demo/ui/ai-chat.html`**
    - Added no-cache toggle switch
    - Added JavaScript to send header
    - Added status indicator

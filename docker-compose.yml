@@ -83,7 +83,7 @@ services:
     ports:
       - "3001:80"
     volumes:
-      - ./demo/simple_ui.html:/usr/share/nginx/html/index.html:ro
+      - ./demo/ui/ai-chat.html:/usr/share/nginx/html/index.html:ro
     restart: unless-stopped
 
 networks:

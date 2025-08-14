@@ -107,7 +107,9 @@ async def stream_events(
             # Structure resume_input like CLI: wrap in list with model_dump()
             resume_command = [resume_input.model_dump()]
             async for chunk in agent.astream(
-                Command(resume=resume_command), config, stream_mode="values"
+                Command(resume=resume_command),
+                config,
+                stream_mode=["updates", "messages"],
             ):
                 # Add response_type to metadata for logging
                 if hasattr(chunk, "metadata"):
@@ -119,8 +121,10 @@ async def stream_events(
                     yield f"data: {json.dumps(serialized_chunk)}\n\n"
         else:
             # Start fresh workflow
-            logger.info("Starting fresh workflow")
-            async for chunk in agent.astream(agent_input, config, stream_mode="values"):
+            logger.info("Streaming events from workflow start")
+            async for chunk in agent.astream(
+                agent_input, config, stream_mode=["updates", "messages"]
+            ):
                 serialized_chunk = serialize_event(chunk)
                 if serialized_chunk:
                     yield f"data: {json.dumps(serialized_chunk)}\n\n"

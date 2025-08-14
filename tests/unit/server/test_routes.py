@@ -5,7 +5,7 @@ Unit tests for server routes.
 import os
 import sys
 import uuid
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -35,7 +35,7 @@ def mock_modify_runtime_config():
             config["configurable"] = {}
 
         config["configurable"]["thread_id"] = "test-thread-123"
-        return config, "test-thread-123"
+        return config
 
     return mock_func
 
@@ -94,17 +94,31 @@ class TestBasicRoutes:
 class TestAgentInvoke:
     """Test synchronous agent invocation - critical business logic."""
 
-    def test_successful_agent_invoke(self, client, app_and_agent):
+    @patch("nalai.server.runtime_config.get_user_context")
+    def test_successful_agent_invoke(
+        self, mock_get_user_context, client, app_and_agent
+    ):
         """Critical: Agent should process valid input and return response."""
         _, mock_agent = app_and_agent
         mock_agent.ainvoke.return_value = {"result": "test response"}
 
+        # Mock user context
+        mock_user_context = MagicMock()
+        mock_user_context.user_id = "test-user"
+        mock_user_context.ip_address = "127.0.0.1"
+        mock_user_context.user_agent = "test-agent"
+        mock_user_context.session_id = "test-session"
+        mock_user_context.request_id = "test-request"
+        mock_get_user_context.return_value = mock_user_context
+
         payload = {
             "input": {"messages": [{"type": "human", "content": "Hello"}]},
-            "config": {"configurable": {"thread_id": "test-thread"}},
+            "config": {
+                "configurable": {"thread_id": "550e8400-e29b-41d4-a716-446655440000"}
+            },
         }
 
-        response = client.post("/nalai/invoke", json=payload)
+        response = client.post("/nalai/chat/invoke", json=payload)
 
         assert response.status_code == 200
         assert "output" in response.json()
@@ -126,7 +140,7 @@ class TestAgentInvoke:
     )
     def test_agent_invoke_validation_failures(self, client, payload, expected_status):
         """Critical: Should reject invalid inputs."""
-        response = client.post("/nalai/invoke", json=payload)
+        response = client.post("/nalai/chat/invoke", json=payload)
         assert response.status_code == expected_status
 
     def test_agent_invoke_with_access_control_error(
@@ -146,17 +160,34 @@ class TestAgentInvoke:
             "config": {"configurable": {"thread_id": "unauthorized-thread"}},
         }
 
-        # Should raise the exception as expected
-        with pytest.raises(Exception, match="Access denied"):
-            client.post("/nalai/invoke", json=payload)
+        # Check the actual response
+        response = client.post("/nalai/chat/invoke", json=payload)
+        print(f"Response status: {response.status_code}")
+        print(f"Response content: {response.text}")
+
+        # Should return 401 Unauthorized
+        assert response.status_code == 401
 
 
 class TestAgentStreamEvents:
     """Test streaming agent events - critical for real-time functionality."""
 
-    def test_successful_stream_events(self, client, app_and_agent):
+    @patch("nalai.server.runtime_config.get_user_context")
+    def test_successful_stream_events(
+        self, mock_get_user_context, client, app_and_agent
+    ):
         """Critical: Should stream events with proper SSE format."""
         _, mock_agent = app_and_agent
+
+        # Mock user context
+        mock_user_context = MagicMock()
+        mock_user_context.user_id = "test-user"
+        mock_user_context.ip_address = "127.0.0.1"
+        mock_user_context.user_agent = "test-agent"
+        mock_user_context.session_id = "test-session"
+        mock_user_context.request_id = "test-request"
+        mock_get_user_context.return_value = mock_user_context
+
         mock_event = {"event": "on_chat_model_stream", "data": {"content": "test"}}
 
         async def async_gen():
@@ -166,10 +197,12 @@ class TestAgentStreamEvents:
 
         payload = {
             "input": {"messages": [{"type": "human", "content": "Hello"}]},
-            "config": {"configurable": {"thread_id": "test-thread"}},
+            "config": {
+                "configurable": {"thread_id": "550e8400-e29b-41d4-a716-446655440000"}
+            },
         }
 
-        response = client.post("/nalai/stream_events", json=payload)
+        response = client.post("/nalai/chat/stream", json=payload)
 
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
@@ -190,7 +223,7 @@ class TestAgentStreamEvents:
     )
     def test_stream_events_validation_failures(self, client, payload, expected_status):
         """Critical: Should reject invalid inputs for streaming."""
-        response = client.post("/nalai/stream_events", json=payload)
+        response = client.post("/nalai/chat/stream", json=payload)
         assert response.status_code == expected_status
 
 
@@ -217,13 +250,19 @@ class TestToolInterrupt:
 
         mock_agent.astream_events = lambda *a, **kw: async_gen()
 
+        thread_id = f"user:test-user:{uuid.uuid4()}"
         payload = {
-            "thread_id": str(uuid.uuid4()),
+            "thread_id": thread_id,
             "response_type": response_type,
             "args": args,
         }
 
-        response = client.post("/nalai/tool-interrupt/stream", json=payload)
+        print(f"Generated thread_id: {thread_id}")
+        response = client.post("/nalai/resume/stream", json=payload)
+
+        if response.status_code != expected_status:
+            print(f"Response status: {response.status_code}")
+            print(f"Response content: {response.text}")
 
         assert response.status_code == expected_status
         if expected_status == 200:
@@ -245,12 +284,12 @@ class TestToolInterrupt:
         mock_agent.ainvoke.return_value = {"result": "processed response"}
 
         payload = {
-            "thread_id": str(uuid.uuid4()),
+            "thread_id": f"user:test-user:{uuid.uuid4()}",
             "response_type": response_type,
             "args": args,
         }
 
-        response = client.post("/nalai/tool-interrupt/batch", json=payload)
+        response = client.post("/nalai/resume/invoke", json=payload)
 
         assert response.status_code == expected_status
         if expected_status == 200:
@@ -268,5 +307,5 @@ class TestToolInterrupt:
     ):
         """Critical: Should reject invalid inputs for tool interrupts."""
         payload = {"thread_id": thread_id, "response_type": response_type, "args": None}
-        response = client.post("/nalai/tool-interrupt/stream", json=payload)
+        response = client.post("/nalai/resume/stream", json=payload)
         assert response.status_code == expected_status

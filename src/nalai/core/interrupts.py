@@ -101,29 +101,3 @@ def add_human_in_the_loop(
         return tool_response
 
     return call_tool_with_interrupt
-
-
-def detect_interrupt_from_state(workflow, config):
-    """
-    Detect if there's an interrupt in the current workflow state.
-
-    Args:
-        workflow: Compiled LangGraph workflow
-        config: Runtime configuration
-
-    Returns:
-        Interrupt data if found, None otherwise
-    """
-    try:
-        snapshot = workflow.get_state(config)
-        if snapshot.next and len(snapshot) > 0 and len(snapshot[-1]) > 0:
-            interrupt = snapshot[-1][0]
-            return {
-                "id": getattr(interrupt, "id", None),
-                "value": getattr(interrupt, "value", {}),
-                "resumable": getattr(interrupt, "resumable", True),
-            }
-    except Exception as e:
-        logger.error(f"Error detecting interrupt from state: {e}")
-
-    return None

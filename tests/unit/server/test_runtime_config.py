@@ -7,6 +7,7 @@ access control integration, and validation functions.
 
 import os
 import sys
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,6 +19,7 @@ sys.path.insert(
 )
 
 from nalai.server.models.identity import IdentityContext, UserContext
+from nalai.server.models.input import ToolInterruptRequest
 from nalai.server.runtime_config import (
     _ensure_config_dict,
     _ensure_configurable,
@@ -28,8 +30,10 @@ from nalai.server.runtime_config import (
     default_validate_runtime_config,
     ensure_thread_id_exists,
     setup_runtime_config_with_access_control,
+    validate_external_thread_id,
     validate_thread_access_and_scope,
 )
+from nalai.services.thread_access_control import ThreadAccessControl
 
 
 class TestConfigHelpers:
@@ -397,3 +401,166 @@ class TestDefaultFunctions:
 
         mock_validate.assert_called_once()
         assert thread_id == "scoped-id"
+
+
+class TestThreadIdValidation:
+    """Test thread ID validation for external inputs."""
+
+    @pytest.mark.parametrize(
+        "thread_id,should_be_valid",
+        [
+            # Critical path: Valid UUID4 formats
+            ("550e8400-e29b-41d4-a716-446655440001", True),
+            ("12345678-1234-4567-89ab-123456789abc", True),
+            ("00000000-0000-4000-8000-000000000000", True),  # Valid UUID4 format
+            # Critical path: Valid user-scoped formats
+            ("user:dev-user:550e8400-e29b-41d4-a716-446655440001", True),
+            ("user:test-user:12345678-1234-4567-89ab-123456789abc", True),
+            (
+                "user:admin:00000000-0000-4000-8000-000000000000",
+                True,
+            ),  # Valid UUID4 format
+            # Critical path: Invalid formats (should be rejected)
+            ("", False),  # Empty string
+            ("not-a-uuid", False),  # Invalid UUID
+            ("550e8400-e29b-41d4-a716-44665544000", False),  # Too short
+            ("550e8400-e29b-41d4-a716-4466554400012", False),  # Too long
+            ("550e8400-e29b-41d4-a716-44665544000g", False),  # Invalid character
+            # Critical path: Invalid user-scoped formats
+            ("user:dev-user", False),  # Missing UUID
+            ("user:dev-user:not-a-uuid", False),  # Invalid UUID in scoped format
+            (
+                "user:dev-user:550e8400-e29b-41d4-a716-446655440001:extra",
+                False,
+            ),  # Too many parts
+            (
+                "admin:dev-user:550e8400-e29b-41d4-a716-446655440001",
+                False,
+            ),  # Wrong prefix
+            ("user::550e8400-e29b-41d4-a716-446655440001", False),  # Empty user_id
+            (
+                "user:dev:user:550e8400-e29b-41d4-a716-446655440001",
+                False,
+            ),  # User ID with colon
+            # Security: Malicious patterns
+            ("a" * 201, False),  # Too long
+            (
+                "user:dev-user:550e8400-e29b-41d4-a716-446655440001<script>alert('xss')</script>",
+                False,
+            ),  # XSS attempt
+            (
+                "user:dev-user:550e8400-e29b-41d4-a716-446655440001'; DROP TABLE users; --",
+                False,
+            ),  # SQL injection attempt
+        ],
+    )
+    def test_validate_external_thread_id(self, thread_id, should_be_valid):
+        """Test external thread ID validation for security and format consistency."""
+        if should_be_valid:
+            # Should not raise any exception
+            validate_external_thread_id(thread_id)
+        else:
+            # Should raise HTTPException with 400 status
+            with pytest.raises(HTTPException) as exc_info:
+                validate_external_thread_id(thread_id)
+            assert exc_info.value.status_code == 400
+
+    @pytest.mark.parametrize(
+        "thread_id,should_be_valid",
+        [
+            # Critical path: Valid UUID4 formats
+            ("550e8400-e29b-41d4-a716-446655440001", True),
+            ("12345678-1234-4567-89ab-123456789abc", True),
+            # Critical path: Valid user-scoped formats
+            ("user:dev-user:550e8400-e29b-41d4-a716-446655440001", True),
+            ("user:test-user:12345678-1234-4567-89ab-123456789abc", True),
+            # Critical path: Invalid formats
+            ("", False),
+            ("not-a-uuid", False),
+            ("user:dev-user", False),
+            ("user:dev-user:not-a-uuid", False),
+        ],
+    )
+    def test_pydantic_thread_id_validation(self, thread_id, should_be_valid):
+        """Test Pydantic model thread ID validation."""
+        if should_be_valid:
+            # Should not raise any exception
+            request = ToolInterruptRequest(thread_id=thread_id, response_type="accept")
+            assert request.thread_id == thread_id
+        else:
+            # Should raise ValueError
+            with pytest.raises(ValueError):
+                ToolInterruptRequest(thread_id=thread_id, response_type="accept")
+
+    @pytest.mark.parametrize(
+        "thread_id,should_be_valid",
+        [
+            # Critical path: Valid formats
+            ("550e8400-e29b-41d4-a716-446655440001", True),
+            ("user:dev-user:550e8400-e29b-41d4-a716-446655440001", True),
+            # Critical path: Invalid formats
+            ("", False),
+            ("not-a-uuid", False),
+            ("user:dev-user", False),
+        ],
+    )
+    def test_thread_access_control_validation(self, thread_id, should_be_valid):
+        """Test thread access control thread ID validation."""
+        access_control = ThreadAccessControl()
+
+        if should_be_valid:
+            # Should not raise any exception
+            access_control._validate_thread_id_format(thread_id)
+        else:
+            # Should raise ValueError
+            with pytest.raises(ValueError):
+                access_control._validate_thread_id_format(thread_id)
+
+    def test_canonical_uuid_requirement(self):
+        """Test that UUIDs must be in canonical format."""
+        # Non-canonical formats should be rejected
+        non_canonical_uuids = [
+            "550E8400-E29B-41D4-A716-446655440001",  # Uppercase
+            "{550e8400-e29b-41d4-a716-446655440001}",  # With braces
+        ]
+
+        for uuid_str in non_canonical_uuids:
+            with pytest.raises(HTTPException) as exc_info:
+                validate_external_thread_id(uuid_str)
+            assert exc_info.value.status_code == 400
+
+    def test_user_scoped_edge_cases(self):
+        """Test edge cases for user-scoped thread IDs."""
+        # Valid edge cases
+        valid_edge_cases = [
+            f"user:test-user-123:{uuid.uuid4()}",  # Numbers in user_id
+            f"user:user123:{uuid.uuid4()}",  # Numbers in user_id
+            f"user:test_user:{uuid.uuid4()}",  # Underscores in user_id
+        ]
+
+        for thread_id in valid_edge_cases:
+            validate_external_thread_id(thread_id)
+            access_control = ThreadAccessControl()
+            access_control._validate_thread_id_format(thread_id)
+
+    def test_thread_id_length_limits(self):
+        """Test thread ID length limits for security."""
+        # Test maximum length limit
+        too_long_thread_id = "a" * 201
+        with pytest.raises(HTTPException) as exc_info:
+            validate_external_thread_id(too_long_thread_id)
+        assert exc_info.value.status_code == 400
+        assert "too long" in str(exc_info.value.detail).lower()
+
+    def test_ensure_thread_id_exists_with_validation(self):
+        """Test that ensure_thread_id_exists validates external thread IDs."""
+        # Valid thread ID should pass validation
+        valid_config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+        result_config, thread_id = ensure_thread_id_exists(valid_config)
+        assert thread_id == valid_config["configurable"]["thread_id"]
+
+        # Invalid thread ID should be caught by validation
+        invalid_config = {"configurable": {"thread_id": "invalid-uuid"}}
+        with pytest.raises(HTTPException) as exc_info:
+            ensure_thread_id_exists(invalid_config)
+        assert exc_info.value.status_code == 400

@@ -26,12 +26,10 @@ from nalai.core.constants import (
     NODE_CALL_API,
     NODE_CALL_MODEL,
     NODE_CHECK_CACHE,
-    NODE_HUMAN_REVIEW,
     NODE_LOAD_API_SPECS,
     NODE_LOAD_API_SUMMARIES,
     NODE_SELECT_RELEVANT_APIS,
 )
-from nalai.core.interrupts import process_human_review
 from nalai.core.schemas import AgentState, InputSchema, OutputSchema
 from nalai.core.workflow import create_and_compile_workflow
 from nalai.services.api_docs_service import APIService
@@ -110,9 +108,6 @@ class TestWorkflowCreation:
         mock_graph_instance.add_node.assert_any_call(
             NODE_CALL_API, mock_tool_node_instance
         )
-        mock_graph_instance.add_node.assert_any_call(
-            NODE_HUMAN_REVIEW, process_human_review
-        )
 
         # Verify edges were added
         mock_graph_instance.add_conditional_edges.assert_any_call(
@@ -133,8 +128,8 @@ class TestWorkflowCreation:
         )
         mock_graph_instance.add_conditional_edges.assert_any_call(
             NODE_CALL_MODEL,
-            mock_agent.determine_workflow_action,
-            [NODE_HUMAN_REVIEW, END, NODE_CALL_API],
+            mock_agent.should_execute_tools,
+            [NODE_CALL_API, END],
         )
         mock_graph_instance.add_edge.assert_any_call(NODE_CALL_API, NODE_CALL_MODEL)
 
@@ -341,9 +336,8 @@ class TestWorkflowCreation:
         call_model_edge = next(
             call for call in conditional_edge_calls if call[0][0] == NODE_CALL_MODEL
         )
-        assert call_model_edge[0][1] == mock_agent.determine_workflow_action
-        # The third argument should contain "human_review", END, and "call_api"
-        assert NODE_HUMAN_REVIEW in call_model_edge[0][2]
+        assert call_model_edge[0][1] == mock_agent.should_execute_tools
+        # The third argument should contain END and "call_api"
         assert END in call_model_edge[0][2]
         assert NODE_CALL_API in call_model_edge[0][2]
 
@@ -439,7 +433,7 @@ class TestWorkflowExecution:
                 {"name": "test_http_tool", "args": {"url": "https://api.example.com"}}
             ]
         }
-        mock_agent.determine_workflow_action.return_value = NODE_CALL_API
+        mock_agent.should_execute_tools.return_value = NODE_CALL_API
 
         # Create workflow
         workflow = create_and_compile_workflow(mock_agent)
@@ -453,7 +447,7 @@ class TestWorkflowExecution:
         mock_agent.select_relevant_apis.assert_not_called()  # Not called during creation
         mock_agent.determine_next_step.assert_not_called()  # Not called during creation
         mock_agent.generate_model_response.assert_not_called()  # Not called during creation
-        mock_agent.determine_workflow_action.assert_not_called()  # Not called during creation
+        mock_agent.should_execute_tools.assert_not_called()  # Not called during creation
 
     @patch("nalai.core.workflow.ToolNode")
     def test_workflow_without_tool_calls(self, mock_tool_node_class, mock_agent):
@@ -466,7 +460,7 @@ class TestWorkflowExecution:
         mock_agent.generate_model_response.return_value = {
             "content": "No tools needed for this response"
         }
-        mock_agent.determine_workflow_action.return_value = END
+        mock_agent.should_execute_tools.return_value = END
 
         # Create workflow
         workflow = create_and_compile_workflow(mock_agent)

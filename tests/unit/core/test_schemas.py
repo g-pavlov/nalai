@@ -184,8 +184,8 @@ class TestConfigSchema:
         """Test ConfigSchema with default model."""
         config = ConfigSchema()
         assert config.model == DEFAULT_MODEL_CONFIG
-        assert config.model.name == "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-        assert config.model.platform == "bedrock"
+        assert config.model.name == "gpt-4.1"
+        assert config.model.platform == "openai"
 
     def test_config_schema_field_description(self):
         """Test that ConfigSchema has proper field descriptions."""

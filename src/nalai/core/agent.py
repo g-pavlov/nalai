@@ -252,6 +252,118 @@ class APIAgent:
         logger.debug("No tool calls requested by model, ending workflow")
         return END
 
+    def _handle_cached_model_response(
+        self, conversation_messages: list, config: RunnableConfig
+    ) -> dict[str, list[AIMessage]]:
+        """
+        Handles cache hit responses by creating a mock model that returns cached content.
+
+        Args:
+            conversation_messages: The conversation messages
+            config: Runtime configuration
+
+        Returns:
+            Dictionary with the updated conversation messages
+        """
+
+        logger.debug(
+            "Cache hit detected in generate_model_response - creating single streaming event"
+        )
+        # Find the last AI message (which should be the cached response)
+        last_ai_message = None
+        for message in reversed(conversation_messages):
+            if isinstance(message, AIMessage):
+                last_ai_message = message
+                break
+
+        if last_ai_message:
+            # For cache hits, we need to create a mock model that returns the cached content
+            # This will generate a single streaming event with the full content
+            cached_content = last_ai_message.content
+            cached_tool_calls = getattr(last_ai_message, "tool_calls", None)
+
+            # Create a mock model that returns the cached content as a single chunk
+            from langchain_core.language_models import BaseChatModel
+            from langchain_core.outputs import ChatGeneration, ChatResult
+
+            class MockCachedModel(BaseChatModel):
+                def __init__(self, cached_content: str, cached_tool_calls=None):
+                    super().__init__()
+                    self._cached_content = cached_content
+                    self._cached_tool_calls = cached_tool_calls
+
+                def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                    # Create a mock response with the cached content
+                    response = AIMessage(content=self._cached_content)
+                    if self._cached_tool_calls:
+                        response.tool_calls = self._cached_tool_calls
+
+                    return ChatResult(generations=[ChatGeneration(message=response)])
+
+                @property
+                def _llm_type(self) -> str:
+                    return "mock_cached"
+
+            # Use the mock model to generate the response
+            mock_model = MockCachedModel(cached_content, cached_tool_calls)
+            response = cast(AIMessage, mock_model.invoke(conversation_messages, config))
+
+            # Add the response to the conversation
+            conversation_messages = conversation_messages + [response]
+
+            logger.debug(
+                f"Created single streaming event for cache hit with content: {cached_content[:100]}..."
+            )
+            return {"messages": conversation_messages}
+        else:
+            logger.warning("Cache hit but no AI message found")
+            return {"messages": conversation_messages}
+
+    def _cache_model_response(
+        self, conversation_messages: list, response: AIMessage, config: RunnableConfig
+    ) -> None:
+        """
+        Caches the response if caching is enabled and conditions are met.
+
+        Args:
+            conversation_messages: The conversation messages to cache
+            response: The AI response to cache
+            config: Runtime configuration containing cache settings
+        """
+        if not settings.cache_enabled:
+            return
+
+        # Check if cache is disabled for this specific request
+        cache_disabled = False
+        if config and "configurable" in config:
+            cache_disabled = config["configurable"].get("cache_disabled", False)
+
+        if cache_disabled:
+            logger.debug("Cache disabled for this request - skipping cache storage")
+            return
+
+        # Don't cache responses with empty content (especially tool-only responses)
+        if not response.content or not response.content.strip():
+            logger.debug("Skipping cache for empty content response")
+            return
+
+        cache_service = get_cache_service()
+
+        # Extract user ID from config for cache isolation
+        user_id = "anonymous"
+        if config and "configurable" in config:
+            user_id = config["configurable"].get("user_id", "anonymous")
+
+        cache_service.set(
+            messages=conversation_messages,
+            response=response.content,
+            tool_calls=response.tool_calls,
+            user_id=user_id,
+        )
+        logger.debug(
+            f"Cached response for {len(conversation_messages)} messages (user: {user_id})"
+        )
+
     def generate_model_response(
         self, state: AgentState, config: RunnableConfig
     ) -> dict[str, list[AIMessage]]:
@@ -261,65 +373,10 @@ class APIAgent:
         conversation_messages = state.get("messages", [])
 
         # Check if this is a cache hit - if so, create a mock model that returns cached content
-        cache_hit = state.get("cache_hit")
-        if cache_hit:
-            logger.debug(
-                "Cache hit detected in generate_model_response - creating single streaming event"
-            )
-            # Find the last AI message (which should be the cached response)
-            last_ai_message = None
-            for message in reversed(conversation_messages):
-                if isinstance(message, AIMessage):
-                    last_ai_message = message
-                    break
-
-            if last_ai_message:
-                # For cache hits, we need to create a mock model that returns the cached content
-                # This will generate a single streaming event with the full content
-                cached_content = last_ai_message.content
-                cached_tool_calls = getattr(last_ai_message, "tool_calls", None)
-
-                # Create a mock model that returns the cached content as a single chunk
-                from langchain_core.language_models import BaseChatModel
-                from langchain_core.outputs import ChatGeneration, ChatResult
-
-                class MockCachedModel(BaseChatModel):
-                    def __init__(self, cached_content: str, cached_tool_calls=None):
-                        super().__init__()
-                        self._cached_content = cached_content
-                        self._cached_tool_calls = cached_tool_calls
-
-                    def _generate(
-                        self, messages, stop=None, run_manager=None, **kwargs
-                    ):
-                        # Create a mock response with the cached content
-                        response = AIMessage(content=self._cached_content)
-                        if self._cached_tool_calls:
-                            response.tool_calls = self._cached_tool_calls
-
-                        return ChatResult(
-                            generations=[ChatGeneration(message=response)]
-                        )
-
-                    @property
-                    def _llm_type(self) -> str:
-                        return "mock_cached"
-
-                # Use the mock model to generate the response
-                mock_model = MockCachedModel(cached_content, cached_tool_calls)
-                response = cast(
-                    AIMessage, mock_model.invoke(conversation_messages, config)
-                )
-
-                # Add the response to the conversation
-                conversation_messages = conversation_messages + [response]
-
-                logger.debug(
-                    f"Created single streaming event for cache hit with content: {cached_content[:100]}..."
-                )
-                return {"messages": conversation_messages}
-            else:
-                logger.warning("Cache hit but no AI message found")
+        if settings.cache_enabled:
+            cache_hit = state.get("cache_hit")
+            if cache_hit:
+                return self._handle_cached_model_response(conversation_messages, config)
 
         # Normal flow for cache misses
         prompt_template, model = APIAgent.create_prompt_and_model(
@@ -352,35 +409,7 @@ class APIAgent:
         response = cast(AIMessage, model.invoke(prompt_value, config))
 
         # Cache the final response for future use
-        if settings.cache_enabled:
-            # Check if cache is disabled for this specific request
-            cache_disabled = False
-            if config and "configurable" in config:
-                cache_disabled = config["configurable"].get("cache_disabled", False)
-
-            if not cache_disabled:
-                # Don't cache responses with empty content (especially tool-only responses)
-                if response.content and response.content.strip():
-                    cache_service = get_cache_service()
-
-                    # Extract user ID from config for cache isolation
-                    user_id = "anonymous"
-                    if config and "configurable" in config:
-                        user_id = config["configurable"].get("user_id", "anonymous")
-
-                    cache_service.set(
-                        messages=conversation_messages,
-                        response=response.content,
-                        tool_calls=response.tool_calls,
-                        user_id=user_id,
-                    )
-                    logger.debug(
-                        f"Cached response for {len(conversation_messages)} messages (user: {user_id})"
-                    )
-                else:
-                    logger.debug("Skipping cache for empty content response")
-            else:
-                logger.debug("Cache disabled for this request - skipping cache storage")
+        self._cache_model_response(conversation_messages, response, config)
 
         conversation_messages = conversation_messages + [response]
         if compressed_messages:
