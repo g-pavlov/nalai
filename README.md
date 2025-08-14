@@ -4,14 +4,22 @@
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](https://github.com/your-org/nalai/actions)
 
-**✨ nalAI (`/næli/`) is like ChatGPT for APIs**:
+**✨ nalAI (`/næli/`) is like ChatGPT for Stripe, Shopify, AWS,  Kubernetes, and more APIs**:
 
-- **Ask, Don’t Search** – Skip the docs. nalAI understands your APIs. Just ask.
-- **Describe, Don’t Code** – Explain your goal, get results. No coding required.  
-- **Stay in Control** – Step in on demand. Approve critical actions before they run.  
-- **Automate Repetitive Tasks** – Offload routine API work to an autonomous LLM agent.
+**Ask, Don’t Search** – Skip the docs.
+  > **Human:** "How can I update the stock level for a product?"
 
-**💬 Your chat with nalAI is a universal control panel** for Stripe, Shopify, AWS,  Kubernetes, and more.
+**Describe, Don’t Code** – Explain your goal, get results. No coding required.  
+  > **Human:** "List our most active customers"
+
+**Stay in Control** – Step in on demand. Approve critical actions before they run.   
+  >  **Human:** "Update the stock level for product with name 'smartphone' to 30"   
+  >  **AI:** I will execute an API call to update a product. Please, confirm.   
+  >  **Human:** Approve | Edit | Reject
+
+**Automate Repetitive Tasks** – Offload routine API work to an autonomous LLM agent.
+
+
 
 <br>
 
