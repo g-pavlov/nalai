@@ -7,9 +7,15 @@ This module contains models for outgoing responses:
 - ToolInterruptStreamEvent: Schema for streaming tool interrupt events
 """
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class HealthzResponse(BaseModel):
+    """Status model for health check."""
+
+    status: Literal["Healthy"] = Field(..., description="Health status")
 
 
 class AgentInvokeResponse(BaseModel):

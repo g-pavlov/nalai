@@ -23,7 +23,7 @@ from nalai.server.routes import create_agent_routes, create_basic_routes
 def mock_modify_runtime_config():
     """Create a mock runtime config function for testing."""
 
-    async def mock_func(config, req):
+    def mock_func(config, req):
         # Convert Pydantic model to dict if needed
         if hasattr(config, "model_dump"):
             config = config.model_dump()
@@ -34,7 +34,12 @@ def mock_modify_runtime_config():
         if "configurable" not in config:
             config["configurable"] = {}
 
-        config["configurable"]["thread_id"] = "test-thread-123"
+        # Use the thread_id from the config if it exists, otherwise use a test one
+        if "configurable" in config and "thread_id" in config["configurable"]:
+            # Keep the existing thread_id from the request
+            pass
+        else:
+            config["configurable"]["thread_id"] = "test-thread-123"
         return config
 
     return mock_func
@@ -44,7 +49,7 @@ def mock_modify_runtime_config():
 def mock_modify_runtime_config_error():
     """Create a mock runtime config function that raises an error."""
 
-    async def mock_func(config, req):
+    def mock_func(config, req):
         raise Exception("Access denied")
 
     return mock_func
@@ -118,7 +123,7 @@ class TestAgentInvoke:
             },
         }
 
-        response = client.post("/nalai/chat/invoke", json=payload)
+        response = client.post("/api/v1/agent/chat", json=payload)
 
         assert response.status_code == 200
         assert "output" in response.json()
@@ -140,7 +145,7 @@ class TestAgentInvoke:
     )
     def test_agent_invoke_validation_failures(self, client, payload, expected_status):
         """Critical: Should reject invalid inputs."""
-        response = client.post("/nalai/chat/invoke", json=payload)
+        response = client.post("/api/v1/agent/chat", json=payload)
         assert response.status_code == expected_status
 
     def test_agent_invoke_with_access_control_error(
@@ -161,7 +166,7 @@ class TestAgentInvoke:
         }
 
         # Check the actual response
-        response = client.post("/nalai/chat/invoke", json=payload)
+        response = client.post("/api/v1/agent/chat", json=payload)
         print(f"Response status: {response.status_code}")
         print(f"Response content: {response.text}")
 
@@ -202,7 +207,9 @@ class TestAgentStreamEvents:
             },
         }
 
-        response = client.post("/nalai/chat/stream", json=payload)
+        response = client.post(
+            "/api/v1/agent/chat", json=payload, headers={"Accept": "text/event-stream"}
+        )
 
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
@@ -223,7 +230,9 @@ class TestAgentStreamEvents:
     )
     def test_stream_events_validation_failures(self, client, payload, expected_status):
         """Critical: Should reject invalid inputs for streaming."""
-        response = client.post("/nalai/chat/stream", json=payload)
+        response = client.post(
+            "/api/v1/agent/chat", json=payload, headers={"Accept": "text/event-stream"}
+        )
         assert response.status_code == expected_status
 
 
@@ -258,7 +267,11 @@ class TestToolInterrupt:
         }
 
         print(f"Generated thread_id: {thread_id}")
-        response = client.post("/nalai/resume/stream", json=payload)
+        response = client.post(
+            "/api/v1/agent/resume-decision",
+            json=payload,
+            headers={"Accept": "text/event-stream"},
+        )
 
         if response.status_code != expected_status:
             print(f"Response status: {response.status_code}")
@@ -289,7 +302,7 @@ class TestToolInterrupt:
             "args": args,
         }
 
-        response = client.post("/nalai/resume/invoke", json=payload)
+        response = client.post("/api/v1/agent/resume-decision", json=payload)
 
         assert response.status_code == expected_status
         if expected_status == 200:
@@ -307,5 +320,9 @@ class TestToolInterrupt:
     ):
         """Critical: Should reject invalid inputs for tool interrupts."""
         payload = {"thread_id": thread_id, "response_type": response_type, "args": None}
-        response = client.post("/nalai/resume/stream", json=payload)
+        response = client.post(
+            "/api/v1/agent/resume-decision",
+            json=payload,
+            headers={"Accept": "text/event-stream"},
+        )
         assert response.status_code == expected_status

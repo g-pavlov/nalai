@@ -269,6 +269,18 @@ class Settings(BaseSettings):
         description="Directory containing API specification files",
     )
 
+    # ===== API VERSION CONFIGURATION =====
+    api_version: str = Field(
+        alias="API_VERSION",
+        default="v1",
+        description="API version for endpoint prefixing",
+    )
+
+    @property
+    def api_prefix(self) -> str:
+        """Get API prefix based on version."""
+        return f"/api/{self.api_version}"
+
     # ===== TOOLS CONFIGURATION =====
     api_calls_enabled: bool = Field(
         alias="API_CALLS_ENABLED",

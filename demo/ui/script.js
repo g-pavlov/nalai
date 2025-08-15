@@ -10,10 +10,8 @@
 const API_CONFIG = {
     BASE_URL: window.location.hostname === 'localhost' ? 'http://localhost:8000' : `http://${window.location.hostname}:8000`,
     ENDPOINTS: {
-        CHAT_STREAM: 'chat/stream',
-        CHAT_INVOKE: 'chat/invoke',
-        RESUME_STREAM: 'resume/stream',
-        RESUME_INVOKE: 'resume/invoke'
+        CHAT: 'chat',
+        RESUME_DECISION: 'resume-decision'
     },
     HEADERS: {
         CONTENT_TYPE: 'Content-Type',
@@ -1026,14 +1024,12 @@ function getMessageConfig() {
 }
 
 async function sendApiRequest(message, config) {
-    const endpoint = config.isStreamingEnabled ? 
-        API_CONFIG.ENDPOINTS.CHAT_STREAM : 
-        API_CONFIG.ENDPOINTS.CHAT_INVOKE;
+    const endpoint = API_CONFIG.ENDPOINTS.CHAT;
     
     const requestPayload = buildRequestPayload(message);
     const headers = getRequestHeaders(config.isStreamingEnabled, config.isNoCacheEnabled);
     
-    const url = `${API_CONFIG.BASE_URL}/nalai/${endpoint}`;
+    const url = `${API_CONFIG.BASE_URL}/api/v1/agent/${endpoint}`;
     
     Logger.info('Sending API request', { 
         endpoint, 
@@ -1536,7 +1532,7 @@ async function handleInterrupt(responseType, args = null) {
 
         // Log the full request details for debugging
         Logger.info('Resume request details', {
-            url: `${API_CONFIG.BASE_URL}/nalai/${API_CONFIG.ENDPOINTS.RESUME_STREAM}`,
+            url: `${API_CONFIG.BASE_URL}/api/v1/agent/${API_CONFIG.ENDPOINTS.RESUME_DECISION}`,
             method: 'POST',
             payload: resumePayload,
             responseType,
@@ -1544,12 +1540,12 @@ async function handleInterrupt(responseType, args = null) {
         });
 
         const response = await NetworkManager.fetchWithRetry(
-            `${API_CONFIG.BASE_URL}/nalai/${API_CONFIG.ENDPOINTS.RESUME_STREAM}`,
+            `${API_CONFIG.BASE_URL}/api/v1/agent/${API_CONFIG.ENDPOINTS.RESUME_DECISION}`,
             {
                 method: 'POST',
                 headers: {
                     [API_CONFIG.HEADERS.CONTENT_TYPE]: API_CONFIG.HEADERS.CONTENT_TYPE_VALUE,
-                    [API_CONFIG.HEADERS.ACCEPT]: API_CONFIG.HEADERS.CONTENT_TYPE_VALUE
+                    [API_CONFIG.HEADERS.ACCEPT]: API_CONFIG.HEADERS.ACCEPT_STREAM
                 },
                 body: JSON.stringify(resumePayload)
             }

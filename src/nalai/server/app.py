@@ -6,10 +6,12 @@ routes, and agent initialization.
 """
 
 import logging
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from ..config import settings
 from ..core.agent import APIAgent
@@ -37,7 +39,7 @@ logging.captureWarnings(True)
 logger = logging.getLogger("nalai")
 
 # Public endpoints that don't require authentication
-PUBLIC_ENDPOINTS = {"/healthz", "/docs", "/"}
+PUBLIC_ENDPOINTS = {"/healthz", "/docs", "/", "/ui"}
 
 # Pre-create middleware functions for efficiency
 log_middleware = create_log_request_middleware(excluded_paths=PUBLIC_ENDPOINTS)
@@ -50,9 +52,19 @@ audit_middleware = create_audit_middleware(excluded_paths=PUBLIC_ENDPOINTS)
 
 # Create FastAPI application
 app = FastAPI(
-    title="API Assistant Server",
+    title="AI Agent Server",
     version="1.0",
-    description="API Assistant powered by LangGraph",
+    description="An AI Agent Server implementing chat and tool calling capabilities",
+    openapi_tags=[
+        {
+            "name": "Agent API v1",
+            "description": "Agent interaction endpoints for API v1",
+        },
+        {
+            "name": "System",
+            "description": "System health and utility endpoints",
+        },
+    ],
 )
 
 # Configure CORS from environment variable
@@ -102,6 +114,14 @@ def initialize_app():
     global _initialized
     if _initialized:
         return
+
+    # Mount UI static files
+    ui_path = Path(__file__).parent.parent.parent.parent / "demo" / "ui"
+    if ui_path.exists():
+        app.mount("/ui", StaticFiles(directory=str(ui_path)), name="ui")
+        logger.info(f"Mounted UI static files from {ui_path}")
+    else:
+        logger.warning(f"UI directory not found at {ui_path}")
 
     # Create basic routes
     create_basic_routes(app)
