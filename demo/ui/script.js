@@ -9,21 +9,63 @@
 // API Configuration
 const API_CONFIG = {
     BASE_URL: window.location.hostname === 'localhost' ? 'http://localhost:8000' : `http://${window.location.hostname}:8000`,
-    ENDPOINTS: {
-        CHAT: 'chat',
-        RESUME_DECISION: 'resume-decision'
+    URL_TEMPLATES: {
+        // Base templates for actual API endpoints
+        CONVERSATIONS: '/api/v1/conversations',
+        CONVERSATION: '/api/v1/conversations/{conversation_id}',
+        RESUME_DECISION: '/api/v1/conversations/{conversation_id}/resume-decision'
     },
     HEADERS: {
         CONTENT_TYPE: 'Content-Type',
         CONTENT_TYPE_VALUE: 'application/json',
         ACCEPT: 'Accept',
         ACCEPT_STREAM: 'text/event-stream',
-        NO_CACHE: 'X-No-Cache'
+        NO_CACHE: 'X-No-Cache',
+        AUTHORIZATION: 'Authorization',
+        AUTHORIZATION_VALUE: 'Bearer dev-token'
     },
     TIMEOUT: 30000, // 30 seconds
     RETRY_ATTEMPTS: 3,
     RETRY_DELAY: 1000 // 1 second
 };
+
+/**
+ * Generic function to build URLs from templates with variable substitution
+ * @param {string} template - URL template with {variable} placeholders
+ * @param {Object} variables - Map of variable names to values
+ * @returns {string} - Complete URL with variables substituted
+ */
+function buildApiUrl(template, variables = {}) {
+    if (!template) {
+        throw new Error('URL template is required');
+    }
+    
+    // Validate that all required variables are provided
+    const requiredParams = template.match(/\{([^}]+)\}/g) || [];
+    const missingParams = requiredParams.filter(param => {
+        const paramName = param.slice(1, -1); // Remove { and }
+        return !variables[paramName];
+    });
+    
+    if (missingParams.length > 0) {
+        throw new Error(`Missing required URL parameters: ${missingParams.join(', ')}`);
+    }
+    
+    // Substitute variables in template
+    let url = template;
+    for (const [key, value] of Object.entries(variables)) {
+        if (typeof value !== 'string' || value.trim() === '') {
+            throw new Error(`Variable '${key}' must be a non-empty string`);
+        }
+        url = url.replace(`{${key}}`, value.trim());
+    }
+    
+    const fullUrl = API_CONFIG.BASE_URL + url;
+    Logger.info('Generated URL from template', { template, variables, fullUrl });
+    return fullUrl;
+}
+
+
 
 // Event Types
 const EVENT_TYPES = {
@@ -36,7 +78,8 @@ const EVENT_TYPES = {
     LOAD_API_SUMMARIES: 'load_api_summaries',
     LOAD_API_SPECS: 'load_api_specs',
     SELECT_RELEVANT_APIS: 'select_relevant_apis',
-    HUMAN_REVIEW: 'human_review'
+    HUMAN_REVIEW: 'human_review',
+    ERROR: 'error'
 };
 
 // Message Types
@@ -164,7 +207,7 @@ class ErrorHandler {
     static handleError(error, context = '') {
         const errorInfo = this.createError(
             ERROR_TYPES.UNKNOWN,
-            error.message || 'An unknown error occurred',
+            error?.message || 'An unknown error occurred',
             error
         );
 
@@ -183,7 +226,7 @@ class ErrorHandler {
             error
         );
 
-        Logger.error(`Network error in ${context}: ${error.message}`, errorInfo);
+        Logger.error(`Network error in ${context}: ${error?.message || 'Unknown network error'}`, errorInfo);
         this.showUserError(errorInfo.message, context);
         
         return errorInfo;
@@ -257,7 +300,7 @@ class ErrorHandler {
             error
         );
 
-        Logger.error(`Parsing error in ${context}: ${error.message}`, { error, data });
+        Logger.error(`Parsing error in ${context}: ${error?.message || 'Unknown parsing error'}`, { error, data });
         this.showUserError(errorInfo.message, context);
         
         return errorInfo;
@@ -472,15 +515,29 @@ class NetworkManager {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
 
+        Logger.info('NetworkManager.fetchWithTimeout called', { url, options, timeout });
+
         try {
             const response = await fetch(url, {
                 ...options,
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
+            Logger.info('NetworkManager.fetchWithTimeout succeeded', { 
+                url, 
+                status: response.status, 
+                statusText: response.statusText,
+                headers: Object.fromEntries(response.headers.entries())
+            });
             return response;
         } catch (error) {
             clearTimeout(timeoutId);
+            Logger.error('NetworkManager.fetchWithTimeout failed', { 
+                url, 
+                error: error.message, 
+                errorName: error.name,
+                errorStack: error.stack 
+            });
             if (error.name === 'AbortError') {
                 throw new Error('Request timed out');
             }
@@ -836,7 +893,8 @@ function updateConnectionIndicator() {
 
 function getRequestHeaders(isStreamingEnabled, isNoCacheEnabled) {
     const headers = {
-        [API_CONFIG.HEADERS.CONTENT_TYPE]: API_CONFIG.HEADERS.CONTENT_TYPE_VALUE
+        [API_CONFIG.HEADERS.CONTENT_TYPE]: API_CONFIG.HEADERS.CONTENT_TYPE_VALUE,
+        [API_CONFIG.HEADERS.AUTHORIZATION]: API_CONFIG.HEADERS.AUTHORIZATION_VALUE
     };
     
     if (isStreamingEnabled) {
@@ -852,12 +910,10 @@ function getRequestHeaders(isStreamingEnabled, isNoCacheEnabled) {
 
 function buildRequestPayload(message) {
     const payload = {
-        input: {
-            messages: [{
-                content: message,
-                type: MESSAGE_TYPES.HUMAN
-            }]
-        }
+        messages: [{
+            content: message,
+            type: MESSAGE_TYPES.HUMAN
+        }]
     };
 
     if (currentThreadId) {
@@ -1024,15 +1080,21 @@ function getMessageConfig() {
 }
 
 async function sendApiRequest(message, config) {
-    const endpoint = API_CONFIG.ENDPOINTS.CHAT;
+    let url;
+    
+    if (currentThreadId) {
+        // Continue existing conversation
+        url = buildApiUrl(API_CONFIG.URL_TEMPLATES.CONVERSATION, { conversation_id: currentThreadId });
+    } else {
+        // Create new conversation
+        url = buildApiUrl(API_CONFIG.URL_TEMPLATES.CONVERSATIONS);
+    }
     
     const requestPayload = buildRequestPayload(message);
     const headers = getRequestHeaders(config.isStreamingEnabled, config.isNoCacheEnabled);
     
-    const url = `${API_CONFIG.BASE_URL}/api/v1/agent/${endpoint}`;
-    
     Logger.info('Sending API request', { 
-        endpoint, 
+        url,
         isStreaming: config.isStreamingEnabled,
         hasThreadId: !!currentThreadId 
     });
@@ -1091,7 +1153,7 @@ async function processApiResponse(response, assistantMessageDiv, isStreamingEnab
 }
 
 function handleMessageError(error) {
-    Logger.error('Message processing failed', { error: error.message });
+    Logger.error('Message processing failed', { error: error?.message || 'Unknown error' });
     
     // Create error message element
     const errorDiv = document.createElement('div');
@@ -1100,7 +1162,7 @@ function handleMessageError(error) {
         <div style="display: flex; align-items: center; gap: 8px;">
             <span style="font-size: 16px;">❌</span>
             <div>
-                <strong>Failed to send message:</strong> ${error.message}
+                <strong>Failed to send message:</strong> ${error?.message || 'Unknown error'}
                 <br>
                 <small style="opacity: 0.7;">Please try again or check your connection.</small>
             </div>
@@ -1119,26 +1181,26 @@ function cleanupMessageProcessing() {
 }
 
 function handleThreadIdResponse(response) {
-    const threadId = response.headers.get('X-Thread-ID');
-    Logger.info('Received thread ID from response', { 
-        threadId, 
-        threadIdType: typeof threadId,
-        hasThreadId: !!threadId,
+    const conversationId = response.headers.get('X-Conversation-ID');
+    Logger.info('Received conversation ID from response', { 
+        conversationId, 
+        conversationIdType: typeof conversationId,
+        hasConversationId: !!conversationId,
         currentThreadId,
-        willUpdate: threadId && threadId !== currentThreadId
+        willUpdate: conversationId && conversationId !== currentThreadId
     });
     
-    if (threadId && threadId !== currentThreadId) {
-        const normalizedThreadId = normalizeThreadId(threadId);
+    if (conversationId && conversationId !== currentThreadId) {
+        const normalizedThreadId = normalizeThreadId(conversationId);
         if (normalizedThreadId) {
             currentThreadId = normalizedThreadId;
             localStorage.setItem(STORAGE_KEYS.THREAD_ID, normalizedThreadId);
             Logger.info('New conversation thread started', { 
-                originalThreadId: threadId, 
+                originalConversationId: conversationId, 
                 normalizedThreadId 
             });
         } else {
-            Logger.warn('Failed to normalize thread ID', { threadId });
+            Logger.warn('Failed to normalize conversation ID', { conversationId });
         }
     }
 }
@@ -1210,9 +1272,15 @@ function processStreamEvent(event, assistantMessageDiv) {
                     handleUpdateEvent(eventData, assistantMessageDiv);
                 }
                 break;
+            case EVENT_TYPES.ERROR:
+                handleErrorEvent(eventData, assistantMessageDiv);
+                break;
             default:
                 Logger.warn('Unknown event type', { eventType, eventData });
         }
+    } else if (event.error) {
+        // Handle error events that come as objects with error property
+        handleErrorEvent(event.error, assistantMessageDiv);
     } else {
         Logger.warn('Unexpected event format', { event });
     }
@@ -1290,6 +1358,51 @@ function handleUpdateEvent(eventData, assistantMessageDiv) {
                 Logger.warn('Unknown update key', { updateKey, updateValue });
         }
     }
+}
+
+function handleErrorEvent(errorData, assistantMessageDiv) {
+    Logger.error('Error event received from server', { errorData });
+    
+    let errorMessage = 'An error occurred while processing your request.';
+    
+    // Try to extract meaningful error message from different error formats
+    if (typeof errorData === 'string') {
+        errorMessage = errorData;
+    } else if (errorData && typeof errorData === 'object') {
+        if (errorData.message) {
+            errorMessage = errorData.message;
+        } else if (errorData.error && errorData.error.message) {
+            errorMessage = errorData.error.message;
+        } else if (errorData.detail) {
+            errorMessage = errorData.detail;
+        }
+    }
+    
+    // Create error message element
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'message error-message fade-in';
+    errorDiv.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 16px;">❌</span>
+            <div>
+                <strong>Server Error:</strong> ${errorMessage}
+                <br>
+                <small style="opacity: 0.7;">Please try again or check your input.</small>
+            </div>
+        </div>
+    `;
+    
+    // Insert error message after the assistant message
+    if (assistantMessageDiv && assistantMessageDiv.parentNode) {
+        assistantMessageDiv.parentNode.insertBefore(errorDiv, assistantMessageDiv.nextSibling);
+    } else {
+        DOM.chatContainer.appendChild(errorDiv);
+    }
+    
+    DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+    
+    // Clear processing state
+    cleanupMessageProcessing();
 }
 
 function handleInterruptEvent(updateValue, assistantMessageDiv) {
@@ -1512,16 +1625,19 @@ async function handleInterrupt(responseType, args = null) {
 
     try {
         Logger.info('Current thread ID format', { currentThreadId, threadIdType: typeof currentThreadId });
+        Logger.info('Current interrupt structure', { 
+            currentInterrupt: window.currentInterrupt,
+            interruptValue: window.currentInterrupt?.value,
+            actionRequest: window.currentInterrupt?.value?.action_request
+        });
         
-        // Ensure thread ID is in correct format for resume request
-        const normalizedThreadId = normalizeThreadId(currentThreadId);
-        if (!normalizedThreadId) {
-            throw new Error('Invalid thread ID format for resume request');
+        // Use currentThreadId directly since it's already in the correct format
+        if (!currentThreadId) {
+            throw new Error('No conversation ID available for resume request');
         }
         
         const resumePayload = {
-            thread_id: normalizedThreadId,
-            response_type: responseType
+            action: responseType
         };
 
         if (args) {
@@ -1532,24 +1648,31 @@ async function handleInterrupt(responseType, args = null) {
 
         // Log the full request details for debugging
         Logger.info('Resume request details', {
-            url: `${API_CONFIG.BASE_URL}/api/v1/agent/${API_CONFIG.ENDPOINTS.RESUME_DECISION}`,
+            url: buildApiUrl(API_CONFIG.URL_TEMPLATES.RESUME_DECISION, { conversation_id: currentThreadId }),
             method: 'POST',
             payload: resumePayload,
             responseType,
             args
         });
 
-        const response = await NetworkManager.fetchWithRetry(
-            `${API_CONFIG.BASE_URL}/api/v1/agent/${API_CONFIG.ENDPOINTS.RESUME_DECISION}`,
-            {
-                method: 'POST',
-                headers: {
-                    [API_CONFIG.HEADERS.CONTENT_TYPE]: API_CONFIG.HEADERS.CONTENT_TYPE_VALUE,
-                    [API_CONFIG.HEADERS.ACCEPT]: API_CONFIG.HEADERS.ACCEPT_STREAM
-                },
-                body: JSON.stringify(resumePayload)
-            }
-        );
+        const requestUrl = buildApiUrl(API_CONFIG.URL_TEMPLATES.RESUME_DECISION, { conversation_id: currentThreadId });
+        const requestOptions = {
+            method: 'POST',
+            headers: {
+                [API_CONFIG.HEADERS.CONTENT_TYPE]: API_CONFIG.HEADERS.CONTENT_TYPE_VALUE,
+                [API_CONFIG.HEADERS.ACCEPT]: API_CONFIG.HEADERS.ACCEPT_STREAM,
+                [API_CONFIG.HEADERS.AUTHORIZATION]: API_CONFIG.HEADERS.AUTHORIZATION_VALUE
+            },
+            body: JSON.stringify(resumePayload)
+        };
+        
+        Logger.info('About to send resume request', { 
+            url: requestUrl, 
+            options: requestOptions,
+            headers: requestOptions.headers 
+        });
+        
+        const response = await NetworkManager.fetchWithRetry(requestUrl, requestOptions);
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -1560,6 +1683,12 @@ async function handleInterrupt(responseType, args = null) {
         // Success message is now handled in handleResumeStream after completion
 
     } catch (error) {
+        Logger.error('Interrupt handling caught error', { 
+            error, 
+            errorType: typeof error, 
+            errorMessage: error?.message,
+            errorStack: error?.stack 
+        });
         ErrorHandler.handleError(error, 'Interrupt handling');
     }
 }
@@ -1613,6 +1742,12 @@ async function handleResumeStream(response) {
             }
         }
     } catch (error) {
+        Logger.error('Resume stream processing caught error', { 
+            error, 
+            errorType: typeof error, 
+            errorMessage: error?.message,
+            errorStack: error?.stack 
+        });
         ErrorHandler.handleError(error, 'Resume stream processing');
         // Clear interrupt state on error as well
         window.currentInterrupt = null;

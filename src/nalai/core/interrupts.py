@@ -69,7 +69,10 @@ def add_human_in_the_loop(
     @create_tool(tool.name, description=tool.description, args_schema=tool.args_schema)
     def call_tool_with_interrupt(config: RunnableConfig, **tool_input):
         request: HumanInterrupt = {
-            "action_request": {"action": tool.name, "args": tool_input},
+            "action_request": {
+                "action": tool.name,
+                "args": tool_input,
+            },
             "config": interrupt_config,
             "description": "Please review the tool call",
         }

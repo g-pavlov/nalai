@@ -7,6 +7,8 @@ This module contains models for incoming requests and messages:
 - AgentInvokeRequest: Synchronous agent invocation request
 - AgentStreamEventsRequest: Event streaming request
 - ToolInterruptRequest: Tool interrupt operation request
+- ConversationRequest: New conversation-based request model
+- ResumeDecisionRequest: New resume decision request model
 """
 
 import uuid
@@ -153,6 +155,35 @@ class AgentInput(BaseModel):
         return data
 
 
+class ConversationRequest(BaseModel):
+    """Request model for conversation (create or continue)."""
+
+    model_config = ConfigDict(extra="forbid")  # Reject unknown fields
+
+    messages: list[MessageInput] = Field(
+        ..., description="List of conversation messages", min_length=1, max_length=100
+    )
+    config: AgentConfig | None = Field(None, description="Optional configuration")
+
+    @field_validator("messages")
+    @classmethod
+    def validate_messages(cls, messages):
+        """Validate that messages list is not empty and contains valid message types."""
+        if not messages:
+            raise ValueError("Messages list cannot be empty")
+
+        # Ensure at least one human message
+        human_messages = [msg for msg in messages if msg.type == "human"]
+        if not human_messages:
+            raise ValueError("At least one human message is required")
+
+        return messages
+
+    def to_agent_input(self) -> "AgentInput":
+        """Convert to AgentInput for backward compatibility."""
+        return AgentInput(messages=self.messages)
+
+
 class AgentInvokeRequest(BaseModel):
     """Request model for agent invocation."""
 
@@ -169,6 +200,33 @@ class AgentStreamEventsRequest(BaseModel):
 
     input: AgentInput = Field(..., description="Input data for the agent")
     config: AgentConfig | None = Field(None, description="Optional configuration")
+
+
+class ResumeDecisionRequest(BaseModel):
+    """Request model for tool decision handling."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["accept", "edit", "reject"] = Field(
+        ..., description="Action to take"
+    )
+    args: dict | str | None = Field(
+        None, description="Arguments for edit or reject actions"
+    )
+
+    @field_validator("args")
+    @classmethod
+    def validate_args(cls, args, info):
+        """Validate that args is provided for actions that require it."""
+        if info.data.get("action") in ["edit", "reject"] and args is None:
+            raise ValueError("Args are required for 'edit' or 'reject' actions")
+        return args
+
+    def to_tool_interrupt_request(self, conversation_id: str) -> "ToolInterruptRequest":
+        """Convert to ToolInterruptRequest for backward compatibility."""
+        return ToolInterruptRequest(
+            thread_id=conversation_id, response_type=self.action, args=self.args
+        )
 
 
 class ToolInterruptRequest(BaseModel):
