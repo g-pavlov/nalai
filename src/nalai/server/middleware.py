@@ -12,7 +12,7 @@ from datetime import datetime
 
 from fastapi import HTTPException, Request
 
-from ..server.models.identity import UserContext
+from ..services.auth_service import UserContext
 
 logger = logging.getLogger("nalai")
 

@@ -20,11 +20,12 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from nalai.server.models.identity import IdentityContext, UserContext
 from nalai.services.auth_service import (
     AuthService,
     AuthServiceFactory,
+    IdentityContext,
     StandardAuthService,
+    UserContext,
     get_auth_service,
     set_auth_service,
 )

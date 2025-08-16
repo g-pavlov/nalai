@@ -13,7 +13,7 @@ from langgraph.graph.state import CompiledStateGraph
 # Using dict[str, Any] as a replacement
 from langgraph.types import Command, Interrupt
 
-from ..server.models import InterruptResponse
+from ..server.schemas import ResumeDecisionRequest
 
 logger = logging.getLogger("nalai")
 
@@ -98,18 +98,26 @@ async def handle_interruption(
     # improve this with a more semantic analysis of user intent allowing multiple input optons for 'yes' or 'no'
     if user_input.lower() in ["y", "yes"]:
         # continue
-        interrupt_response = InterruptResponse(type="accept")
-        resume_input = [interrupt_response.model_dump()]
+        interrupt_response = ResumeDecisionRequest(input={"decision": "accept"})
+        resume_input = [interrupt_response.to_internal()]
     elif user_input.lower() in ["n", "no"]:
-        # abort
-        interrupt_response = InterruptResponse(
-            type="response", args="User rejected the tool call"
-        )
-        resume_input = [interrupt_response.model_dump()]
+        # ask for rejection reason
+        reject_reason = input("Please provide a reason for rejection: ").strip()
+        if not reject_reason:
+            # Simple reject without reason
+            interrupt_response = ResumeDecisionRequest(input={"decision": "reject"})
+        else:
+            # Reject with reason
+            interrupt_response = ResumeDecisionRequest(
+                input={"decision": "reject", "message": reject_reason}
+            )
+        resume_input = [interrupt_response.to_internal()]
     else:
-        # needs changes
-        interrupt_response = InterruptResponse(type="response", args=user_input.lower())
-        resume_input = [interrupt_response.model_dump()]
+        # needs changes - treat as feedback
+        interrupt_response = ResumeDecisionRequest(
+            input={"decision": "feedback", "message": user_input.lower()}
+        )
+        resume_input = [interrupt_response.to_internal()]
     # resume the workflow with a command built from the user input
     if interrupts.resumable:
         async for event in graph.astream(

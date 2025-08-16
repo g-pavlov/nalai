@@ -452,6 +452,34 @@ input:checked + .slider:before {
     color: #dc2626;
 }
 
+.reject-reason-textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.4;
+    resize: vertical;
+    background: #f9fafb;
+}
+
+.reject-reason-textarea:focus {
+    outline: none;
+    border-color: #dc2626;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+}
+
+.reject-validation {
+    margin-top: 8px;
+    font-size: 12px;
+}
+
+.reject-validation.has-error {
+    color: #dc2626;
+}
+
 .validation-error {
     padding: 4px 8px;
     background: #fee2e2;

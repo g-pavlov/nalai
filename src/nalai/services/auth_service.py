@@ -1,9 +1,8 @@
 """
 Authentication service for API Assistant.
 
-This module provides generic OIDC authentication with support for
-delegation and client credentials modes, including optional token validation
-for externalized auth scenarios (e.g., Istio/K8s).
+This module provides authentication and authorization services,
+including OIDC integration and token management.
 """
 
 import logging
@@ -13,14 +12,93 @@ from typing import Any
 
 import jwt
 from fastapi import HTTPException, Request
+from pydantic import BaseModel, Field
 
 from ..config import settings
-from ..server.models.identity import (
-    APITokenResponse,
-    IdentityContext,
-)
 
 logger = logging.getLogger(__name__)
+
+
+class IdentityContext(BaseModel):
+    """User identity context extracted from authentication tokens."""
+
+    user_id: str = Field(..., description="Unique user identifier (sub claim)")
+    email: str | None = Field(None, description="User email address")
+    given_name: str | None = Field(None, description="User's given name")
+    family_name: str | None = Field(None, description="User's family name")
+    org_unit_id: str | None = Field(None, description="Organization unit identifier")
+    roles: list[str] = Field(default_factory=list, description="User roles")
+    permissions: list[str] = Field(default_factory=list, description="User permissions")
+    token_type: str = Field(..., description="Type of token (access_token, id_token)")
+    token_expires_at: datetime | None = Field(None, description="Token expiration time")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Additional identity metadata"
+    )
+
+    @property
+    def full_name(self) -> str:
+        """Get user's full name."""
+        if self.given_name and self.family_name:
+            return f"{self.given_name} {self.family_name}"
+        elif self.given_name:
+            return self.given_name
+        elif self.family_name:
+            return self.family_name
+        else:
+            return self.user_id
+
+    @property
+    def is_authenticated(self) -> bool:
+        """Check if user is properly authenticated."""
+        return bool(self.user_id and self.user_id != "anonymous")
+
+    @property
+    def is_token_expired(self) -> bool:
+        """Check if the authentication token has expired."""
+        if not self.token_expires_at:
+            return False
+        # Use timezone-aware now() to compare with token_expires_at
+        return datetime.now(self.token_expires_at.tzinfo) > self.token_expires_at
+
+
+class UserContext(BaseModel):
+    """User context for request processing."""
+
+    identity: IdentityContext = Field(..., description="User identity context")
+    session_id: str | None = Field(None, description="Session identifier")
+    request_id: str | None = Field(None, description="Request identifier for tracing")
+    ip_address: str | None = Field(None, description="Client IP address")
+    user_agent: str | None = Field(None, description="Client user agent")
+    timestamp: datetime = Field(
+        default_factory=datetime.now, description="Request timestamp"
+    )
+
+    @property
+    def user_id(self) -> str:
+        """Get user ID from identity context."""
+        return self.identity.user_id
+
+    @property
+    def email(self) -> str | None:
+        """Get user email from identity context."""
+        return self.identity.email
+
+    @property
+    def is_authenticated(self) -> bool:
+        """Check if user is authenticated."""
+        return self.identity.is_authenticated
+
+
+class APITokenResponse(BaseModel):
+    """Response containing API token."""
+
+    token: str = Field(..., description="API access token")
+    token_type: str = Field(default="Bearer", description="Token type")
+    expires_at: datetime | None = Field(None, description="Token expiration time")
+    scopes: list[str] = Field(default_factory=list, description="Token scopes")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Additional token metadata"
+    )
 
 
 class AuthService(ABC):

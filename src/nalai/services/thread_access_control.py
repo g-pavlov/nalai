@@ -11,10 +11,31 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any
 
+from fastapi import HTTPException, Request
+from pydantic import BaseModel, Field
+
 from ..config import settings
-from ..server.models.identity import ThreadOwnership
+from ..server.middleware import get_user_context
+from ..utils.validation import validate_thread_id_format
+from .audit_utils import log_thread_access_event
 
 logger = logging.getLogger(__name__)
+
+
+class ThreadOwnership(BaseModel):
+    """Thread ownership record for access control."""
+
+    thread_id: str = Field(..., description="Thread identifier")
+    user_id: str = Field(..., description="Owner user identifier")
+    created_at: datetime = Field(
+        default_factory=datetime.now, description="Creation timestamp"
+    )
+    last_accessed: datetime = Field(
+        default_factory=datetime.now, description="Last access timestamp"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Additional metadata"
+    )
 
 
 class ThreadAccessControlBackend(ABC):
@@ -183,7 +204,7 @@ class ThreadAccessControl:
     async def validate_thread_access(self, user_id: str, thread_id: str) -> bool:
         """Validate that user owns the thread."""
         # Validate thread_id format before processing
-        self._validate_thread_id_format(thread_id)
+        validate_thread_id_format(thread_id)
         return await self.backend.validate_thread_access(user_id, thread_id)
 
     async def create_thread(
@@ -197,7 +218,7 @@ class ThreadAccessControl:
             thread_id = str(uuid.uuid4())
         else:
             # Validate thread_id format if provided
-            self._validate_thread_id_format(thread_id)
+            validate_thread_id_format(thread_id)
 
         await self.backend.create_thread(user_id, thread_id, metadata)
         return thread_id
@@ -209,81 +230,25 @@ class ThreadAccessControl:
     async def delete_thread(self, user_id: str, thread_id: str) -> bool:
         """Delete a thread (only if user owns it)."""
         # Validate thread_id format before processing
-        self._validate_thread_id_format(thread_id)
+        validate_thread_id_format(thread_id)
         return await self.backend.delete_thread(user_id, thread_id)
 
     async def create_user_scoped_thread_id(self, user_id: str, thread_id: str) -> str:
         """Create user-scoped thread ID for LangGraph."""
         # Validate thread_id format before processing
-        self._validate_thread_id_format(thread_id)
+        validate_thread_id_format(thread_id)
         return f"user:{user_id}:{thread_id}"
 
     async def extract_base_thread_id(self, user_scoped_thread_id: str) -> str:
         """Extract base thread ID from user-scoped thread ID."""
         # Validate thread_id format before processing
-        self._validate_thread_id_format(user_scoped_thread_id)
+        validate_thread_id_format(user_scoped_thread_id)
 
         if user_scoped_thread_id.startswith("user:"):
             parts = user_scoped_thread_id.split(":", 2)
             if len(parts) >= 3:
                 return parts[2]
         return user_scoped_thread_id
-
-    def _validate_thread_id_format(self, thread_id: str) -> None:
-        """
-        Validate thread ID format for security and consistency.
-
-        This method validates that thread IDs follow the expected format
-        to prevent injection attacks and ensure data consistency.
-
-        Args:
-            thread_id: Thread ID to validate
-
-        Raises:
-            ValueError: If thread ID format is invalid
-        """
-        if not thread_id or not isinstance(thread_id, str):
-            raise ValueError("thread_id must be a non-empty string")
-
-        # Check for potentially malicious patterns
-        if len(thread_id) > 200:  # Reasonable length limit
-            raise ValueError("thread_id too long (max 200 characters)")
-
-        # Check if it's a user-scoped thread ID (format: user:{user_id}:{uuid})
-        if ":" in thread_id:
-            parts = thread_id.split(":")
-            if len(parts) != 3:
-                raise ValueError(
-                    "Invalid user-scoped thread_id format. Expected: user:{user_id}:{uuid}"
-                )
-
-            if parts[0] != "user":
-                raise ValueError(
-                    "Invalid user-scoped thread_id format. Must start with 'user:'"
-                )
-
-            # Validate user_id part (should be non-empty and not contain colons)
-            user_id = parts[1]
-            if not user_id or ":" in user_id:
-                raise ValueError("Invalid user_id in thread_id format")
-
-            # Validate UUID part
-            try:
-                uuid.UUID(parts[2], version=4)
-            except ValueError as err:
-                raise ValueError("Invalid UUID in user-scoped thread_id") from err
-
-            return
-
-        # Check if it's a plain UUID4
-        try:
-            uuid_obj = uuid.UUID(thread_id, version=4)
-            if str(uuid_obj) != thread_id:
-                raise ValueError("thread_id must be a canonical UUID4 string")
-        except ValueError as err:
-            raise ValueError(
-                "thread_id must be a valid UUID4 or user-scoped thread ID (user:{user_id}:{uuid})"
-            ) from err
 
     async def get_thread_ownership(self, thread_id: str) -> ThreadOwnership | None:
         """Get thread ownership information."""
@@ -323,3 +288,162 @@ async def create_user_scoped_thread_id(user_id: str, thread_id: str) -> str:
     """Create user-scoped thread ID for LangGraph."""
     access_control = get_thread_access_control()
     return await access_control.create_user_scoped_thread_id(user_id, thread_id)
+
+
+async def validate_conversation_access_and_scope(
+    config: dict | None, req: Request
+) -> tuple[dict, str]:
+    """
+    Validate conversation access and create user-scoped conversation ID.
+
+    This function:
+    1. If no conversation_id provided: Creates a new conversation for the user
+    2. If conversation_id provided: Validates that the user has access to the conversation
+    3. Creates a user-scoped conversation ID for LangGraph
+    4. Logs the access event for audit purposes
+
+    Args:
+        config: Configuration dictionary or Pydantic model
+        req: FastAPI request object
+
+    Returns:
+        Tuple of (updated_config, user_scoped_conversation_id)
+    """
+    # Get user context
+    try:
+        user_context = get_user_context(req)
+        user_id = user_context.user_id
+    except Exception as e:
+        logger.error(f"Failed to get user context: {e}")
+        raise HTTPException(status_code=401, detail="Authentication required") from e
+
+    # Check if conversation_id was provided in the original config
+    original_config = _ensure_config_dict(config)
+    original_configurable = original_config.get("configurable", {})
+    conversation_id_provided = (
+        "thread_id" in original_configurable
+    )  # Keep using thread_id in data
+
+    # Ensure conversation_id exists (generates new one if not provided)
+    config = _ensure_config_dict(config)
+    configurable = _ensure_configurable(config)
+
+    conversation_id = configurable.get("thread_id")  # Keep using thread_id in data
+    if not conversation_id:
+        conversation_id = str(uuid.uuid4())
+        configurable["thread_id"] = conversation_id  # Keep using thread_id in data
+
+    # Get access control service
+    access_control = get_thread_access_control()
+
+    if conversation_id_provided:
+        # Conversation ID was provided by client - validate access to existing conversation
+        has_access = await access_control.validate_thread_access(
+            user_id, conversation_id
+        )
+
+        if not has_access:
+            # Try to create the conversation if it doesn't exist
+            try:
+                await access_control.create_thread(user_id, conversation_id)
+                logger.debug(
+                    f"Created missing conversation {conversation_id} for user {user_id}"
+                )
+                has_access = True
+            except ValueError:
+                # Conversation exists but belongs to different user
+                logger.warning(
+                    f"Conversation {conversation_id} exists but belongs to different user"
+                )
+                # Log failed access attempt
+                await log_thread_access_event(
+                    user_id=user_id,
+                    thread_id=conversation_id,
+                    action="access_denied",
+                    success=False,
+                    ip_address=user_context.ip_address,
+                    user_agent=user_context.user_agent,
+                    session_id=user_context.session_id,
+                    request_id=user_context.request_id,
+                )
+                raise HTTPException(
+                    status_code=403, detail="Access denied to conversation"
+                ) from None
+
+        if has_access:
+            logger.debug(
+                f"User {user_id} granted access to existing conversation {conversation_id}"
+            )
+
+    else:
+        # No conversation ID provided - create new conversation for user
+        try:
+            # Create the conversation in the access control system using our generated conversation_id
+            await access_control.create_thread(user_id, conversation_id)
+
+            logger.debug(
+                f"Created new conversation {conversation_id} for user {user_id}"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to create conversation for user {user_id}: {e}")
+            raise HTTPException(
+                status_code=500, detail="Failed to create conversation"
+            ) from e
+
+    # Create user-scoped conversation ID for LangGraph (only if not already scoped)
+    if conversation_id.startswith("user:"):
+        # Conversation ID is already user-scoped, validate it belongs to this user
+        parts = conversation_id.split(":", 2)
+        if len(parts) >= 3 and parts[1] == user_id:
+            user_scoped_conversation_id = conversation_id
+        else:
+            raise HTTPException(status_code=403, detail="Access denied to conversation")
+    else:
+        # Conversation ID is not scoped, create user-scoped version
+        user_scoped_conversation_id = await access_control.create_user_scoped_thread_id(
+            user_id, conversation_id
+        )
+
+    # Update config with user-scoped conversation ID
+    configurable = _ensure_configurable(config)
+    configurable["thread_id"] = (
+        user_scoped_conversation_id  # Keep using thread_id in data
+    )
+
+    # Log successful access/creation
+    action = (
+        "conversation_created" if not conversation_id_provided else "access_granted"
+    )
+    await log_thread_access_event(
+        user_id=user_id,
+        thread_id=conversation_id,
+        action=action,
+        success=True,
+        ip_address=user_context.ip_address,
+        user_agent=user_context.user_agent,
+        session_id=user_context.session_id,
+        request_id=user_context.request_id,
+    )
+
+    logger.debug(
+        f"User {user_id} {'created' if not conversation_id_provided else 'granted access to'} conversation {conversation_id} (scoped: {user_scoped_conversation_id})"
+    )
+
+    return config, user_scoped_conversation_id
+
+
+def _ensure_config_dict(config: dict | None) -> dict:
+    """Convert Pydantic model to dict and ensure config is a dictionary."""
+    if config is not None and hasattr(config, "model_dump"):
+        config = config.model_dump()
+    return config or {}
+
+
+def _ensure_configurable(config: dict) -> dict:
+    """Ensure configurable section exists and is a dictionary."""
+    configurable = config.setdefault("configurable", {})
+    if configurable is None:
+        configurable = {}
+        config["configurable"] = configurable
+    return configurable

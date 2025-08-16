@@ -22,7 +22,9 @@ class TestLoggingConfig:
     def test_get_environment_log_level_default(self):
         """Test default log level when no environment variable is set."""
         with patch.dict(os.environ, {}, clear=True):
-            assert get_environment_log_level() == "INFO"
+            with patch("nalai.config.settings") as mock_settings:
+                mock_settings.logging_level = "INFO"
+                assert get_environment_log_level() == "INFO"
 
     def test_get_environment_log_level_from_log_level(self):
         """Test log level from LOG_LEVEL environment variable."""
@@ -75,12 +77,16 @@ class TestLoggingConfig:
     def test_is_debug_enabled_false(self):
         """Test is_debug_enabled when DEBUG is false."""
         with patch.dict(os.environ, {"DEBUG": "false"}, clear=True):
-            assert is_debug_enabled() is False
+            with patch("nalai.config.settings") as mock_settings:
+                mock_settings.logging_level = "INFO"
+                assert is_debug_enabled() is False
 
     def test_is_debug_enabled_not_set(self):
         """Test is_debug_enabled when DEBUG is not set."""
         with patch.dict(os.environ, {}, clear=True):
-            assert is_debug_enabled() is False
+            with patch("nalai.config.settings") as mock_settings:
+                mock_settings.logging_level = "INFO"
+                assert is_debug_enabled() is False
 
     def test_load_logging_config_file_not_found(self):
         """Test load_logging_config with non-existent file."""

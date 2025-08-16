@@ -11,8 +11,6 @@ from collections.abc import AsyncGenerator, Callable
 
 from langgraph.graph.state import CompiledStateGraph
 
-from ..server.models import InterruptResponse
-
 logger = logging.getLogger("nalai")
 
 
@@ -80,7 +78,7 @@ async def stream_events(
     agent: CompiledStateGraph,
     config: dict,
     agent_input: dict,
-    resume_input: InterruptResponse | None = None,
+    resume_input: dict | None = None,
     *,
     serialize_event: Callable[[object], object] = serialize_event_default,
 ) -> AsyncGenerator[str, None]:
@@ -104,8 +102,8 @@ async def stream_events(
             # Resume the workflow with the human's decision
             from langgraph.types import Command
 
-            # Structure resume_input like CLI: wrap in list with model_dump()
-            resume_command = [resume_input.model_dump()]
+            # Structure resume_input like CLI: wrap in list (resume_input is already a dict)
+            resume_command = [resume_input]
             async for chunk in agent.astream(
                 Command(resume=resume_command),
                 config,
@@ -114,7 +112,9 @@ async def stream_events(
                 # Add response_type to metadata for logging
                 if hasattr(chunk, "metadata"):
                     chunk.metadata = getattr(chunk, "metadata", {})
-                    chunk.metadata["response_type"] = resume_input.type
+                    chunk.metadata["response_type"] = resume_input.get(
+                        "action", "unknown"
+                    )
 
                 serialized_chunk = serialize_event(chunk)
                 if serialized_chunk:

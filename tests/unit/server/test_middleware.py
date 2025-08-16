@@ -26,7 +26,7 @@ from nalai.server.middleware import (
     get_user_context,
     is_request_processable,
 )
-from nalai.server.models.identity import IdentityContext, UserContext
+from nalai.services.auth_service import IdentityContext, UserContext
 
 
 class TestRequestProcessing:

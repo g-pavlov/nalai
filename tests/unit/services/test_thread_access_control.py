@@ -265,7 +265,7 @@ class TestThreadAccessControl:
     async def test_validate_thread_access(self, access_control):
         """Test thread access validation through service."""
         user_id = "user-123"
-        thread_id = "thread-456"
+        thread_id = "550e8400-e29b-41d4-a716-446655440000"
 
         # Create thread
         await access_control.create_thread(user_id, thread_id)
@@ -279,7 +279,7 @@ class TestThreadAccessControl:
     async def test_create_thread_with_id(self, access_control):
         """Test creating thread with specific ID."""
         user_id = "user-123"
-        thread_id = "custom-thread-id"
+        thread_id = "550e8400-e29b-41d4-a716-446655440001"
 
         result = await access_control.create_thread(user_id, thread_id)
 
@@ -308,7 +308,7 @@ class TestThreadAccessControl:
     async def test_create_thread_with_metadata(self, access_control):
         """Test creating thread with metadata."""
         user_id = "user-123"
-        thread_id = "thread-456"
+        thread_id = "550e8400-e29b-41d4-a716-446655440002"
         metadata = {"description": "Test thread", "tags": ["test", "demo"]}
 
         result = await access_control.create_thread(user_id, thread_id, metadata)
@@ -325,21 +325,25 @@ class TestThreadAccessControl:
         user_id = "user-123"
 
         # Create multiple threads
-        await access_control.create_thread(user_id, "thread-1")
-        await access_control.create_thread(user_id, "thread-2")
+        await access_control.create_thread(
+            user_id, "550e8400-e29b-41d4-a716-446655440003"
+        )
+        await access_control.create_thread(
+            user_id, "550e8400-e29b-41d4-a716-446655440004"
+        )
 
         threads = await access_control.list_user_threads(user_id)
 
         assert len(threads) == 2
         thread_ids = [thread.thread_id for thread in threads]
-        assert "thread-1" in thread_ids
-        assert "thread-2" in thread_ids
+        assert "550e8400-e29b-41d4-a716-446655440003" in thread_ids
+        assert "550e8400-e29b-41d4-a716-446655440004" in thread_ids
 
     @pytest.mark.asyncio
     async def test_delete_thread(self, access_control):
         """Test deleting thread through service."""
         user_id = "user-123"
-        thread_id = "thread-456"
+        thread_id = "550e8400-e29b-41d4-a716-446655440005"
 
         # Create thread
         await access_control.create_thread(user_id, thread_id)
@@ -357,7 +361,7 @@ class TestThreadAccessControl:
     async def test_create_user_scoped_thread_id(self, access_control):
         """Test creating user-scoped thread ID."""
         user_id = "user-123"
-        thread_id = "thread-456"
+        thread_id = "550e8400-e29b-41d4-a716-446655440006"
 
         scoped_id = await access_control.create_user_scoped_thread_id(
             user_id, thread_id
@@ -369,7 +373,7 @@ class TestThreadAccessControl:
     async def test_extract_base_thread_id(self, access_control):
         """Test extracting base thread ID from user-scoped ID."""
         user_id = "user-123"
-        thread_id = "thread-456"
+        thread_id = "550e8400-e29b-41d4-a716-446655440007"
         scoped_id = f"user:{user_id}:{thread_id}"
 
         extracted_id = await access_control.extract_base_thread_id(scoped_id)
@@ -379,7 +383,7 @@ class TestThreadAccessControl:
     @pytest.mark.asyncio
     async def test_extract_base_thread_id_no_prefix(self, access_control):
         """Test extracting base thread ID from non-scoped ID."""
-        thread_id = "thread-456"
+        thread_id = "550e8400-e29b-41d4-a716-446655440008"
 
         extracted_id = await access_control.extract_base_thread_id(thread_id)
 
@@ -389,7 +393,7 @@ class TestThreadAccessControl:
     async def test_get_thread_ownership(self, access_control):
         """Test getting thread ownership information."""
         user_id = "user-123"
-        thread_id = "thread-456"
+        thread_id = "550e8400-e29b-41d4-a716-446655440009"
         metadata = {"description": "Test thread"}
 
         # Create thread
@@ -461,7 +465,7 @@ class TestThreadAccessControlGlobal:
     async def test_validate_thread_access_global(self, mock_settings):
         """Test validate_thread_access global function."""
         user_id = "user-123"
-        thread_id = "thread-456"
+        thread_id = "550e8400-e29b-41d4-a716-446655440010"
 
         # Create thread
         access_control = get_thread_access_control()
@@ -476,7 +480,7 @@ class TestThreadAccessControlGlobal:
     async def test_create_user_scoped_thread_id_global(self, mock_settings):
         """Test create_user_scoped_thread_id global function."""
         user_id = "user-123"
-        thread_id = "thread-456"
+        thread_id = "550e8400-e29b-41d4-a716-446655440011"
 
         scoped_id = await create_user_scoped_thread_id(user_id, thread_id)
 
@@ -493,7 +497,7 @@ class TestThreadAccessControlIntegration:
 
         user1_id = "user-123"
         user2_id = "user-789"
-        thread_id = "shared-thread-id"
+        thread_id = "550e8400-e29b-41d4-a716-446655440012"
 
         # User1 creates thread
         await access_control.create_thread(user1_id, thread_id)
@@ -523,7 +527,7 @@ class TestThreadAccessControlIntegration:
 
         user1_id = "user-123"
         user2_id = "user-789"
-        base_thread_id = "shared-thread"
+        base_thread_id = "550e8400-e29b-41d4-a716-446655440013"
 
         # Create user-scoped thread IDs
         user1_scoped_id = await access_control.create_user_scoped_thread_id(
@@ -588,7 +592,7 @@ class TestThreadAccessControlIntegration:
         access_control = ThreadAccessControl(backend="memory")
 
         user_id = "user-123"
-        thread_id = "thread-456"
+        thread_id = "550e8400-e29b-41d4-a716-446655440014"
 
         # Create thread
         await access_control.create_thread(user_id, thread_id)

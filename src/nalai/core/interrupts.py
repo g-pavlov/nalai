@@ -78,28 +78,39 @@ def add_human_in_the_loop(
         }
         logger.info(f"Interrupt request: {request}")
         response = interrupt([request])[0]
-        # approve the tool call
         logger.info(f"Interrupt response: {response}")
-        if response["type"] == "accept":
-            # Extract run_manager from config if available
+        action = response.get("action")
+        if action == "accept":
             run_manager = config.get("run_manager") if config else None
             # Use the tool's _run method directly to avoid LangGraph context issues
             tool_response = tool._run(
                 **tool_input, config=config, run_manager=run_manager
             )
-        # update tool call args
-        elif response["type"] == "edit":
-            tool_input = response["args"]["args"]
+        elif action == "reject":
+            tool_response = "User rejected the tool call"
+        elif action == "edit":
+            # args should contain the new tool arguments
+            args = response.get("args")
+            if isinstance(args, dict):
+                tool_input = args
+            else:
+                logger.warning(f"Unexpected args format for edit: {args}")
+                tool_input = tool_input
             run_manager = config.get("run_manager") if config else None
             tool_response = tool._run(
                 **tool_input, config=config, run_manager=run_manager
             )
-        # respond to the LLM with user feedback
-        elif response["type"] == "response":
-            user_feedback = response["args"]
+        elif action == "feedback":
+            # Handle feedback decision - args should contain the user's feedback message
+            user_feedback = response.get("args")
+            if user_feedback is None:
+                logger.warning("No feedback message provided, using default message")
+                user_feedback = "User provided feedback"
             tool_response = user_feedback
         else:
-            raise ValueError(f"Unsupported interrupt response type: {response['type']}")
+            # Log the actual response structure for debugging
+            logger.error(f"Unexpected interrupt response structure: {response}")
+            raise ValueError(f"Unsupported interrupt response action: {action}")
 
         return tool_response
 

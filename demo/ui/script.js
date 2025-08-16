@@ -908,7 +908,7 @@ function getRequestHeaders(isStreamingEnabled, isNoCacheEnabled) {
     return headers;
 }
 
-function buildRequestPayload(message) {
+function buildRequestPayload(message, config) {
     const payload = {
         messages: [{
             content: message,
@@ -916,11 +916,11 @@ function buildRequestPayload(message) {
         }]
     };
 
-    if (currentThreadId) {
-        payload.config = { 
-            configurable: { 
-                thread_id: currentThreadId 
-            } 
+        // Add model configuration if available
+    if (config && config.selectedModel) {
+        payload.model = {
+            name: config.selectedModel.name,
+            platform: config.selectedModel.platform || config.selectedModel.provider || 'openai'
         };
     }
 
@@ -1018,6 +1018,7 @@ function startNewConversation() {
 // ============================================================================
 
 async function sendMessage() {
+    
     if (isProcessing) {
         Logger.warn('Message already being processed', { isProcessing });
         return;
@@ -1072,8 +1073,16 @@ function setupMessageProcessing(message) {
 }
 
 function getMessageConfig() {
+    let selectedModel;
+    try {
+        selectedModel = JSON.parse(DOM.modelSelector.value);
+    } catch (error) {
+        // Fallback to default model if parsing fails
+        selectedModel = { name: "gpt-4.1o", platform: "openai" };
+    }
+    
     return {
-        selectedModel: JSON.parse(DOM.modelSelector.value),
+        selectedModel,
         isStreamingEnabled: DOM.streamingToggle.checked,
         isNoCacheEnabled: DOM.noCacheToggle.checked
     };
@@ -1090,13 +1099,14 @@ async function sendApiRequest(message, config) {
         url = buildApiUrl(API_CONFIG.URL_TEMPLATES.CONVERSATIONS);
     }
     
-    const requestPayload = buildRequestPayload(message);
+    const requestPayload = buildRequestPayload(message, config);
     const headers = getRequestHeaders(config.isStreamingEnabled, config.isNoCacheEnabled);
     
     Logger.info('Sending API request', { 
         url,
         isStreaming: config.isStreamingEnabled,
-        hasThreadId: !!currentThreadId 
+        hasThreadId: !!currentThreadId,
+        payload: requestPayload
     });
 
     try {
@@ -1108,7 +1118,30 @@ async function sendApiRequest(message, config) {
         
         // If response is not ok, capture the error body for detailed error messages
         if (!response.ok) {
-            const error = new Error(`HTTP ${response.status}: ${response.statusText}`);
+            let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+            
+            // Try to get the error details from the response body
+            try {
+                const errorBody = await response.text();
+                if (errorBody) {
+                    try {
+                        const errorJson = JSON.parse(errorBody);
+                        if (errorJson.detail) {
+                            errorMessage += ` - ${errorJson.detail}`;
+                        } else if (errorJson.message) {
+                            errorMessage += ` - ${errorJson.message}`;
+                        } else {
+                            errorMessage += ` - ${errorBody}`;
+                        }
+                    } catch (parseError) {
+                        errorMessage += ` - ${errorBody}`;
+                    }
+                }
+            } catch (bodyError) {
+                Logger.warn('Could not read error response body', { bodyError });
+            }
+            
+            const error = new Error(errorMessage);
             error.response = response; // Attach response for error handling
             throw error;
         }
@@ -1496,7 +1529,7 @@ function createInterruptUI(assistantMessageDiv, actionRequest, interruptInfo) {
     }
     
     if (allowRespond) {
-        actionButtons += '<button class="interrupt-button reject" onclick="handleInterrupt(\'response\', \'User rejected the tool call\')">Reject</button>';
+        actionButtons += '<button class="interrupt-button reject" onclick="showRejectInput()">Reject</button>';
     }
     
     // If no actions are allowed, show a message
@@ -1574,7 +1607,22 @@ function handleStreamingCompletion(hasReceivedEvents, assistantMessageDiv) {
 
 async function handleNonStreamingResponse(response, assistantMessageDiv) {
     try {
-        const result = await response.json();
+        // Check if response has content
+        const responseText = await response.text();
+        
+        if (!responseText || responseText.trim() === '') {
+            assistantMessageDiv.textContent = '⚠️ Empty response from server';
+            return;
+        }
+        
+        // Try to parse as JSON
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch (parseError) {
+            assistantMessageDiv.textContent = '⚠️ Invalid response format from server';
+            return;
+        }
         
         if (result.output?.messages?.length > 0) {
             const lastAIMessage = findLastAIMessage(result.output.messages);
@@ -1636,13 +1684,41 @@ async function handleInterrupt(responseType, args = null) {
             throw new Error('No conversation ID available for resume request');
         }
         
-        const resumePayload = {
-            action: responseType
-        };
-
-        if (args) {
-            resumePayload.args = args;
+        // Create the input object based on the response type
+        let input;
+        
+        if (responseType === 'edit') {
+            input = {
+                decision: 'edit',
+                args: args
+            };
+        } else if (responseType === 'accept') {
+            input = {
+                decision: 'accept'
+            };
+        } else if (responseType === 'reject') {
+            // If feedback is provided, treat as feedback decision, otherwise as reject
+            if (args && args.trim()) {
+                input = {
+                    decision: 'feedback',
+                    message: args
+                };
+            } else {
+                input = {
+                    decision: 'reject'
+                };
+            }
+        } else {
+            // Handle feedback case if needed
+            input = {
+                decision: 'feedback',
+                message: args || 'User feedback'
+            };
         }
+
+        const resumePayload = {
+            input: input
+        };
 
         Logger.info('Sending resume payload', { resumePayload });
 
@@ -1845,6 +1921,91 @@ function cancelEditInterrupt() {
     }
 }
 
+function showRejectInput() {
+    if (!window.currentInterrupt) {
+        Logger.error('No current interrupt to reject');
+        return;
+    }
+
+    // Find the existing interrupt container
+    const interruptContainer = document.querySelector('.interrupt-container');
+    if (!interruptContainer) {
+        Logger.error('No interrupt container found');
+        return;
+    }
+
+    // Replace the interrupt UI with reject input UI
+    interruptContainer.innerHTML = `
+        <div class="interrupt-title">❌ Reject Tool Call</div>
+        <div class="interrupt-details">
+            <div><strong>Rejection reason (optional):</strong></div>
+            <textarea 
+                id="rejectReasonTextarea" 
+                class="reject-reason-textarea"
+                placeholder="Enter rejection reason (optional)..."
+                rows="3"
+            ></textarea>
+            <div class="reject-validation" id="rejectValidation"></div>
+        </div>
+        <div class="interrupt-actions">
+            <button class="interrupt-button cancel" onclick="cancelRejectInput()">Cancel</button>
+            <button class="interrupt-button submit" onclick="submitRejectInput()">Submit Rejection</button>
+        </div>
+    `;
+
+    // Focus on the textarea
+    const textarea = document.getElementById('rejectReasonTextarea');
+    if (textarea) {
+        textarea.focus();
+    }
+}
+
+function cancelRejectInput() {
+    if (!window.currentInterrupt) return;
+
+    // Recreate the original interrupt UI
+    const interruptContainer = document.querySelector('.interrupt-container');
+    if (interruptContainer) {
+        const actionRequest = window.currentInterrupt.value?.action_request;
+        const interruptInfo = window.currentInterrupt.value;
+        
+        // Find the assistant message div that contains this interrupt
+        const assistantMessageDiv = interruptContainer.closest('.assistant-message');
+        if (assistantMessageDiv) {
+            // Remove the current interrupt container
+            interruptContainer.remove();
+            // Recreate the original interrupt UI
+            createInterruptUI(assistantMessageDiv, actionRequest, interruptInfo);
+        }
+    }
+}
+
+function submitRejectInput() {
+    if (!window.currentInterrupt) {
+        Logger.error('No current interrupt to reject');
+        return;
+    }
+
+    const textarea = document.getElementById('rejectReasonTextarea');
+    const validationDiv = document.getElementById('rejectValidation');
+    
+    if (!textarea) {
+        Logger.error('Reject reason textarea not found');
+        return;
+    }
+
+    const rejectReason = textarea.value.trim();
+    
+    // Clear any previous validation errors
+    validationDiv.innerHTML = '';
+    validationDiv.className = 'reject-validation';
+    
+    Logger.info('Submitting reject interrupt', { rejectReason, hasFeedback: !!rejectReason });
+    
+    // Submit the reject interrupt - handleInterrupt will determine if it's reject or feedback
+    handleInterrupt('reject', rejectReason);
+}
+
 function submitEditedInterrupt() {
     if (!window.currentInterrupt) {
         Logger.error('No current interrupt to submit');
@@ -1890,6 +2051,9 @@ window.startNewConversation = startNewConversation;
 window.handleInterrupt = handleInterrupt;
 window.cancelEditInterrupt = cancelEditInterrupt;
 window.submitEditedInterrupt = submitEditedInterrupt;
+window.showRejectInput = showRejectInput;
+window.cancelRejectInput = cancelRejectInput;
+window.submitRejectInput = submitRejectInput;
 
 // ============================================================================
 // STARTUP

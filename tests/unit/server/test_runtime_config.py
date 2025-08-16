@@ -18,8 +18,6 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from nalai.server.models.identity import IdentityContext, UserContext
-from nalai.server.models.input import ToolInterruptRequest
 from nalai.server.runtime_config import (
     _ensure_config_dict,
     _ensure_configurable,
@@ -27,13 +25,12 @@ from nalai.server.runtime_config import (
     add_user_context_to_config,
     default_modify_runtime_config,
     default_modify_runtime_config_with_access_control,
-    default_validate_runtime_config,
-    ensure_conversation_id_exists,
-    setup_runtime_config_with_access_control,
-    validate_conversation_access_and_scope,
-    validate_external_conversation_id,
 )
-from nalai.services.thread_access_control import ThreadAccessControl
+from nalai.services.auth_service import IdentityContext, UserContext
+from nalai.services.thread_access_control import (
+    validate_conversation_access_and_scope,
+)
+from nalai.utils.validation import validate_thread_id_format
 
 
 class TestConfigHelpers:
@@ -75,58 +72,6 @@ class TestConfigHelpers:
         result = _ensure_configurable(input_config)
         assert result == expected_result
         assert input_config["configurable"] == expected_configurable
-
-
-class TestEnsureThreadIdExists:
-    """Test thread ID existence and generation."""
-
-    @pytest.mark.parametrize(
-        "input_config,expected_thread_id_exists",
-        [
-            (
-                {"configurable": {"thread_id": "550e8400-e29b-41d4-a716-446655440000"}},
-                True,
-            ),
-            ({"configurable": {}}, False),
-            (None, False),
-        ],
-    )
-    def test_ensure_thread_id_exists(self, input_config, expected_thread_id_exists):
-        """Test thread ID existence and generation."""
-        result_config, thread_id = ensure_conversation_id_exists(input_config)
-
-        if expected_thread_id_exists:
-            assert thread_id == "550e8400-e29b-41d4-a716-446655440000"
-            assert (
-                result_config["configurable"]["thread_id"]
-                == "550e8400-e29b-41d4-a716-446655440000"
-            )
-        else:
-            assert thread_id is not None
-            assert len(thread_id) > 0
-            assert result_config["configurable"]["thread_id"] == thread_id
-
-    @pytest.mark.parametrize(
-        "thread_id,should_raise",
-        [
-            ("550e8400-e29b-41d4-a716-446655440000", False),
-            ("invalid-uuid", True),
-        ],
-    )
-    def test_ensure_thread_id_exists_validate_uuid(self, thread_id, should_raise):
-        """Test UUID validation."""
-        config = {"configurable": {"thread_id": thread_id}}
-
-        if should_raise:
-            with pytest.raises(HTTPException) as exc_info:
-                ensure_conversation_id_exists(config, validate_uuid=True)
-            assert exc_info.value.status_code == 400
-            assert "conversation_id must be a valid UUID4" in str(exc_info.value.detail)
-        else:
-            result_config, result_thread_id = ensure_conversation_id_exists(
-                config, validate_uuid=True
-            )
-            assert result_thread_id == thread_id
 
 
 class TestAddAuthTokenToConfig:
@@ -287,9 +232,9 @@ class TestValidateThreadAccessAndScope:
             ),
         ],
     )
-    @patch("nalai.server.runtime_config.get_user_context")
-    @patch("nalai.server.runtime_config.get_thread_access_control")
-    @patch("nalai.server.runtime_config.log_thread_access_event")
+    @patch("nalai.services.thread_access_control.get_user_context")
+    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    @patch("nalai.services.audit_utils.log_thread_access_event")
     @pytest.mark.asyncio
     async def test_validate_thread_access_and_scope(
         self,
@@ -340,7 +285,7 @@ class TestValidateThreadAccessAndScope:
             assert user_scoped_thread_id == expected_scoped_id
             assert result_config["configurable"]["thread_id"] == expected_scoped_id
 
-    @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.services.thread_access_control.get_user_context")
     @pytest.mark.asyncio
     async def test_validate_thread_access_no_user_context(
         self, mock_get_user_context, mock_request
@@ -381,17 +326,6 @@ class TestDefaultFunctions:
         mock_add_auth_token.assert_called_once_with({}, mock_request)
         mock_add_user_context.assert_called_once()
 
-    @patch("nalai.server.runtime_config.validate_runtime_config")
-    def test_default_validate_runtime_config(self, mock_validate):
-        """Test default runtime configuration validation."""
-        mock_validate.return_value = MagicMock()
-        config = {"configurable": {"key": "value"}}
-
-        result = default_validate_runtime_config(config)
-
-        mock_validate.assert_called_once_with(config)
-        assert result == mock_validate.return_value
-
     @patch("nalai.server.runtime_config.default_modify_runtime_config")
     @patch("nalai.server.runtime_config.validate_conversation_access_and_scope")
     @pytest.mark.asyncio
@@ -412,22 +346,6 @@ class TestDefaultFunctions:
 
         mock_modify_config.assert_called_once_with({}, mock_request)
         mock_validate_access.assert_called_once()
-        assert thread_id == "scoped-id"
-
-    @patch("nalai.server.runtime_config.validate_runtime_config")
-    @pytest.mark.asyncio
-    async def test_setup_runtime_config_with_access_control(self, mock_validate):
-        """Test setup runtime configuration with access control."""
-        mock_validate.return_value = MagicMock()
-
-        async def mock_modify_config(config, req):
-            return {"configurable": {"thread_id": "scoped-id"}}, "scoped-id"
-
-        result_config, thread_id = await setup_runtime_config_with_access_control(
-            {}, MagicMock(), mock_modify_config, mock_validate
-        )
-
-        mock_validate.assert_called_once()
         assert thread_id == "scoped-id"
 
 
@@ -486,39 +404,12 @@ class TestThreadIdValidation:
         """Test external thread ID validation for security and format consistency."""
         if should_be_valid:
             # Should not raise any exception
-            validate_external_conversation_id(thread_id)
-        else:
-            # Should raise HTTPException with 400 status
-            with pytest.raises(HTTPException) as exc_info:
-                validate_external_conversation_id(thread_id)
-            assert exc_info.value.status_code == 400
-
-    @pytest.mark.parametrize(
-        "thread_id,should_be_valid",
-        [
-            # Critical path: Valid UUID4 formats
-            ("550e8400-e29b-41d4-a716-446655440001", True),
-            ("12345678-1234-4567-89ab-123456789abc", True),
-            # Critical path: Valid user-scoped formats
-            ("user:dev-user:550e8400-e29b-41d4-a716-446655440001", True),
-            ("user:test-user:12345678-1234-4567-89ab-123456789abc", True),
-            # Critical path: Invalid formats
-            ("", False),
-            ("not-a-uuid", False),
-            ("user:dev-user", False),
-            ("user:dev-user:not-a-uuid", False),
-        ],
-    )
-    def test_pydantic_thread_id_validation(self, thread_id, should_be_valid):
-        """Test Pydantic model thread ID validation."""
-        if should_be_valid:
-            # Should not raise any exception
-            request = ToolInterruptRequest(thread_id=thread_id, response_type="accept")
-            assert request.thread_id == thread_id
+            validate_thread_id_format(thread_id)
         else:
             # Should raise ValueError
-            with pytest.raises(ValueError):
-                ToolInterruptRequest(thread_id=thread_id, response_type="accept")
+            with pytest.raises(ValueError) as exc_info:
+                validate_thread_id_format(thread_id)
+            assert "thread_id" in str(exc_info.value)
 
     @pytest.mark.parametrize(
         "thread_id,should_be_valid",
@@ -534,15 +425,13 @@ class TestThreadIdValidation:
     )
     def test_thread_access_control_validation(self, thread_id, should_be_valid):
         """Test thread access control thread ID validation."""
-        access_control = ThreadAccessControl()
-
         if should_be_valid:
             # Should not raise any exception
-            access_control._validate_thread_id_format(thread_id)
+            validate_thread_id_format(thread_id)
         else:
             # Should raise ValueError
             with pytest.raises(ValueError):
-                access_control._validate_thread_id_format(thread_id)
+                validate_thread_id_format(thread_id)
 
     def test_canonical_uuid_requirement(self):
         """Test that UUIDs must be in canonical format."""
@@ -553,9 +442,9 @@ class TestThreadIdValidation:
         ]
 
         for uuid_str in non_canonical_uuids:
-            with pytest.raises(HTTPException) as exc_info:
-                validate_external_conversation_id(uuid_str)
-            assert exc_info.value.status_code == 400
+            with pytest.raises(ValueError) as exc_info:
+                validate_thread_id_format(uuid_str)
+            assert "UUID4" in str(exc_info.value)
 
     def test_user_scoped_edge_cases(self):
         """Test edge cases for user-scoped thread IDs."""
@@ -567,28 +456,12 @@ class TestThreadIdValidation:
         ]
 
         for thread_id in valid_edge_cases:
-            validate_external_conversation_id(thread_id)
-            access_control = ThreadAccessControl()
-            access_control._validate_thread_id_format(thread_id)
+            validate_thread_id_format(thread_id)
 
     def test_thread_id_length_limits(self):
         """Test thread ID length limits for security."""
         # Test maximum length limit
         too_long_thread_id = "a" * 201
-        with pytest.raises(HTTPException) as exc_info:
-            validate_external_conversation_id(too_long_thread_id)
-        assert exc_info.value.status_code == 400
-        assert "too long" in str(exc_info.value.detail).lower()
-
-    def test_ensure_thread_id_exists_with_validation(self):
-        """Test that ensure_thread_id_exists validates external thread IDs."""
-        # Valid thread ID should pass validation
-        valid_config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-        result_config, thread_id = ensure_conversation_id_exists(valid_config)
-        assert thread_id == valid_config["configurable"]["thread_id"]
-
-        # Invalid thread ID should be caught by validation
-        invalid_config = {"configurable": {"thread_id": "invalid-uuid"}}
-        with pytest.raises(HTTPException) as exc_info:
-            ensure_conversation_id_exists(invalid_config)
-        assert exc_info.value.status_code == 400
+        with pytest.raises(ValueError) as exc_info:
+            validate_thread_id_format(too_long_thread_id)
+        assert "too long" in str(exc_info.value)

@@ -14,27 +14,22 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from langgraph.graph.state import CompiledStateGraph
 
 from ..config import BaseRuntimeConfiguration, settings
-from .event_handlers import (
-    serialize_event_default,
-    stream_events,
+from ..services.thread_access_control import validate_conversation_access_and_scope
+from ..utils.validation import validate_thread_id_format
+from .runtime_config import (
+    default_modify_runtime_config,
+    validate_runtime_config,
 )
-from .models import (
+from .schemas import (
     ConversationRequest,
     ConversationResponse,
     HealthzResponse,
-    InterruptResponse,
     ResumeDecisionRequest,
     ResumeDecisionResponse,
 )
-from .models.validation import (
-    validate_agent_input,
-    validate_tool_interrupt_response_type,
-)
-from .runtime_config import (
-    default_modify_runtime_config,
-    default_validate_runtime_config,
-    validate_conversation_access_and_scope,
-    validate_external_conversation_id,
+from .streaming import (
+    serialize_event_default,
+    stream_events,
 )
 
 logger = logging.getLogger("nalai")
@@ -104,9 +99,6 @@ def create_conversation_routes(
     app: FastAPI,
     agent: CompiledStateGraph,
     *,
-    validate_runtime_config: Callable[
-        [dict], BaseRuntimeConfiguration
-    ] = default_validate_runtime_config,
     serialize_event: Callable[[object], object] = serialize_event_default,
     modify_runtime_config: Callable[
         [dict, Request], dict
@@ -124,7 +116,7 @@ def create_conversation_routes(
         return "text/event-stream" in accept_header
 
     async def setup_runtime_config(
-        config: dict, req: Request, is_initial_request: bool = True
+        config: BaseRuntimeConfiguration, req: Request, is_initial_request: bool = True
     ) -> tuple[dict, str]:
         """
         Lean runtime configuration setup.
@@ -150,7 +142,10 @@ def create_conversation_routes(
                 "thread_id", "unknown"
             )
             # Validate the conversation ID format without re-scoping
-            validate_external_conversation_id(conversation_id)
+            try:
+                validate_thread_id_format(conversation_id)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
             return agent_config, conversation_id
 
     async def _handle_resume_decision_internal(
@@ -160,33 +155,19 @@ def create_conversation_routes(
         streaming: bool = True,
     ) -> StreamingResponse | Response:
         """Handle resume decision requests with access control (internal)."""
-        validate_tool_interrupt_response_type(request.action)
-
         logger.info(
-            f"Resume decision: {request.action} for conversation: {conversation_id}"
+            f"Resume decision: {request.input.decision} for conversation: {conversation_id}"
         )
 
-        # Map resume decision to the format expected by the interrupt system
-        if request.action == "accept":
-            interrupt_response = InterruptResponse(type="accept")
-        elif request.action == "edit":
-            interrupt_response = InterruptResponse(
-                type="edit", args={"args": request.args}
-            )
-        elif request.action == "reject":
-            interrupt_response = InterruptResponse(type="response", args=request.args)
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported action: {request.action}",
-            )
+        # Convert the request to internal format expected by LangGraph
+        interrupt_response = request.to_internal()
 
         # Convert request to dict for configuration setup
-        request_payload = {"configurable": {"thread_id": conversation_id}}
+        configurable = {"configurable": {"thread_id": conversation_id}}
 
         # For resume operations: validate existing conversation ID format without re-scoping
         agent_config, conversation_id = await setup_runtime_config(
-            request_payload, req, is_initial_request=False
+            configurable, req, is_initial_request=False
         )
 
         if streaming:
@@ -205,7 +186,7 @@ def create_conversation_routes(
             from langgraph.types import Command
 
             result = await agent.ainvoke(
-                Command(resume=[interrupt_response.model_dump()]), config=agent_config
+                Command(resume=[interrupt_response]), config=agent_config
             )
 
             # Serialize the result using the same function as streaming
@@ -328,8 +309,6 @@ def create_conversation_routes(
         """
         Internal handler for conversation operations.
         """
-        # Validate input content
-        validate_agent_input(request.messages)
 
         # Set up runtime configuration
         if conversation_id:
@@ -341,11 +320,11 @@ def create_conversation_routes(
         else:
             # For create conversation: auto-create conversation_id
             agent_config, conversation_id = await setup_runtime_config(
-                request.config, req, is_initial_request=True
+                request.to_internal_config(), req, is_initial_request=True
             )
 
         # Convert structured input to dict for agent (using LangGraph format)
-        agent_input = request.to_agent_input().model_dump()
+        agent_input = request.to_internal_messages()
 
         if streaming:
             # Return streaming response

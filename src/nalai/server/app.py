@@ -25,8 +25,8 @@ from .middleware import (
     create_user_context_middleware,
 )
 from .routes import (
-    create_agent_routes,
     create_basic_routes,
+    create_conversation_routes,
 )
 
 # Load environment variables
@@ -57,8 +57,8 @@ app = FastAPI(
     description="An AI Agent Server implementing chat and tool calling capabilities",
     openapi_tags=[
         {
-            "name": "Agent API v1",
-            "description": "Agent interaction endpoints for API v1",
+            "name": "Conversation API v1",
+            "description": "Conversation interaction endpoints for API v1",
         },
         {
             "name": "System",
@@ -126,11 +126,11 @@ def initialize_app():
     # Create basic routes
     create_basic_routes(app)
 
-    # Initialize agent and create agent routes
+    # Initialize agent and create conversation routes
     memory_store = get_checkpointer()
     agent = APIAgent()
     agent_workflow = create_and_compile_workflow(agent, memory_store)
-    create_agent_routes(app, agent_workflow)
+    create_conversation_routes(app, agent_workflow)
 
     logger.info("Application routes initialized")
     _initialized = True

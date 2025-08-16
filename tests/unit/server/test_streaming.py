@@ -17,7 +17,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from nalai.server.event_handlers import (
+from nalai.server.streaming import (
     format_sse_event_default,
     serialize_event_default,
     stream_events,
@@ -192,7 +192,7 @@ class TestStreamEvents:
 
     async def test_stream_events_resume_workflow(self, mock_agent):
         """Critical: Should handle resume workflow with interrupt response."""
-        from nalai.server.models import InterruptResponse
+        from nalai.server.schemas import ResumeDecisionRequest
 
         # Mock the agent's astream method
         mock_chunks = [
@@ -207,7 +207,7 @@ class TestStreamEvents:
 
         config = {"thread_id": "test-thread"}
         agent_input = None  # Not used for resume
-        resume_input = InterruptResponse(type="accept")
+        resume_input = ResumeDecisionRequest(input={"decision": "accept"})
 
         events = []
         async for event in stream_events(mock_agent, config, agent_input, resume_input):

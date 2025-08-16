@@ -67,6 +67,32 @@ def app_and_agent(mock_modify_runtime_config):
 
 
 @pytest.fixture
+def mock_auth_service():
+    """Mock the auth service to avoid authentication issues in tests."""
+    with patch("nalai.services.auth_service.get_auth_service") as mock_get_auth:
+        mock_auth = AsyncMock()
+        mock_identity = MagicMock()
+        mock_identity.user_id = "test-user"
+        mock_identity.email = "test@example.com"
+        mock_auth.authenticate_request.return_value = mock_identity
+        mock_get_auth.return_value = mock_auth
+        yield mock_auth
+
+
+@pytest.fixture
+def mock_middleware_auth():
+    """Mock auth middleware to avoid authentication issues in tests."""
+    with patch("nalai.services.auth_service.get_auth_service") as mock_get_auth:
+        mock_auth = AsyncMock()
+        mock_identity = MagicMock()
+        mock_identity.user_id = "test-user"
+        mock_identity.email = "test@example.com"
+        mock_auth.authenticate_request.return_value = mock_identity
+        mock_get_auth.return_value = mock_auth
+        yield mock_auth
+
+
+@pytest.fixture
 def client(app_and_agent):
     app, _ = app_and_agent
     return TestClient(app)
@@ -99,9 +125,14 @@ class TestBasicRoutes:
 class TestConversationInvoke:
     """Test synchronous conversation invocation - critical business logic."""
 
-    @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.services.thread_access_control.get_user_context")
     def test_successful_conversation_invoke(
-        self, mock_get_user_context, client, app_and_agent
+        self,
+        mock_get_user_context,
+        client,
+        app_and_agent,
+        mock_auth_service,
+        mock_middleware_auth,
     ):
         """Critical: Should handle conversation requests correctly."""
         _, mock_agent = app_and_agent
@@ -119,9 +150,6 @@ class TestConversationInvoke:
 
         payload = {
             "messages": [{"type": "human", "content": "Hello"}],
-            "config": {
-                "configurable": {"thread_id": "550e8400-e29b-41d4-a716-446655440000"}
-            },
         }
 
         response = client.post("/api/v1/conversations", json=payload)
@@ -134,11 +162,10 @@ class TestConversationInvoke:
     @pytest.mark.parametrize(
         "payload,expected_status",
         [
-            ({"messages": [], "config": {}}, 422),  # Empty messages
+            ({"messages": []}, 422),  # Empty messages
             (
                 {
                     "messages": [{"type": "human", "content": ""}],
-                    "config": {},
                 },
                 422,
             ),  # Empty content
@@ -165,7 +192,6 @@ class TestConversationInvoke:
 
         payload = {
             "messages": [{"type": "human", "content": "Hello"}],
-            "config": {"configurable": {"thread_id": "unauthorized-thread"}},
         }
 
         # Check the actual response
@@ -180,9 +206,14 @@ class TestConversationInvoke:
 class TestConversationStreamEvents:
     """Test streaming conversation events - critical for real-time functionality."""
 
-    @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.services.thread_access_control.get_user_context")
     def test_successful_stream_events(
-        self, mock_get_user_context, client, app_and_agent
+        self,
+        mock_get_user_context,
+        client,
+        app_and_agent,
+        mock_auth_service,
+        mock_middleware_auth,
     ):
         """Critical: Should stream events with proper SSE format."""
         _, mock_agent = app_and_agent
@@ -205,9 +236,6 @@ class TestConversationStreamEvents:
 
         payload = {
             "messages": [{"type": "human", "content": "Hello"}],
-            "config": {
-                "configurable": {"thread_id": "550e8400-e29b-41d4-a716-446655440000"}
-            },
         }
 
         response = client.post(
@@ -223,11 +251,10 @@ class TestConversationStreamEvents:
     @pytest.mark.parametrize(
         "payload,expected_status",
         [
-            ({"messages": [], "config": {}}, 422),  # Empty messages
+            ({"messages": []}, 422),  # Empty messages
             (
                 {
                     "messages": [{"type": "human", "content": ""}],
-                    "config": {},
                 },
                 422,
             ),  # Empty content
@@ -268,10 +295,7 @@ class TestResumeDecision:
 
         mock_agent.astream_events = lambda *a, **kw: async_gen()
 
-        payload = {
-            "action": "accept",
-            "tool_call_id": "test-call-123",
-        }
+        payload = {"input": {"decision": "accept"}}
 
         response = client.post(
             f"/api/v1/conversations/{conversation_id}/resume-decision",
@@ -287,15 +311,15 @@ class TestResumeDecision:
         assert "X-Conversation-ID" in response.headers
 
     @pytest.mark.parametrize(
-        "action,args,expected_status",
+        "decision,args,expected_status",
         [
             ("accept", None, 200),
-            ("edit", {"args": {"url": "https://example.com"}}, 200),
-            ("reject", "User rejected the call", 200),
+            ("edit", {"url": "https://example.com"}, 200),
+            ("reject", None, 200),
         ],
     )
     def test_resume_decision_batch_success_cases(
-        self, action, args, expected_status, client, app_and_agent
+        self, decision, args, expected_status, client, app_and_agent
     ):
         """Critical: Should handle resume decisions in batch mode."""
         _, mock_agent = app_and_agent
@@ -303,12 +327,10 @@ class TestResumeDecision:
 
         conversation_id = str(uuid.uuid4())
 
-        payload = {
-            "action": action,
-            "tool_call_id": "test-call-123",
-        }
-        if args is not None:
-            payload["args"] = args
+        payload = {"input": {"decision": decision}}
+
+        if decision == "edit" and args is not None:
+            payload["input"]["args"] = args
 
         response = client.post(
             f"/api/v1/conversations/{conversation_id}/resume-decision", json=payload
@@ -319,24 +341,21 @@ class TestResumeDecision:
         assert "X-Conversation-ID" in response.headers
 
     @pytest.mark.parametrize(
-        "conversation_id,action,expected_status",
+        "conversation_id,decision,expected_status",
         [
             ("invalid-uuid", "accept", 400),  # Invalid UUID - should be 400 Bad Request
             (
-                str(uuid.uuid4()),
+                "12345678-1234-1234-1234-123456789abc",
                 "invalid_type",
                 422,
-            ),  # Invalid action - should be 422 Validation Error
+            ),  # Invalid decision - should be 422 Validation Error
         ],
     )
     def test_resume_decision_validation_failures(
-        self, conversation_id, action, expected_status, client, app_and_agent
+        self, conversation_id, decision, expected_status, client, app_and_agent
     ):
         """Critical: Should reject invalid resume decision inputs."""
-        payload = {
-            "action": action,
-            "tool_call_id": "test-call-123",
-        }
+        payload = {"input": {"decision": decision}}
 
         response = client.post(
             f"/api/v1/conversations/{conversation_id}/resume-decision", json=payload

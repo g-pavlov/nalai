@@ -1,21 +1,56 @@
 """
 Audit service for API Assistant.
 
-This module provides access event logging with identity-resource-action-time
-granularity for compliance and monitoring.
+This module provides audit logging and access control event tracking,
+ensuring comprehensive logging of user actions and system events.
 """
 
-import json
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from ..config import settings
-from ..server.models.identity import AccessEvent
 from ..utils.pii_masking import mask_audit_metadata, mask_pii
 
 logger = logging.getLogger(__name__)
+
+
+class AccessEvent(BaseModel):
+    """Access control event for audit logging."""
+
+    user_id: str = Field(..., description="User identifier")
+    resource: str = Field(..., description="Resource being accessed")
+    action: str = Field(..., description="Action being performed")
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        description="Event timestamp",
+    )
+    success: bool = Field(..., description="Whether access was successful")
+    ip_address: str | None = Field(None, description="Client IP address")
+    user_agent: str | None = Field(None, description="Client user agent")
+    session_id: str | None = Field(None, description="Session identifier")
+    request_id: str | None = Field(None, description="Request identifier")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Additional event metadata"
+    )
+
+    def to_audit_entry(self) -> dict[str, Any]:
+        """Convert to audit log entry format."""
+        return {
+            "user_id": self.user_id,
+            "resource": self.resource,
+            "action": self.action,
+            "timestamp": self.timestamp.isoformat(),
+            "success": self.success,
+            "ip_address": self.ip_address,
+            "user_agent": self.user_agent,
+            "session_id": self.session_id,
+            "request_id": self.request_id,
+            "metadata": self.metadata,
+        }
 
 
 class AuditBackend(ABC):
@@ -114,7 +149,7 @@ class InMemoryAuditBackend(AuditBackend):
             "success": success,
             "metadata": masked_metadata,
         }
-        audit_logger.info(json.dumps(audit_data))
+        audit_logger.info(audit_data)
 
         logger.debug(f"Logged access event: {user_id} -> {resource} -> {action}")
 
@@ -291,7 +326,7 @@ class AuditService:
             "success": success,
             "metadata": metadata or {},
         }
-        audit_logger.info(json.dumps(audit_data))
+        audit_logger.info(audit_data)
 
         resource = f"thread:{thread_id}"
         await self.log_access(
@@ -355,7 +390,7 @@ class AuditService:
             "session_id": session_id,
             "request_id": request_id,
         }
-        audit_logger.info(json.dumps(audit_data))
+        audit_logger.info(audit_data)
 
         resource = f"http:{method}:{path}"
         metadata = {"request_type": "start", "timestamp": datetime.now().isoformat()}
@@ -399,7 +434,7 @@ class AuditService:
             "session_id": session_id,
             "request_id": request_id,
         }
-        audit_logger.info(json.dumps(audit_data))
+        audit_logger.info(audit_data)
 
         resource = f"http:{method}:{path}"
         success = 200 <= status_code < 400

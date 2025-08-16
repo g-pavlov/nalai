@@ -2,24 +2,45 @@
 Runtime configuration utilities for API Assistant server.
 
 This module contains functions for managing runtime configuration,
-thread IDs, and validation with access control integration.
+conversation IDs, and validation with access control integration.
 """
 
 import logging
-import uuid
-from collections.abc import Callable
 
 from fastapi import HTTPException, Request
 
 from ..config import BaseRuntimeConfiguration, settings
 from ..server.middleware import get_user_context
-from ..services.audit_utils import log_thread_access_event
 from ..services.thread_access_control import (
-    get_thread_access_control,
+    validate_conversation_access_and_scope,
 )
-from .models.validation import validate_runtime_config
 
 logger = logging.getLogger("nalai")
+
+
+def validate_runtime_config(config: dict) -> BaseRuntimeConfiguration:
+    """
+    Validate runtime configuration using Pydantic.
+
+    Args:
+        config: Configuration dictionary
+
+    Returns:
+        Validated BaseRuntimeConfiguration instance
+
+    Note:
+        This function is designed to be lenient - if validation fails,
+        it returns a default configuration rather than raising an exception.
+        This allows the application to continue even with invalid config.
+    """
+    try:
+        configurable = config.get("configurable", {})
+        return BaseRuntimeConfiguration(**configurable)
+    except Exception as e:
+        # For default implementation, just return the config as-is
+        # This allows the application to continue even with invalid config
+        logger.warning(f"Runtime config validation failed, using config as-is: {e}")
+        return BaseRuntimeConfiguration()
 
 
 def _ensure_config_dict(config: dict | None) -> dict:
@@ -36,113 +57,6 @@ def _ensure_configurable(config: dict) -> dict:
         configurable = {}
         config["configurable"] = configurable
     return configurable
-
-
-def ensure_thread_id_exists(
-    config: dict | None, validate_uuid: bool = False
-) -> tuple[dict, str]:
-    """
-    Ensure thread_id exists in config, generating one if needed.
-
-    Args:
-        config: Configuration dictionary or Pydantic model
-        validate_uuid: Whether to validate existing thread_id as UUID4
-
-    Returns:
-        Tuple of (updated_config, thread_id)
-    """
-    config = _ensure_config_dict(config)
-    configurable = _ensure_configurable(config)
-
-    thread_id = configurable.get("thread_id")
-
-    if thread_id:
-        # Always validate external thread IDs for proper format
-        validate_external_thread_id(thread_id)
-
-        if validate_uuid:
-            try:
-                uuid.UUID(thread_id, version=4)
-            except ValueError:
-                raise HTTPException(
-                    status_code=400, detail="Invalid thread_id format. Must be UUID4."
-                ) from None
-    else:
-        thread_id = str(uuid.uuid4())
-        configurable["thread_id"] = thread_id
-
-    return config, thread_id
-
-
-def validate_external_thread_id(thread_id: str) -> None:
-    """
-    Validate external thread ID format for security and consistency.
-
-    This function validates that thread IDs received from external sources
-    follow the expected format to prevent injection attacks and ensure
-    data consistency.
-
-    Args:
-        thread_id: Thread ID to validate
-
-    Raises:
-        HTTPException: If thread ID format is invalid
-    """
-    if not thread_id or not isinstance(thread_id, str):
-        raise HTTPException(
-            status_code=400, detail="thread_id must be a non-empty string"
-        )
-
-    # Check for potentially malicious patterns
-    if len(thread_id) > 200:  # Reasonable length limit
-        raise HTTPException(
-            status_code=400, detail="thread_id too long (max 200 characters)"
-        )
-
-    # Check if it's a user-scoped thread ID (format: user:{user_id}:{uuid})
-    if ":" in thread_id:
-        parts = thread_id.split(":")
-        if len(parts) != 3:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid user-scoped thread_id format. Expected: user:{user_id}:{uuid}",
-            )
-
-        if parts[0] != "user":
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid user-scoped thread_id format. Must start with 'user:'",
-            )
-
-        # Validate user_id part (should be non-empty and not contain colons)
-        user_id = parts[1]
-        if not user_id or ":" in user_id:
-            raise HTTPException(
-                status_code=400, detail="Invalid user_id in thread_id format"
-            )
-
-        # Validate UUID part
-        try:
-            uuid.UUID(parts[2], version=4)
-        except ValueError as err:
-            raise HTTPException(
-                status_code=400, detail="Invalid UUID in user-scoped thread_id"
-            ) from err
-
-        return
-
-    # Check if it's a plain UUID4
-    try:
-        uuid_obj = uuid.UUID(thread_id, version=4)
-        if str(uuid_obj) != thread_id:
-            raise HTTPException(
-                status_code=400, detail="thread_id must be a canonical UUID4 string"
-            )
-    except ValueError as err:
-        raise HTTPException(
-            status_code=400,
-            detail="thread_id must be a valid UUID4 or user-scoped thread ID (user:{user_id}:{uuid})",
-        ) from err
 
 
 def add_auth_token_to_config(config: dict | None, req: Request) -> dict:
@@ -206,131 +120,6 @@ def add_no_cache_header_to_config(config: dict | None, req: Request) -> dict:
     return config
 
 
-async def validate_thread_access_and_scope(
-    config: dict | None, req: Request
-) -> tuple[dict, str]:
-    """
-    Validate thread access and create user-scoped thread ID.
-
-    This function:
-    1. If no thread_id provided: Creates a new thread for the user
-    2. If thread_id provided: Validates that the user has access to the thread
-    3. Creates a user-scoped thread ID for LangGraph
-    4. Logs the access event for audit purposes
-
-    Args:
-        config: Configuration dictionary or Pydantic model
-        req: FastAPI request object
-
-    Returns:
-        Tuple of (updated_config, user_scoped_thread_id)
-    """
-    # Get user context
-    try:
-        user_context = get_user_context(req)
-        user_id = user_context.user_id
-    except Exception as e:
-        logger.error(f"Failed to get user context: {e}")
-        raise HTTPException(status_code=401, detail="Authentication required") from e
-
-    # Check if thread_id was provided in the original config
-    original_config = _ensure_config_dict(config)
-    original_configurable = original_config.get("configurable", {})
-    thread_id_provided = "thread_id" in original_configurable
-
-    # Ensure thread_id exists (generates new one if not provided)
-    config, thread_id = ensure_thread_id_exists(config)
-
-    # Get access control service
-    access_control = get_thread_access_control()
-
-    if thread_id_provided:
-        # Thread ID was provided by client - validate access to existing thread
-        has_access = await access_control.validate_thread_access(user_id, thread_id)
-
-        if not has_access:
-            # Try to create the thread if it doesn't exist
-            try:
-                await access_control.create_thread(user_id, thread_id)
-                logger.debug(f"Created missing thread {thread_id} for user {user_id}")
-                has_access = True
-            except ValueError:
-                # Thread exists but belongs to different user
-                logger.warning(
-                    f"Thread {thread_id} exists but belongs to different user"
-                )
-                # Log failed access attempt
-                await log_thread_access_event(
-                    user_id=user_id,
-                    thread_id=thread_id,
-                    action="access_denied",
-                    success=False,
-                    ip_address=user_context.ip_address,
-                    user_agent=user_context.user_agent,
-                    session_id=user_context.session_id,
-                    request_id=user_context.request_id,
-                )
-                raise HTTPException(
-                    status_code=403, detail="Access denied to thread"
-                ) from None
-
-        if has_access:
-            logger.debug(
-                f"User {user_id} granted access to existing thread {thread_id}"
-            )
-
-    else:
-        # No thread ID provided - create new thread for user
-        try:
-            # Create the thread in the access control system using our generated thread_id
-            await access_control.create_thread(user_id, thread_id)
-
-            logger.debug(f"Created new thread {thread_id} for user {user_id}")
-
-        except Exception as e:
-            logger.error(f"Failed to create thread for user {user_id}: {e}")
-            raise HTTPException(
-                status_code=500, detail="Failed to create thread"
-            ) from e
-
-    # Create user-scoped thread ID for LangGraph (only if not already scoped)
-    if thread_id.startswith("user:"):
-        # Thread ID is already user-scoped, validate it belongs to this user
-        parts = thread_id.split(":", 2)
-        if len(parts) >= 3 and parts[1] == user_id:
-            user_scoped_thread_id = thread_id
-        else:
-            raise HTTPException(status_code=403, detail="Access denied to thread")
-    else:
-        # Thread ID is not scoped, create user-scoped version
-        user_scoped_thread_id = await access_control.create_user_scoped_thread_id(
-            user_id, thread_id
-        )
-
-    # Update config with user-scoped thread ID
-    configurable = _ensure_configurable(config)
-    configurable["thread_id"] = user_scoped_thread_id
-
-    # Log successful access/creation
-    action = "thread_created" if not thread_id_provided else "access_granted"
-    await log_thread_access_event(
-        user_id=user_id,
-        thread_id=thread_id,
-        action=action,
-        success=True,
-        ip_address=user_context.ip_address,
-        user_agent=user_context.user_agent,
-        session_id=user_context.session_id,
-        request_id=user_context.request_id,
-    )
-
-    logger.debug(
-        f"User {user_id} {'created' if not thread_id_provided else 'granted access to'} thread {thread_id} (scoped: {user_scoped_thread_id})"
-    )
-
-    return config, user_scoped_thread_id
-
-
 def default_modify_runtime_config(config: dict | None, req: Request) -> dict:
     """Default runtime configuration modification function."""
     # Add auth token
@@ -345,11 +134,6 @@ def default_modify_runtime_config(config: dict | None, req: Request) -> dict:
     return config
 
 
-def default_validate_runtime_config(config: dict) -> BaseRuntimeConfiguration:
-    """Default runtime configuration validation function."""
-    return validate_runtime_config(config)
-
-
 async def default_modify_runtime_config_with_access_control(
     config: dict | None, req: Request
 ) -> tuple[dict, str]:
@@ -357,40 +141,9 @@ async def default_modify_runtime_config_with_access_control(
     # Add auth token and user context
     config = default_modify_runtime_config(config, req)
 
-    # Validate thread access and create user-scoped thread ID
-    config, user_scoped_thread_id = await validate_thread_access_and_scope(config, req)
+    # Validate conversation access and create user-scoped conversation ID
+    config, user_scoped_conversation_id = await validate_conversation_access_and_scope(
+        config, req
+    )
 
-    return config, user_scoped_thread_id
-
-
-async def setup_runtime_config_with_access_control(
-    config: dict | None,
-    req: Request,
-    modify_runtime_config: Callable[[dict | None, Request], tuple[dict, str]],
-    validate_runtime_config: Callable[[dict], BaseRuntimeConfiguration],
-) -> tuple[dict, str]:
-    """
-    Set up and validate runtime configuration with access control.
-
-    This function handles the complete runtime configuration setup process:
-    1. Validates thread access
-    2. Creates user-scoped thread ID
-    3. Applies runtime configuration modifications
-    4. Validates the final configuration
-
-    Args:
-        config: Initial configuration dictionary or Pydantic model
-        req: FastAPI request object
-        modify_runtime_config: Function to modify runtime configuration (returns tuple)
-        validate_runtime_config: Function to validate runtime configuration
-
-    Returns:
-        Tuple of (final_config, user_scoped_thread_id)
-    """
-    # Apply runtime configuration modifications with access control
-    config, user_scoped_thread_id = await modify_runtime_config(config, req)
-
-    # Validate runtime configuration
-    validate_runtime_config(config)
-
-    return config, user_scoped_thread_id
+    return config, user_scoped_conversation_id
