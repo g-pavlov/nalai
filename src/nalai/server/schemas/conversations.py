@@ -4,6 +4,7 @@ Conversation resource schemas.
 This module contains all schemas for the conversation resource:
 - /api/v1/conversations (POST) - Create conversation
 - /api/v1/conversations/{conversation_id} (POST) - Continue conversation
+- /api/v1/conversations/{conversation_id} (GET) - Load conversation
 """
 
 from typing import Any, Literal
@@ -170,3 +171,36 @@ class ConversationResponse(BaseModel):
         if not v:
             raise ValueError("Output cannot be empty")
         return v
+
+
+class LoadConversationResponse(BaseModel):
+    """Response model for loading a conversation."""
+
+    model_config = ConfigDict(extra="allow")  # Allow extra fields for flexibility
+
+    conversation_id: str = Field(..., description="Conversation identifier")
+    messages: list[MessageInput] = Field(..., description="List of conversation messages")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Conversation metadata"
+    )
+    created_at: str | None = Field(None, description="Creation timestamp")
+    last_accessed: str | None = Field(None, description="Last access timestamp")
+    status: Literal["active", "completed", "interrupted"] = Field(
+        default="active", description="Conversation status"
+    )
+
+    @field_validator("messages")
+    @classmethod
+    def validate_messages(cls, messages):
+        """Validate messages list."""
+        if not isinstance(messages, list):
+            raise ValueError("Messages must be a list")
+        return messages
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_metadata(cls, metadata):
+        """Validate metadata."""
+        if not isinstance(metadata, dict):
+            raise ValueError("Metadata must be a dictionary")
+        return metadata

@@ -24,6 +24,7 @@ from .schemas import (
     ConversationRequest,
     ConversationResponse,
     HealthzResponse,
+    LoadConversationResponse,
     ResumeDecisionRequest,
     ResumeDecisionResponse,
 )
@@ -267,6 +268,48 @@ def create_conversation_routes(
             request, req, streaming=streaming, conversation_id=conversation_id
         )
 
+    # Load conversation endpoint
+    @app.get(
+        f"{settings.api_prefix}/conversations/{{conversation_id}}",
+        response_model=LoadConversationResponse,
+        tags=["Conversation API v1"],
+        summary="Load Conversation",
+        description="Load a previous conversation state by conversation ID. Returns conversation messages and metadata.",
+        responses={
+            200: {
+                "description": "Conversation loaded successfully",
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/LoadConversationResponse"}
+                    },
+                },
+            },
+            404: {
+                "description": "Conversation not found",
+                "content": {
+                    "application/json": {
+                        "example": {"detail": "Conversation not found"}
+                    },
+                },
+            },
+            403: {
+                "description": "Access denied to conversation",
+                "content": {
+                    "application/json": {
+                        "example": {"detail": "Access denied to conversation"}
+                    },
+                },
+            },
+        },
+    )
+    async def load_conversation(
+        conversation_id: str, req: Request
+    ) -> LoadConversationResponse:
+        """
+        Load conversation endpoint that returns conversation state and metadata.
+        """
+        return await _handle_load_conversation_internal(conversation_id, req)
+
     # Resume decision endpoint
     @app.post(
         f"{settings.api_prefix}/conversations/{{conversation_id}}/resume-decision",
@@ -303,6 +346,218 @@ def create_conversation_routes(
         return await _handle_resume_decision_internal(
             request, req, conversation_id, streaming=streaming
         )
+
+    async def _handle_load_conversation_internal(
+        conversation_id: str, req: Request
+    ) -> LoadConversationResponse:
+        """
+        Internal handler for loading conversation state.
+        """
+        # Validate conversation_id format
+        try:
+            validate_thread_id_format(conversation_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+        # Get user context for access control
+        try:
+            from ..server.runtime_config import get_user_context
+            user_context = get_user_context(req)
+            user_id = user_context.user_id
+        except Exception as e:
+            logger.error(f"Failed to get user context: {e}")
+            raise HTTPException(status_code=401, detail="Authentication required") from e
+
+        # Get access control service
+        from ..services.thread_access_control import get_thread_access_control
+        access_control = get_thread_access_control()
+
+        # Get conversation state from checkpointing service
+        from ..services.checkpointing_service import get_checkpointer
+        checkpointer = get_checkpointer()
+
+        try:
+            # Determine the conversation ID to use for LangGraph
+            # If the conversation_id is already user-scoped, use it directly
+            # Otherwise, create a user-scoped version
+            if conversation_id.startswith("user:"):
+                # Already user-scoped, validate it belongs to this user
+                parts = conversation_id.split(":", 2)
+                if len(parts) >= 3 and parts[1] == user_id:
+                    user_scoped_conversation_id = conversation_id
+                else:
+                    raise HTTPException(status_code=403, detail="Access denied to conversation")
+            else:
+                # Not user-scoped, validate access and create user-scoped version
+                has_access = await access_control.validate_thread_access(user_id, conversation_id)
+                if not has_access:
+                    raise HTTPException(status_code=403, detail="Access denied to conversation")
+                
+                user_scoped_conversation_id = await access_control.create_user_scoped_thread_id(
+                    user_id, conversation_id
+                )
+            
+            # Get the checkpoint state
+            checkpoint_state = await checkpointer.aget({"configurable": {"thread_id": user_scoped_conversation_id}})
+            
+            if not checkpoint_state:
+                raise HTTPException(status_code=404, detail="Conversation not found")
+
+            # Log checkpoint state for debugging
+            logger.debug(f"Checkpoint state keys: {list(checkpoint_state.keys()) if checkpoint_state else 'None'}")
+            if checkpoint_state and "messages" in checkpoint_state:
+                logger.debug(f"Messages in checkpoint: {checkpoint_state['messages']}")
+            if checkpoint_state and "channel_values" in checkpoint_state:
+                logger.debug(f"Channel values: {checkpoint_state['channel_values']}")
+
+            # Extract messages from the checkpoint state
+            messages = []
+            
+            # Try to get messages from channel_values first (LangGraph format)
+            if checkpoint_state and "channel_values" in checkpoint_state:
+                channel_values = checkpoint_state["channel_values"]
+                logger.debug(f"Channel values keys: {list(channel_values.keys()) if channel_values else 'None'}")
+                
+                # Look for messages in channel_values
+                if "messages" in channel_values:
+                    checkpoint_messages = channel_values["messages"]
+                    logger.debug(f"Processing {len(checkpoint_messages)} messages from channel_values")
+                    
+                    for i, msg_obj in enumerate(checkpoint_messages):
+                        logger.debug(f"Processing message {i}: {msg_obj}")
+                        
+                        # Handle LangChain message objects
+                        if hasattr(msg_obj, 'content') and hasattr(msg_obj, '__class__'):
+                            msg_type = msg_obj.__class__.__name__.lower()
+                            msg_content = msg_obj.content
+                            
+                            # Map LangChain message types to our format
+                            if 'human' in msg_type:
+                                messages.append({
+                                    "content": msg_content,
+                                    "type": "human"
+                                })
+                            elif 'ai' in msg_type:
+                                messages.append({
+                                    "content": msg_content,
+                                    "type": "ai"
+                                })
+                            elif 'tool' in msg_type:
+                                # Handle tool messages
+                                tool_name = getattr(msg_obj, 'name', None)
+                                tool_call_id = getattr(msg_obj, 'tool_call_id', None)
+                                messages.append({
+                                    "content": msg_content,
+                                    "type": "tool",
+                                    "name": tool_name,
+                                    "tool_call_id": tool_call_id
+                                })
+                            else:
+                                logger.warning(f"Unknown LangChain message type: {msg_type}")
+                        
+                        # Handle tuple format (fallback)
+                        elif isinstance(msg_obj, tuple) and len(msg_obj) >= 2:
+                            msg_type, msg_content = msg_obj[0], msg_obj[1]
+                            logger.debug(f"Processing tuple message - type: {msg_type}, content: {msg_content}")
+                            
+                            if msg_type == "human":
+                                messages.append({
+                                    "content": msg_content,
+                                    "type": "human"
+                                })
+                            elif msg_type == "ai":
+                                messages.append({
+                                    "content": msg_content,
+                                    "type": "ai"
+                                })
+                            elif msg_type == "tool" and isinstance(msg_content, dict):
+                                messages.append({
+                                    "content": msg_content.get("content", ""),
+                                    "type": "tool",
+                                    "name": msg_content.get("name"),
+                                    "tool_call_id": msg_content.get("tool_call_id")
+                                })
+                            else:
+                                logger.warning(f"Unknown message type or format: {msg_type}, {msg_content}")
+                        else:
+                            logger.warning(f"Invalid message format: {msg_obj}")
+            
+            # Fallback to direct messages key (if it exists)
+            elif checkpoint_state and "messages" in checkpoint_state:
+                checkpoint_messages = checkpoint_state["messages"]
+                logger.debug(f"Processing {len(checkpoint_messages)} messages from direct messages key")
+                
+                for i, msg_tuple in enumerate(checkpoint_messages):
+                    logger.debug(f"Processing message {i}: {msg_tuple}")
+                    if isinstance(msg_tuple, tuple) and len(msg_tuple) >= 2:
+                        msg_type, msg_content = msg_tuple[0], msg_tuple[1]
+                        logger.debug(f"Message type: {msg_type}, content: {msg_content}")
+                        
+                        if msg_type == "human":
+                            messages.append({
+                                "content": msg_content,
+                                "type": "human"
+                            })
+                        elif msg_type == "ai":
+                            messages.append({
+                                "content": msg_content,
+                                "type": "ai"
+                            })
+                        elif msg_type == "tool" and isinstance(msg_content, dict):
+                            messages.append({
+                                "content": msg_content.get("content", ""),
+                                "type": "tool",
+                                "name": msg_content.get("name"),
+                                "tool_call_id": msg_content.get("tool_call_id")
+                            })
+                        else:
+                            logger.warning(f"Unknown message type or format: {msg_type}, {msg_content}")
+                    else:
+                        logger.warning(f"Invalid message format: {msg_tuple}")
+            
+            logger.debug(f"Extracted {len(messages)} messages")
+
+            # Get thread ownership information for metadata
+            # Use the base conversation ID (without user scope) for ownership lookup
+            base_conversation_id = conversation_id
+            if conversation_id.startswith("user:"):
+                parts = conversation_id.split(":", 2)
+                if len(parts) >= 3:
+                    base_conversation_id = parts[2]
+            
+            thread_ownership = await access_control.get_thread_ownership(base_conversation_id)
+            
+            metadata = {}
+            created_at = None
+            last_accessed = None
+            
+            if thread_ownership:
+                metadata = thread_ownership.metadata
+                created_at = thread_ownership.created_at.isoformat() if thread_ownership.created_at else None
+                last_accessed = thread_ownership.last_accessed.isoformat() if thread_ownership.last_accessed else None
+
+            # Determine conversation status based on checkpoint state
+            status = "active"
+            if "interrupts" in checkpoint_state and checkpoint_state["interrupts"]:
+                status = "interrupted"
+            elif checkpoint_state.get("completed", False):
+                status = "completed"
+
+            return LoadConversationResponse(
+                conversation_id=conversation_id,
+                messages=messages,
+                metadata=metadata,
+                created_at=created_at,
+                last_accessed=last_accessed,
+                status=status
+            )
+
+        except HTTPException:
+            # Re-raise HTTP exceptions
+            raise
+        except Exception as e:
+            logger.error(f"Failed to load conversation {conversation_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to load conversation") from e
 
     async def _handle_conversation_internal(
         request: ConversationRequest,

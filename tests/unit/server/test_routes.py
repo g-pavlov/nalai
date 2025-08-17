@@ -362,3 +362,118 @@ class TestResumeDecision:
         )
 
         assert response.status_code == expected_status
+
+
+class TestLoadConversation:
+    """Test load conversation functionality."""
+
+    @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    @patch("nalai.services.checkpointing_service.get_checkpointer")
+    def test_load_conversation_success(
+        self, mock_get_checkpointer, mock_get_access_control, mock_get_user_context, client, app_and_agent
+    ):
+        """Should load conversation successfully."""
+        # Mock user context
+        mock_user_context = MagicMock()
+        mock_user_context.user_id = "test-user"
+        mock_get_user_context.return_value = mock_user_context
+
+        # Mock access control
+        mock_access_control = AsyncMock()
+        mock_access_control.validate_thread_access.return_value = True
+        mock_access_control.create_user_scoped_thread_id.return_value = "user:test-user:550e8400-e29b-41d4-a716-446655440000"
+        mock_access_control.get_thread_ownership.return_value = MagicMock(
+            metadata={"title": "Test Conversation"},
+            created_at=MagicMock(isoformat=lambda: "2024-01-01T00:00:00"),
+            last_accessed=MagicMock(isoformat=lambda: "2024-01-01T12:00:00")
+        )
+        mock_get_access_control.return_value = mock_access_control
+
+        # Mock checkpointing service
+        mock_checkpointer = AsyncMock()
+        mock_checkpointer.aget.return_value = {
+            "messages": [
+                ("human", "Hello"),
+                ("ai", "Hi there!"),
+                ("tool", {"content": "API response", "name": "test_api", "tool_call_id": "call_123"})
+            ],
+            "completed": False
+        }
+        mock_get_checkpointer.return_value = mock_checkpointer
+
+        conversation_id = "550e8400-e29b-41d4-a716-446655440000"
+        response = client.get(f"/api/v1/conversations/{conversation_id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["conversation_id"] == conversation_id
+        assert len(data["messages"]) == 3
+        assert data["messages"][0]["type"] == "human"
+        assert data["messages"][0]["content"] == "Hello"
+        assert data["messages"][1]["type"] == "ai"
+        assert data["messages"][1]["content"] == "Hi there!"
+        assert data["messages"][2]["type"] == "tool"
+        assert data["messages"][2]["content"] == "API response"
+        assert data["messages"][2]["name"] == "test_api"
+        assert data["messages"][2]["tool_call_id"] == "call_123"
+        assert data["status"] == "active"
+        assert data["metadata"]["title"] == "Test Conversation"
+
+    @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    def test_load_conversation_access_denied(
+        self, mock_get_access_control, mock_get_user_context, client, app_and_agent
+    ):
+        """Should deny access to conversation user doesn't own."""
+        # Mock user context
+        mock_user_context = MagicMock()
+        mock_user_context.user_id = "test-user"
+        mock_get_user_context.return_value = mock_user_context
+
+        # Mock access control - deny access
+        mock_access_control = AsyncMock()
+        mock_access_control.validate_thread_access.return_value = False
+        mock_get_access_control.return_value = mock_access_control
+
+        conversation_id = "550e8400-e29b-41d4-a716-446655440000"
+        response = client.get(f"/api/v1/conversations/{conversation_id}")
+
+        assert response.status_code == 403
+        assert "Access denied" in response.json()["detail"]
+
+    @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    @patch("nalai.services.checkpointing_service.get_checkpointer")
+    def test_load_conversation_not_found(
+        self, mock_get_checkpointer, mock_get_access_control, mock_get_user_context, client, app_and_agent
+    ):
+        """Should return 404 when conversation doesn't exist."""
+        # Mock user context
+        mock_user_context = MagicMock()
+        mock_user_context.user_id = "test-user"
+        mock_get_user_context.return_value = mock_user_context
+
+        # Mock access control
+        mock_access_control = AsyncMock()
+        mock_access_control.validate_thread_access.return_value = True
+        mock_access_control.create_user_scoped_thread_id.return_value = "user:test-user:550e8400-e29b-41d4-a716-446655440000"
+        mock_get_access_control.return_value = mock_access_control
+
+        # Mock checkpointing service - return None (not found)
+        mock_checkpointer = AsyncMock()
+        mock_checkpointer.aget.return_value = None
+        mock_get_checkpointer.return_value = mock_checkpointer
+
+        conversation_id = "550e8400-e29b-41d4-a716-446655440000"
+        response = client.get(f"/api/v1/conversations/{conversation_id}")
+
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+
+    def test_load_conversation_invalid_id(self, client, app_and_agent):
+        """Should return 400 for invalid conversation ID format."""
+        conversation_id = "invalid-id"
+        response = client.get(f"/api/v1/conversations/{conversation_id}")
+
+        assert response.status_code == 400

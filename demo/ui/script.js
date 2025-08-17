@@ -112,7 +112,6 @@ const UI_STATES = {
 
 // Storage Keys
 const STORAGE_KEYS = {
-    THREAD_ID: 'nalai_thread_id',
     SETTINGS: 'nalai_settings',
     ERROR_LOG: 'nalai_error_log'
 };
@@ -400,6 +399,32 @@ class ErrorHandler {
             }
         }, 8000);
     }
+
+    static showInfoMessage(message, duration = 3000) {
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'message info-message fade-in';
+        infoDiv.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 16px;">ℹ️</span>
+                <div>${message}</div>
+            </div>
+        `;
+
+        DOM.chatContainer.appendChild(infoDiv);
+        DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+
+        // Auto-remove info message after specified duration
+        setTimeout(() => {
+            if (infoDiv.parentNode) {
+                infoDiv.style.opacity = '0.7';
+                setTimeout(() => {
+                    if (infoDiv.parentNode) {
+                        infoDiv.remove();
+                    }
+                }, 1000);
+            }
+        }, duration);
+    }
 } 
 
 // ============================================================================
@@ -656,7 +681,7 @@ let connectionStatus = 'online';
 // INITIALIZATION
 // ============================================================================
 
-function initializeApp() {
+async function initializeApp() {
     try {
         Logger.info('Initializing nalAI Chat Interface');
         
@@ -666,22 +691,24 @@ function initializeApp() {
         // Configure marked.js
         configureMarked();
         
-        // Load saved state
-        loadSavedState();
-        
         // Setup event listeners
         setupEventListeners();
         
         // Setup network status monitoring
         NetworkManager.addOnlineStatusListener(handleConnectionStatusChange);
         
-        // Show welcome message
-        showWelcomeMessage();
+        // Load saved state and show welcome message if needed
+        const loadedSuccessfully = await loadSavedState();
+        if (!loadedSuccessfully) {
+            showWelcomeMessage();
+        }
         
         Logger.info('App initialization completed successfully');
         
     } catch (error) {
         ErrorHandler.handleError(error, 'App initialization');
+        // Show welcome message as fallback if initialization fails
+        showWelcomeMessage();
     }
 }
 
@@ -727,29 +754,8 @@ function configureMarked() {
     });
 }
 
-function loadSavedState() {
+async function loadSavedState() {
     try {
-        // Load and normalize thread ID
-        const savedThreadId = localStorage.getItem(STORAGE_KEYS.THREAD_ID);
-        if (savedThreadId) {
-            const normalizedThreadId = normalizeThreadId(savedThreadId);
-            if (normalizedThreadId) {
-                currentThreadId = normalizedThreadId;
-                // Update localStorage with normalized format if different
-                if (normalizedThreadId !== savedThreadId) {
-                    localStorage.setItem(STORAGE_KEYS.THREAD_ID, normalizedThreadId);
-                }
-                Logger.info('Resumed conversation with thread', { 
-                    originalThreadId: savedThreadId, 
-                    normalizedThreadId 
-                });
-                showConversationIndicator();
-            } else {
-                Logger.warn('Invalid saved thread ID format, clearing', { savedThreadId });
-                localStorage.removeItem(STORAGE_KEYS.THREAD_ID);
-            }
-        }
-
         // Load settings
         const savedSettings = localStorage.getItem(STORAGE_KEYS.SETTINGS);
         if (savedSettings) {
@@ -767,8 +773,33 @@ function loadSavedState() {
 
         updateStatusIndicators();
         
+        // Try to load last conversation if it exists
+        const lastConversationId = localStorage.getItem('nalai_last_conversation_id');
+        if (lastConversationId) {
+            try {
+                await loadConversation(lastConversationId, false); // Don't show user errors during startup
+                return true; // Successfully loaded conversation
+            } catch (error) {
+                // Check if it's a 404 error (conversation not found)
+                if (error.status === 404) {
+                    Logger.info('Last conversation not found (likely due to server restart), proceeding with clean slate', { 
+                        conversationId: lastConversationId,
+                        error: error.message 
+                    });
+                    // Clear the invalid conversation ID
+                    localStorage.removeItem('nalai_last_conversation_id');
+                } else {
+                    Logger.warn('Failed to load last conversation due to other error', { error });
+                }
+                return false; // Failed to load conversation
+            }
+        }
+        
+        return false; // No conversation to load
+        
     } catch (error) {
         Logger.warn('Failed to load saved state', { error: error.message });
+        return false;
     }
 }
 
@@ -1009,27 +1040,40 @@ function updateMessageContent(element, content) {
 
 function showWelcomeMessage() {
     const welcomeMessage = 'Hello! I\'m nalAI. I can help you with API integration, data processing, and more. What would you like to work on?';
+    Logger.info('Showing welcome message');
     addMessage(welcomeMessage, 'assistant');
 }
 
 function showConversationIndicator() {
-    const indicator = document.createElement('div');
-    indicator.className = 'conversation-indicator fade-in';
-    indicator.textContent = '🔄 Continuing previous conversation...';
-    DOM.chatContainer.appendChild(indicator);
+    // Show a flash info message instead of persistent indicator
+    ErrorHandler.showInfoMessage('Continuing previous conversation...', 3000);
 }
 
 // ============================================================================
 // MESSAGE HANDLING
 // ============================================================================
 
-function addMessage(content, type) {
+function addMessage(content, type, options = {}) {
     try {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}-message fade-in`;
         
         if (type === 'assistant') {
             updateMessageContent(messageDiv, content);
+        } else if (type === 'tool') {
+            // Handle tool messages with additional metadata
+            const toolName = options.name || 'Unknown tool';
+            const toolCallId = options.tool_call_id || '';
+            messageDiv.innerHTML = `
+                <div class="tool-message">
+                    <div class="tool-header">
+                        <span class="tool-icon">🔧</span>
+                        <span class="tool-name">${toolName}</span>
+                        ${toolCallId ? `<span class="tool-call-id">${toolCallId}</span>` : ''}
+                    </div>
+                    <div class="tool-content">${content}</div>
+                </div>
+            `;
         } else {
             messageDiv.textContent = content;
         }
@@ -1045,10 +1089,16 @@ function addMessage(content, type) {
 function startNewConversation() {
     try {
         currentThreadId = null;
-        localStorage.removeItem(STORAGE_KEYS.THREAD_ID);
+        localStorage.removeItem('nalai_last_conversation_id');
         
         DOM.chatContainer.innerHTML = '';
         showWelcomeMessage();
+        
+        // Hide conversation indicator
+        const indicator = document.querySelector('.conversation-indicator');
+        if (indicator) {
+            indicator.remove();
+        }
         
         Logger.info('Started new conversation');
         ErrorHandler.showSuccessMessage('New conversation started');
@@ -1272,7 +1322,8 @@ function handleThreadIdResponse(response) {
         const normalizedThreadId = normalizeThreadId(conversationId);
         if (normalizedThreadId) {
             currentThreadId = normalizedThreadId;
-            localStorage.setItem(STORAGE_KEYS.THREAD_ID, normalizedThreadId);
+            // Save as last conversation for future loads
+            localStorage.setItem('nalai_last_conversation_id', normalizedThreadId);
             Logger.info('New conversation thread started', { 
                 originalConversationId: conversationId, 
                 normalizedThreadId 
@@ -2137,12 +2188,152 @@ function submitEditedInterrupt() {
 }
 
 // ============================================================================
+// CONVERSATION LOADING AND MANAGEMENT
+// ============================================================================
+
+/**
+ * Load a conversation by ID from the API
+ * @param {string} conversationId - The conversation ID to load
+ */
+async function loadConversation(conversationId, showUserErrors = true) {
+    try {
+        Logger.info('Loading conversation', { conversationId });
+        
+        // Show loading state
+        DOM.loading.style.display = 'block';
+        DOM.loadingText.textContent = '📂 Loading conversation...';
+        
+        // Build the API URL
+        const url = buildApiUrl(API_CONFIG.URL_TEMPLATES.CONVERSATION, { conversation_id: conversationId });
+        const headers = getRequestHeaders(false, false); // No streaming for loading
+        
+        // Make the API request
+        const response = await NetworkManager.fetchWithRetry(url, {
+            method: 'GET',
+            headers
+        });
+        
+        if (!response.ok) {
+            let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+            try {
+                const errorBody = await response.text();
+                if (errorBody) {
+                    const errorJson = JSON.parse(errorBody);
+                    if (errorJson.detail) {
+                        errorMessage += ` - ${errorJson.detail}`;
+                    }
+                }
+            } catch (parseError) {
+                Logger.warn('Could not parse error response', { parseError });
+            }
+            
+            // Create error with status code for proper handling
+            const error = new Error(errorMessage);
+            error.status = response.status;
+            throw error;
+        }
+        
+        const conversation = await response.json();
+        
+        // Clear current conversation
+        DOM.chatContainer.innerHTML = '';
+        
+        // Load conversation messages
+        await loadConversationMessages(conversation);
+        
+        // Update current thread ID
+        currentThreadId = conversation.conversation_id;
+        
+        // Save as last conversation for future loads
+        localStorage.setItem('nalai_last_conversation_id', conversation.conversation_id);
+        
+        // Show conversation indicator only after successful load
+        showConversationIndicator();
+        
+        Logger.info('Conversation loaded successfully', { conversationId });
+        if (showUserErrors) {
+            ErrorHandler.showSuccessMessage('Conversation loaded successfully');
+        }
+        
+    } catch (error) {
+        Logger.error('Failed to load conversation', { conversationId, error });
+        if (showUserErrors) {
+            ErrorHandler.showUserError(`Failed to load conversation: ${error.message}`);
+        }
+    } finally {
+        DOM.loading.style.display = 'none';
+    }
+}
+
+/**
+ * Load conversation messages into the UI
+ * @param {Object} conversation - The conversation object from the API
+ */
+async function loadConversationMessages(conversation) {
+    try {
+        const { messages, metadata, status } = conversation;
+        
+        // Add conversation metadata if available
+        if (metadata && Object.keys(metadata).length > 0) {
+            const metadataDiv = document.createElement('div');
+            metadataDiv.className = 'conversation-metadata fade-in';
+            metadataDiv.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(0,0,0,0.05); border-radius: 8px; margin-bottom: 16px;">
+                    <span style="font-size: 14px;">📋</span>
+                    <div style="font-size: 12px; color: #666;">
+                        <strong>Conversation Info:</strong> 
+                        ${metadata.title || 'Untitled'} 
+                        ${status ? `(${status})` : ''}
+                        ${conversation.created_at ? ` - Created: ${new Date(conversation.created_at).toLocaleString()}` : ''}
+                    </div>
+                </div>
+            `;
+            DOM.chatContainer.appendChild(metadataDiv);
+        }
+        
+        // Load messages
+        for (const message of messages) {
+            let messageType = message.type;
+            
+            // Map API message types to UI message types
+            if (messageType === 'ai') {
+                messageType = 'assistant';
+            } else if (messageType === 'human') {
+                messageType = 'human';
+            } else if (messageType === 'tool') {
+                messageType = 'tool';
+            }
+            
+            await addMessage(message.content, messageType, {
+                name: message.name,
+                tool_call_id: message.tool_call_id
+            });
+            
+            // Small delay to prevent UI blocking
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        
+        // Scroll to bottom
+        DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+        
+    } catch (error) {
+        Logger.error('Failed to load conversation messages', { error });
+        throw error;
+    }
+}
+
+
+
+
+
+// ============================================================================
 // GLOBAL FUNCTIONS (for onclick handlers)
 // ============================================================================
 
 // Make functions available globally for HTML onclick handlers
 window.sendMessage = sendMessage;
 window.startNewConversation = startNewConversation;
+window.loadConversation = loadConversation;
 window.handleInterrupt = handleInterrupt;
 window.cancelEditInterrupt = cancelEditInterrupt;
 window.submitEditedInterrupt = submitEditedInterrupt;
