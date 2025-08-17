@@ -30,13 +30,22 @@ class MessageInput(BaseModel):
 
     @field_validator("content")
     @classmethod
-    def validate_content(cls, content):
+    def validate_content(cls, content, info):
         """Validate message content."""
-        if not content or not content.strip():
-            raise ValueError("Message content cannot be empty")
-        if len(content) > 10000:  # 10KB limit per message
-            raise ValueError("Message content too long (max 10KB)")
-        return content.strip()
+        # Allow empty content for tool messages (they may have tool call data instead)
+        message_type = info.data.get("type") if info.data else None
+        if message_type == "tool":
+            # For tool messages, content can be empty if they have tool call data
+            if content is None:
+                content = ""
+            return content
+        else:
+            # For human and AI messages, content cannot be empty
+            if not content or not content.strip():
+                raise ValueError("Message content cannot be empty")
+            if len(content) > 10000:  # 10KB limit per message
+                raise ValueError("Message content too long (max 10KB)")
+            return content.strip()
 
     @field_validator("name", "tool_call_id")
     @classmethod

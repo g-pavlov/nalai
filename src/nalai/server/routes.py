@@ -113,7 +113,9 @@ def create_conversation_routes(
 ) -> None:
     """Create conversation endpoint routes."""
 
-    def get_conversation_headers(conversation_id: str, user_id: str = "dev-user") -> dict[str, str]:
+    def get_conversation_headers(
+        conversation_id: str, user_id: str = "dev-user"
+    ) -> dict[str, str]:
         """Get standard conversation response headers."""
         # Always return user-scoped ID for consistency
         if conversation_id.startswith("user:"):
@@ -508,9 +510,11 @@ def create_conversation_routes(
                                 # Handle tool messages
                                 tool_name = getattr(msg_obj, "name", None)
                                 tool_call_id = getattr(msg_obj, "tool_call_id", None)
+                                # Use empty string if content is None for tool messages
+                                tool_content = msg_content if msg_content is not None else ""
                                 messages.append(
                                     {
-                                        "content": msg_content,
+                                        "content": tool_content,
                                         "type": "tool",
                                         "name": tool_name,
                                         "tool_call_id": tool_call_id,
@@ -535,9 +539,13 @@ def create_conversation_routes(
                             elif msg_type == "ai":
                                 messages.append({"content": msg_content, "type": "ai"})
                             elif msg_type == "tool" and isinstance(msg_content, dict):
+                                # Ensure content is not None for tool messages
+                                tool_content = msg_content.get("content", "")
+                                if tool_content is None:
+                                    tool_content = ""
                                 messages.append(
                                     {
-                                        "content": msg_content.get("content", ""),
+                                        "content": tool_content,
                                         "type": "tool",
                                         "name": msg_content.get("name"),
                                         "tool_call_id": msg_content.get("tool_call_id"),
@@ -570,9 +578,13 @@ def create_conversation_routes(
                         elif msg_type == "ai":
                             messages.append({"content": msg_content, "type": "ai"})
                         elif msg_type == "tool" and isinstance(msg_content, dict):
+                            # Ensure content is not None for tool messages
+                            tool_content = msg_content.get("content", "")
+                            if tool_content is None:
+                                tool_content = ""
                             messages.append(
                                 {
-                                    "content": msg_content.get("content", ""),
+                                    "content": tool_content,
                                     "type": "tool",
                                     "name": msg_content.get("name"),
                                     "tool_call_id": msg_content.get("tool_call_id"),
@@ -776,10 +788,12 @@ def create_conversation_routes(
 
             # Get user context for headers
             from ..server.runtime_config import get_user_context
+
             user_context = get_user_context(req)
-            
+
             return SSEStreamingResponse(
-                generate(), headers=get_conversation_headers(conversation_id, user_context.user_id)
+                generate(),
+                headers=get_conversation_headers(conversation_id, user_context.user_id),
             )
         else:
             # Return JSON response
@@ -788,12 +802,15 @@ def create_conversation_routes(
                 serialized_result = serialize_event(result)
                 # Get user context for headers
                 from ..server.runtime_config import get_user_context
+
                 user_context = get_user_context(req)
-                
+
                 return Response(
                     content=json.dumps({"output": serialized_result}),
                     media_type="application/json",
-                    headers=get_conversation_headers(conversation_id, user_context.user_id),
+                    headers=get_conversation_headers(
+                        conversation_id, user_context.user_id
+                    ),
                 )
             except Exception as e:
                 logger.error(f"Agent invocation failed: {e}")
@@ -829,9 +846,7 @@ def create_conversation_routes(
             },
         },
     )
-    async def delete_conversation(
-        conversation_id: str, req: Request
-    ) -> Response:
+    async def delete_conversation(conversation_id: str, req: Request) -> Response:
         """
         Delete conversation endpoint that removes conversation data and access control records.
         """
@@ -905,10 +920,11 @@ def create_conversation_routes(
                 # LangGraph MemorySaver doesn't have a delete method, but we can try to clear it
                 # by setting it to None or an empty state
                 await checkpointer.aput(
-                    {"configurable": {"thread_id": user_scoped_conversation_id}},
-                    None
+                    {"configurable": {"thread_id": user_scoped_conversation_id}}, None
                 )
-                logger.debug(f"Cleared checkpoint state for conversation {conversation_id}")
+                logger.debug(
+                    f"Cleared checkpoint state for conversation {conversation_id}"
+                )
             except Exception as e:
                 logger.warning(f"Failed to clear checkpoint state: {e}")
                 # Continue with deletion even if checkpoint clearing fails
@@ -919,13 +935,15 @@ def create_conversation_routes(
                 parts = conversation_id.split(":", 2)
                 if len(parts) >= 3:
                     base_conversation_id = parts[2]
-            
+
             # Delete the thread ownership record
             deleted = await access_control.delete_thread(user_id, base_conversation_id)
             if not deleted:
                 raise HTTPException(status_code=404, detail="Conversation not found")
 
-            logger.info(f"Successfully deleted conversation {conversation_id} for user {user_id}")
+            logger.info(
+                f"Successfully deleted conversation {conversation_id} for user {user_id}"
+            )
 
             # Return 204 No Content for successful deletion
             return Response(status_code=204)
