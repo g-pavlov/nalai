@@ -89,6 +89,8 @@ export function processStreamEvent(event, assistantMessageDiv) {
 }
 
 function handleMessageEvent(eventData, assistantMessageDiv) {
+    Logger.info('Processing message events', { messageCount: eventData.length });
+    
     // Pre-process to check if this is an internal node message
     const isInternalNode = eventData.some(message => 
         message.langgraph_node && message.langgraph_node !== 'call_model'
@@ -104,13 +106,29 @@ function handleMessageEvent(eventData, assistantMessageDiv) {
     }
     
     for (const message of eventData) {
+        Logger.info('Processing message', { 
+            type: message.type, 
+            hasContent: !!message.content,
+            contentLength: message.content?.length || 0,
+            id: message.id
+        });
+        
         if (message.type === MESSAGE_TYPES.AI_CHUNK && message.content) {
             const currentContent = getFullMessageContent();
             const newContent = currentContent + message.content;
             setFullMessageContent(newContent);
+            Logger.info('Updated fullMessageContent with chunk', { 
+                chunk: message.content, 
+                fullContent: newContent,
+                fullLength: newContent.length 
+            });
             updateMessageContent(assistantMessageDiv, newContent);
         } else if (message.type === MESSAGE_TYPES.AI && message.content) {
             setFullMessageContent(message.content);
+            Logger.info('Set fullMessageContent with complete message', { 
+                content: message.content,
+                length: message.content.length 
+            });
             updateMessageContent(assistantMessageDiv, message.content);
         } else if (message.type === MESSAGE_TYPES.TOOL && message.content) {
             createToolCallElement(assistantMessageDiv, `🔧 Tool Response: ${message.name || 'Unknown tool'}`);
@@ -125,6 +143,8 @@ function handleUpdateEvent(eventData, assistantMessageDiv) {
                 handleInterruptEvent(updateValue, assistantMessageDiv);
                 break;
             case EVENT_TYPES.CALL_MODEL:
+                // This is the LLM call - log it for debugging
+                Logger.info(`LLM call event: ${updateKey}`, { updateValue });
                 handleCallModelEvent(updateValue, assistantMessageDiv);
                 break;
             case EVENT_TYPES.CALL_API:
@@ -136,6 +156,7 @@ function handleUpdateEvent(eventData, assistantMessageDiv) {
             case EVENT_TYPES.SELECT_RELEVANT_APIS:
             case EVENT_TYPES.HUMAN_REVIEW:
                 // These are backend processing events, no UI updates needed
+                Logger.info(`Backend processing: ${updateKey}`, { updateValue });
                 break;
             default:
                 Logger.warn('Unknown update key', { updateKey, updateValue });
@@ -261,19 +282,15 @@ function handleCallModelEvent(updateValue, assistantMessageDiv) {
 }
 
 function handleCallApiEvent(updateValue, assistantMessageDiv) {
-    // Handle API call events - these are typically internal processing events
-    // that don't need UI updates, but we can log them for debugging
-    if (typeof updateValue === 'string') {
-        // If it's a string, it might be a simple status message
-        createToolCallElement(assistantMessageDiv, `🔧 API Call: ${updateValue}`);
-    } else if (typeof updateValue === 'object') {
-        // If it's an object, it might contain more detailed information
-        const apiName = updateValue.name || updateValue.api_name || 'Unknown API';
-        const status = updateValue.status || updateValue.result || 'Processing';
-        createToolCallElement(assistantMessageDiv, `🔧 ${apiName}: ${status}`);
-    } else {
-        // Fallback for other types
-        createToolCallElement(assistantMessageDiv, `🔧 API Call: ${String(updateValue)}`);
+    Logger.info('Processing call_api update', { updateValue });
+    
+    for (const message of updateValue.messages) {
+        if (message.type === MESSAGE_TYPES.TOOL && message.content) {
+            createToolCallElement(assistantMessageDiv, `✅ API Call Completed: ${message.name || 'Unknown tool'}`);
+        } else if (message.type === MESSAGE_TYPES.AI && message.content) {
+            setFullMessageContent(message.content);
+            updateMessageContent(assistantMessageDiv, message.content);
+        }
     }
 }
 

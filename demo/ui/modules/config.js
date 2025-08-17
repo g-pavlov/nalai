@@ -117,5 +117,6 @@ export function buildApiUrl(template, variables = {}) {
     }
     
     const fullUrl = API_CONFIG.BASE_URL + url;
+    console.log('Generated URL from template', { template, variables, fullUrl });
     return fullUrl;
 }

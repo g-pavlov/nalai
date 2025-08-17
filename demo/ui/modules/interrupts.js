@@ -30,124 +30,180 @@ export async function handleInterrupt(responseType, args = null) {
     }
 
     try {
-        // Get current thread ID
-        const currentThreadId = getCurrentThreadId();
-        
-        // Build the resume request payload
-        const resumePayload = {
-            response_type: responseType,
-            args: args
-        };
-
-        // Build the API URL
-        const url = buildApiUrl(API_CONFIG.URL_TEMPLATES.RESUME, { 
-            thread_id: currentThreadId 
+        Logger.info('Current thread ID format', { currentThreadId: getCurrentThreadId() });
+        Logger.info('Current interrupt structure', { 
+            currentInterrupt: window.currentInterrupt,
+            interruptValue: window.currentInterrupt?.value,
+            actionRequest: window.currentInterrupt?.value?.action_request
         });
         
-        const headers = getRequestHeaders(true, true); // Enable streaming for resume
-
-        // Send the resume request
-        const response = await NetworkManager.fetchWithRetry(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(resumePayload)
-        });
-
-        if (!response.ok) {
-            let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-            try {
-                const errorBody = await response.text();
-                if (errorBody) {
-                    const errorJson = JSON.parse(errorBody);
-                    if (errorJson.detail) {
-                        errorMessage += ` - ${errorJson.detail}`;
-                    }
-                }
-            } catch (parseError) {
-                Logger.warn('Could not parse error response', { parseError });
+        // Use currentThreadId directly since it's already in the correct format
+        if (!getCurrentThreadId()) {
+            throw new Error('No conversation ID available for resume request');
+        }
+        
+        // Create the input object based on the response type
+        let input;
+        
+        if (responseType === 'edit') {
+            input = {
+                decision: 'edit',
+                args: args
+            };
+        } else if (responseType === 'accept') {
+            input = {
+                decision: 'accept'
+            };
+        } else if (responseType === 'reject') {
+            // If feedback is provided, treat as feedback decision, otherwise as reject
+            if (args && args.trim()) {
+                input = {
+                    decision: 'feedback',
+                    message: args
+                };
+            } else {
+                input = {
+                    decision: 'reject'
+                };
             }
-            
-            const error = new Error(errorMessage);
-            error.status = response.status;
-            throw error;
+        } else {
+            // Handle feedback case if needed
+            input = {
+                decision: 'feedback',
+                message: args || 'User feedback'
+            };
         }
 
-        // Process the streaming response
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+        const resumePayload = {
+            input: input
+        };
 
-        try {
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    break;
-                }
+        Logger.info('Sending resume payload', { resumePayload });
 
-                const chunk = decoder.decode(value, { stream: true });
-                buffer += chunk;
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
+        // Log the full request details for debugging
+        Logger.info('Resume request details', {
+            url: buildApiUrl(API_CONFIG.URL_TEMPLATES.RESUME_DECISION, { conversation_id: getCurrentThreadId() }),
+            method: 'POST',
+            payload: resumePayload,
+            responseType,
+            args
+        });
 
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6);
-                        
-                        if (data === '[DONE]') {
-                            break;
-                        }
+        const requestUrl = buildApiUrl(API_CONFIG.URL_TEMPLATES.RESUME_DECISION, { conversation_id: getCurrentThreadId() });
+        const requestOptions = {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream',
+                'Authorization': 'Bearer dev-token'
+            },
+            body: JSON.stringify(resumePayload)
+        };
+        
+        Logger.info('About to send resume request', { 
+            url: requestUrl, 
+            options: requestOptions,
+            headers: requestOptions.headers 
+        });
+        
+        const response = await NetworkManager.fetchWithRetry(requestUrl, requestOptions);
 
-                        try {
-                            if (!data || data.trim() === '') continue;
-                            const event = JSON.parse(data);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
 
-                            // Use the same event processing logic as regular streaming
-                            // Find the last assistant message div to update
-                            const lastAssistantMessage = document.querySelector('.assistant-message:last-child');
-                            processStreamEvent(event, lastAssistantMessage);
-                        } catch (e) {
-                            Logger.warn('Failed to parse resume event', { error: e.message });
-                        }
+        await handleResumeStream(response);
+        
+        // Success message is now handled in handleResumeStream after completion
+
+    } catch (error) {
+        Logger.error('Interrupt handling caught error', { 
+            error, 
+            errorType: typeof error, 
+            errorMessage: error?.message,
+            errorStack: error?.stack 
+        });
+        ErrorHandler.handleError(error, 'Interrupt handling');
+        
+        // Re-enable buttons on error
+        enableInterruptActions();
+    }
+}
+
+async function handleResumeStream(response) {
+    Logger.info('Starting resume stream processing', { responseStatus: response.status });
+    
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                Logger.info('Resume stream completed (done)');
+                break;
+            }
+
+            const chunk = decoder.decode(value, { stream: true });
+            Logger.info('Received resume stream chunk', { chunkLength: chunk.length, chunk: chunk.substring(0, 100) });
+            
+            buffer += chunk;
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                Logger.info('Processing resume line', { line: line.substring(0, 100) });
+                
+                if (line.startsWith('data: ')) {
+                    const data = line.slice(6);
+                    Logger.info('Processing resume data', { data: data.substring(0, 100) });
+                    
+                    if (data === '[DONE]') {
+                        Logger.info('Resume stream marked as done');
+                        break;
+                    }
+
+                    try {
+                        if (!data || data.trim() === '') continue;
+                        const event = JSON.parse(data);
+
+                        // Use the same event processing logic as regular streaming
+                        processStreamEvent(event, null); // Pass null for assistantMessageDiv since we're updating the last message
+                    } catch (e) {
+                        Logger.warn('Failed to parse resume event', { error: e.message });
                     }
                 }
             }
-        } catch (error) {
-            Logger.error('Resume stream processing caught error', { 
-                error, 
-                errorType: typeof error, 
-                errorMessage: error?.message,
-                errorStack: error?.stack 
-            });
-            ErrorHandler.handleError(error, 'Resume stream processing');
-            // Clear interrupt state on error as well
+        }
+    } catch (error) {
+        Logger.error('Resume stream processing caught error', { 
+            error, 
+            errorType: typeof error, 
+            errorMessage: error?.message,
+            errorStack: error?.stack 
+        });
+        ErrorHandler.handleError(error, 'Resume stream processing');
+        // Clear interrupt state on error as well
+        window.currentInterrupt = null;
+        const existingInterrupt = document.querySelector('.interrupt-container');
+        if (existingInterrupt) {
+            existingInterrupt.remove();
+        }
+        Logger.info('Interrupt state cleared due to resume stream error');
+    } finally {
+        reader.releaseLock();
+        
+        // Clear interrupt state after successful completion
+        if (window.currentInterrupt) {
             window.currentInterrupt = null;
             const existingInterrupt = document.querySelector('.interrupt-container');
             if (existingInterrupt) {
                 existingInterrupt.remove();
             }
-        } finally {
-            reader.releaseLock();
-            
-            // Clear interrupt state after successful completion
-            if (window.currentInterrupt) {
-                window.currentInterrupt = null;
-                const existingInterrupt = document.querySelector('.interrupt-container');
-                if (existingInterrupt) {
-                    existingInterrupt.remove();
-                }
-                ErrorHandler.showSuccessMessage('Interrupt handled successfully');
-            }
+            Logger.info('Interrupt state cleared after successful resume stream completion');
+            ErrorHandler.showSuccessMessage('Interrupt handled successfully');
         }
-
-    } catch (error) {
-        Logger.error('Interrupt handling caught error', {
-            error,
-            errorType: typeof error,
-            errorMessage: error?.message,
-            errorStack: error?.stack
-        });
-        ErrorHandler.handleError(error, 'Interrupt handling');
-        enableInterruptActions();
     }
 }
 
@@ -200,6 +256,7 @@ export function createInterruptUI(assistantMessageDiv, actionRequest, interruptI
     const existingInterrupt = document.querySelector('.interrupt-container');
     if (existingInterrupt) {
         existingInterrupt.remove();
+        Logger.info('Removed existing interrupt UI before creating new one');
     }
     
     const interruptDiv = document.createElement('div');
@@ -210,6 +267,13 @@ export function createInterruptUI(assistantMessageDiv, actionRequest, interruptI
     const allowAccept = config.allow_accept !== false; // Default to true if not specified
     const allowEdit = config.allow_edit === true;
     const allowRespond = config.allow_respond === true;
+    
+    Logger.info('Creating interrupt UI with config', { 
+        allowAccept, 
+        allowEdit, 
+        allowRespond, 
+        config 
+    });
     
     // Build action buttons based on configuration
     let actionButtons = '';

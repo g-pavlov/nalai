@@ -11,49 +11,12 @@ import { saveSettings } from './state.js';
 import { toggleSettings, handleClickOutside } from './settings.js';
 
 // Placeholder functions that will be implemented in other modules
-let sendMessage = () => {};
+let sendMessage = () => console.log('sendMessage not implemented yet');
 
 // Implement handleInputChange function
 function handleInputChange() {
     const hasContent = DOM.messageInput.value.trim().length > 0;
-    DOM.sendButton.disabled = !hasContent;
-}
-
-// Implement handleSendClick function
-function handleSendClick() {
-    if (DOM.messageInput.value.trim()) {
-        sendMessage();
-    }
-}
-
-// Implement handleKeyPress function
-function handleKeyPress(event) {
-    if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault();
-        handleSendClick();
-    }
-}
-
-// Implement handleStreamingToggle function
-function handleStreamingToggle() {
-    const isStreamingEnabled = DOM.streamingToggle.checked;
-    saveSettings({ streamingEnabled: isStreamingEnabled });
-}
-
-// Implement handleNoCacheToggle function
-function handleNoCacheToggle() {
-    const noCacheEnabled = DOM.noCacheToggle.checked;
-    saveSettings({ noCacheEnabled: noCacheEnabled });
-}
-
-// Implement handleModelChange function
-function handleModelChange() {
-    saveSettings();
-}
-
-// Implement handleConnectionStatusChange function
-function handleConnectionStatusChange(isOnline) {
-    setConnectionStatus(isOnline);
+    DOM.sendButton.disabled = !hasContent || getProcessingStatus();
 }
 
 export function setupEventListeners() {
@@ -62,7 +25,7 @@ export function setupEventListeners() {
     DOM.messageInput.addEventListener('input', handleInputChange);
     
     // Button events
-    DOM.sendButton.addEventListener('click', handleSendClick);
+    DOM.sendButton.addEventListener('click', sendMessage);
     
     // Toggle events
     DOM.streamingToggle.addEventListener('change', handleStreamingToggle);
@@ -78,6 +41,42 @@ export function setupEventListeners() {
     // Error handling
     window.addEventListener('error', handleGlobalError);
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
+}
+
+export function handleKeyPress(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+    }
+}
+
+export function handleStreamingToggle() {
+    // This will be implemented when we connect to the DOM module
+    console.log('Streaming toggle changed');
+    saveSettings();
+}
+
+export function handleNoCacheToggle() {
+    // This will be implemented when we connect to the DOM module
+    console.log('No cache toggle changed');
+    saveSettings();
+}
+
+export function handleModelChange() {
+    saveSettings();
+}
+
+export function handleConnectionStatusChange(isOnline) {
+    setConnectionStatus(isOnline ? 'online' : 'offline');
+    
+    if (isOnline) {
+        ErrorHandler.showSuccessMessage('Network connection restored');
+    } else {
+        ErrorHandler.showWarningMessage('Network connection lost. Some features may be unavailable.');
+    }
+    
+    // We'll need to update the connection indicator
+    console.log('Connection status changed:', isOnline);
 }
 
 export function handleBeforeUnload(event) {
