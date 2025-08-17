@@ -90,7 +90,6 @@ export function addMessage(content, type, options = {}) {
 export function startNewConversation() {
     try {
         setCurrentThreadId(null);
-        localStorage.removeItem('nalai_last_conversation_id');
         
         DOM.chatContainer.innerHTML = '';
         showWelcomeMessage();

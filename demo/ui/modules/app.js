@@ -39,10 +39,19 @@ export async function initializeApp() {
         // Setup network status monitoring
         NetworkManager.addOnlineStatusListener(handleConnectionStatusChange);
         
-        // Load saved state and show welcome message if needed
-        const loadedSuccessfully = await loadSavedState();
-        if (!loadedSuccessfully) {
-            showWelcomeMessage();
+        // Load saved state (settings only, not conversation state)
+        await loadSavedState();
+        
+        // Always show welcome message on fresh start
+        showWelcomeMessage();
+        
+        // Always refresh conversations list on app initialization
+        // This ensures conversations are visible even after page reload
+        try {
+            await refreshConversationsList();
+            Logger.info('Conversations list refreshed on app initialization');
+        } catch (error) {
+            Logger.warn('Failed to refresh conversations list on initialization', { error });
         }
         
         Logger.info('App initialization completed successfully');

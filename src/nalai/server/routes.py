@@ -113,9 +113,14 @@ def create_conversation_routes(
 ) -> None:
     """Create conversation endpoint routes."""
 
-    def get_conversation_headers(conversation_id: str) -> dict[str, str]:
+    def get_conversation_headers(conversation_id: str, user_id: str = "dev-user") -> dict[str, str]:
         """Get standard conversation response headers."""
-        return {"X-Conversation-ID": conversation_id}
+        # Always return user-scoped ID for consistency
+        if conversation_id.startswith("user:"):
+            return {"X-Conversation-ID": conversation_id}
+        else:
+            # Convert base UUID to user-scoped ID
+            return {"X-Conversation-ID": f"user:{user_id}:{conversation_id}"}
 
     def is_streaming_request(req: Request) -> bool:
         """Check if the request prefers streaming response."""
@@ -186,7 +191,7 @@ def create_conversation_routes(
                     resume_input=interrupt_response,
                     serialize_event=serialize_event,
                 ),
-                headers=get_conversation_headers(conversation_id),
+                headers=get_conversation_headers(conversation_id, "dev-user"),
             )
         else:
             # For synchronous resume, invoke the agent directly
@@ -203,7 +208,7 @@ def create_conversation_routes(
             return Response(
                 content=json.dumps({"output": serialized_result}),
                 media_type="application/json",
-                headers=get_conversation_headers(conversation_id),
+                headers=get_conversation_headers(conversation_id, "dev-user"),
             )
 
     # Create new conversation endpoint
@@ -701,7 +706,7 @@ def create_conversation_routes(
 
                 # Create conversation summary
                 conversation_summary = ConversationSummary(
-                    conversation_id=conversation_id,
+                    conversation_id=user_scoped_conversation_id,
                     created_at=(
                         thread_ownership.created_at.isoformat()
                         if thread_ownership.created_at
@@ -769,18 +774,26 @@ def create_conversation_routes(
                 ):
                     yield event
 
+            # Get user context for headers
+            from ..server.runtime_config import get_user_context
+            user_context = get_user_context(req)
+            
             return SSEStreamingResponse(
-                generate(), headers=get_conversation_headers(conversation_id)
+                generate(), headers=get_conversation_headers(conversation_id, user_context.user_id)
             )
         else:
             # Return JSON response
             try:
                 result = await agent.ainvoke(agent_input, config=agent_config)
                 serialized_result = serialize_event(result)
+                # Get user context for headers
+                from ..server.runtime_config import get_user_context
+                user_context = get_user_context(req)
+                
                 return Response(
                     content=json.dumps({"output": serialized_result}),
                     media_type="application/json",
-                    headers=get_conversation_headers(conversation_id),
+                    headers=get_conversation_headers(conversation_id, user_context.user_id),
                 )
             except Exception as e:
                 logger.error(f"Agent invocation failed: {e}")
@@ -788,5 +801,140 @@ def create_conversation_routes(
                     status_code=500, detail="Agent invocation failed"
                 ) from e
 
-    # TODO: Add conversation management endpoints (list, get, delete)
-    # These will be implemented in the next phase
+    # Delete conversation endpoint
+    @app.delete(
+        f"{settings.api_prefix}/conversations/{{conversation_id}}",
+        tags=["Conversation API v1"],
+        summary="Delete Conversation",
+        description="Delete a conversation by ID. This will permanently remove the conversation and all its data.",
+        responses={
+            204: {
+                "description": "Conversation deleted successfully",
+            },
+            404: {
+                "description": "Conversation not found",
+                "content": {
+                    "application/json": {
+                        "example": {"detail": "Conversation not found"}
+                    },
+                },
+            },
+            403: {
+                "description": "Access denied to conversation",
+                "content": {
+                    "application/json": {
+                        "example": {"detail": "Access denied to conversation"}
+                    },
+                },
+            },
+        },
+    )
+    async def delete_conversation(
+        conversation_id: str, req: Request
+    ) -> Response:
+        """
+        Delete conversation endpoint that removes conversation data and access control records.
+        """
+        return await _handle_delete_conversation_internal(conversation_id, req)
+
+    async def _handle_delete_conversation_internal(
+        conversation_id: str, req: Request
+    ) -> Response:
+        """
+        Internal handler for deleting conversation.
+        """
+        # Validate conversation_id format
+        try:
+            validate_thread_id_format(conversation_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+        # Get user context for access control
+        try:
+            from ..server.runtime_config import get_user_context
+
+            user_context = get_user_context(req)
+            user_id = user_context.user_id
+        except Exception as e:
+            logger.error(f"Failed to get user context: {e}")
+            raise HTTPException(
+                status_code=401, detail="Authentication required"
+            ) from e
+
+        # Get access control service
+        from ..services.thread_access_control import get_thread_access_control
+
+        access_control = get_thread_access_control()
+
+        # Get checkpointing service
+        from ..services.checkpointing_service import get_checkpointer
+
+        checkpointer = get_checkpointer()
+
+        try:
+            # Determine the conversation ID to use for LangGraph
+            # If the conversation_id is already user-scoped, use it directly
+            # Otherwise, create a user-scoped version
+            if conversation_id.startswith("user:"):
+                # Already user-scoped, validate it belongs to this user
+                parts = conversation_id.split(":", 2)
+                if len(parts) >= 3 and parts[1] == user_id:
+                    user_scoped_conversation_id = conversation_id
+                else:
+                    raise HTTPException(
+                        status_code=403, detail="Access denied to conversation"
+                    )
+            else:
+                # Not user-scoped, validate access and create user-scoped version
+                has_access = await access_control.validate_thread_access(
+                    user_id, conversation_id
+                )
+                if not has_access:
+                    raise HTTPException(
+                        status_code=403, detail="Access denied to conversation"
+                    )
+
+                user_scoped_conversation_id = (
+                    await access_control.create_user_scoped_thread_id(
+                        user_id, conversation_id
+                    )
+                )
+
+            # Delete the checkpoint state from LangGraph
+            try:
+                # LangGraph MemorySaver doesn't have a delete method, but we can try to clear it
+                # by setting it to None or an empty state
+                await checkpointer.aput(
+                    {"configurable": {"thread_id": user_scoped_conversation_id}},
+                    None
+                )
+                logger.debug(f"Cleared checkpoint state for conversation {conversation_id}")
+            except Exception as e:
+                logger.warning(f"Failed to clear checkpoint state: {e}")
+                # Continue with deletion even if checkpoint clearing fails
+
+            # Extract base UUID for access control (access control stores base UUIDs)
+            base_conversation_id = conversation_id
+            if conversation_id.startswith("user:"):
+                parts = conversation_id.split(":", 2)
+                if len(parts) >= 3:
+                    base_conversation_id = parts[2]
+            
+            # Delete the thread ownership record
+            deleted = await access_control.delete_thread(user_id, base_conversation_id)
+            if not deleted:
+                raise HTTPException(status_code=404, detail="Conversation not found")
+
+            logger.info(f"Successfully deleted conversation {conversation_id} for user {user_id}")
+
+            # Return 204 No Content for successful deletion
+            return Response(status_code=204)
+
+        except HTTPException:
+            # Re-raise HTTP exceptions
+            raise
+        except Exception as e:
+            logger.error(f"Failed to delete conversation {conversation_id}: {e}")
+            raise HTTPException(
+                status_code=500, detail="Failed to delete conversation"
+            ) from e

@@ -61,9 +61,6 @@ export async function loadConversation(conversationId, showUserErrors = true) {
         // Update current thread ID
         setCurrentThreadId(conversation.conversation_id);
         
-        // Save as last conversation for future loads
-        localStorage.setItem('nalai_last_conversation_id', conversation.conversation_id);
-        
         // Show conversation indicator only after successful load
         showConversationIndicator();
         

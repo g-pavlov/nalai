@@ -66,29 +66,9 @@ export async function loadSavedState() {
 
         updateStatusIndicators();
         
-        // Try to load last conversation if it exists
-        const lastConversationId = localStorage.getItem('nalai_last_conversation_id');
-        if (lastConversationId) {
-            try {
-                // We'll need to import loadConversation from the conversations module
-                // For now, we'll just set the thread ID
-                setCurrentThreadId(lastConversationId);
-                return true; // Successfully loaded conversation ID
-            } catch (error) {
-                // Check if it's a 404 error (conversation not found)
-                if (error.status === 404) {
-                    Logger.info('Last conversation not found (likely due to server restart), proceeding with clean slate', { 
-                        conversationId: lastConversationId,
-                        error: error.message 
-                    });
-                    // Clear the invalid conversation ID
-                    localStorage.removeItem('nalai_last_conversation_id');
-                } else {
-                    Logger.warn('Failed to load last conversation due to other error', { error });
-                }
-                return false; // Failed to load conversation
-            }
-        }
+        // Don't use localStorage for conversation state - rely on server state only
+        // The conversations list will be refreshed on app initialization
+        return false; // No conversation to load from localStorage
         
         return false; // No conversation to load
         

@@ -164,20 +164,29 @@ function handleThreadIdResponse(response) {
         willUpdate: conversationId && conversationId !== getCurrentThreadId()
     });
     
-    if (conversationId && conversationId !== getCurrentThreadId()) {
-        const normalizedThreadId = normalizeThreadId(conversationId);
-        if (normalizedThreadId) {
-            setCurrentThreadId(normalizedThreadId);
-            // Save as last conversation for future loads
-            localStorage.setItem('nalai_last_conversation_id', normalizedThreadId);
-            Logger.info('New conversation thread started', { 
-                originalConversationId: conversationId, 
-                normalizedThreadId 
-            });
-        } else {
-            Logger.warn('Failed to normalize conversation ID', { conversationId });
+            if (conversationId && conversationId !== getCurrentThreadId()) {
+            const normalizedThreadId = normalizeThreadId(conversationId);
+            if (normalizedThreadId) {
+                setCurrentThreadId(normalizedThreadId);
+                Logger.info('New conversation thread started', { 
+                    originalConversationId: conversationId, 
+                    normalizedThreadId 
+                });
+                
+                // Auto-refresh conversations list when a new conversation is created
+                // Import the refresh function dynamically to avoid circular imports
+                import('./conversationsManager.js').then(module => {
+                    if (module.refreshConversationsList) {
+                        Logger.info('Auto-refreshing conversations list after new conversation creation');
+                        module.refreshConversationsList();
+                    }
+                }).catch(error => {
+                    Logger.warn('Failed to auto-refresh conversations list', { error });
+                });
+            } else {
+                Logger.warn('Failed to normalize conversation ID', { conversationId });
+            }
         }
-    }
 }
 
 // Import streaming functions

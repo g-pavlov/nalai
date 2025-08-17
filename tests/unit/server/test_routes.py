@@ -618,3 +618,120 @@ class TestListConversations:
         data = response.json()
         assert data["total_count"] == 0
         assert len(data["conversations"]) == 0
+
+
+class TestDeleteConversation:
+    """Test delete conversation endpoint."""
+
+    @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    @patch("nalai.services.checkpointing_service.get_checkpointer")
+    def test_delete_conversation_success(
+        self,
+        mock_get_checkpointer,
+        mock_get_access_control,
+        mock_get_user_context,
+        client,
+        app_and_agent,
+    ):
+        """Should delete conversation for authenticated user."""
+        # Mock user context
+        mock_user_context = MagicMock()
+        mock_user_context.user_id = "test-user"
+        mock_get_user_context.return_value = mock_user_context
+
+        # Mock access control - user owns the conversation
+        mock_access_control = AsyncMock()
+        mock_access_control.validate_thread_access.return_value = True
+        mock_access_control.create_user_scoped_thread_id.return_value = "user:test-user:550e8400-e29b-41d4-a716-446655440001"
+        mock_access_control.delete_thread.return_value = True
+        mock_get_access_control.return_value = mock_access_control
+
+        # Mock checkpointing service
+        mock_checkpointer = AsyncMock()
+        mock_get_checkpointer.return_value = mock_checkpointer
+
+        response = client.delete("/api/v1/conversations/550e8400-e29b-41d4-a716-446655440001")
+
+        assert response.status_code == 204
+        assert response.content == b""
+
+        # Verify access control was called
+        mock_access_control.validate_thread_access.assert_called_once_with("test-user", "550e8400-e29b-41d4-a716-446655440001")
+        mock_access_control.create_user_scoped_thread_id.assert_called_once_with("test-user", "550e8400-e29b-41d4-a716-446655440001")
+        mock_access_control.delete_thread.assert_called_once_with("test-user", "550e8400-e29b-41d4-a716-446655440001")
+
+        # Verify checkpoint clearing was attempted
+        mock_checkpointer.aput.assert_called_once()
+
+    @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    def test_delete_conversation_access_denied(
+        self,
+        mock_get_access_control,
+        mock_get_user_context,
+        client,
+        app_and_agent,
+    ):
+        """Should return 403 when user doesn't own the conversation."""
+        # Mock user context
+        mock_user_context = MagicMock()
+        mock_user_context.user_id = "test-user"
+        mock_get_user_context.return_value = mock_user_context
+
+        # Mock access control - user doesn't own the conversation
+        mock_access_control = AsyncMock()
+        mock_access_control.validate_thread_access.return_value = False
+        mock_get_access_control.return_value = mock_access_control
+
+        response = client.delete("/api/v1/conversations/550e8400-e29b-41d4-a716-446655440001")
+
+        assert response.status_code == 403
+        assert "Access denied to conversation" in response.json()["detail"]
+
+    @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    def test_delete_conversation_not_found(
+        self,
+        mock_get_access_control,
+        mock_get_user_context,
+        client,
+        app_and_agent,
+    ):
+        """Should return 404 when conversation doesn't exist."""
+        # Mock user context
+        mock_user_context = MagicMock()
+        mock_user_context.user_id = "test-user"
+        mock_get_user_context.return_value = mock_user_context
+
+        # Mock access control - user owns the conversation but deletion fails
+        mock_access_control = AsyncMock()
+        mock_access_control.validate_thread_access.return_value = True
+        mock_access_control.create_user_scoped_thread_id.return_value = "user:test-user:550e8400-e29b-41d4-a716-446655440001"
+        mock_access_control.delete_thread.return_value = False  # Conversation not found
+        mock_get_access_control.return_value = mock_access_control
+
+        response = client.delete("/api/v1/conversations/550e8400-e29b-41d4-a716-446655440001")
+
+        assert response.status_code == 404
+        assert "Conversation not found" in response.json()["detail"]
+
+    @patch("nalai.server.runtime_config.get_user_context")
+    def test_delete_conversation_unauthorized(
+        self, mock_get_user_context, client, app_and_agent
+    ):
+        """Should return 401 when user context is not available."""
+        # Mock user context to raise exception
+        mock_get_user_context.side_effect = Exception("No user context")
+
+        response = client.delete("/api/v1/conversations/550e8400-e29b-41d4-a716-446655440001")
+
+        assert response.status_code == 401
+        assert "Authentication required" in response.json()["detail"]
+
+    def test_delete_conversation_invalid_id(self, client, app_and_agent):
+        """Should return 400 when conversation ID format is invalid."""
+        response = client.delete("/api/v1/conversations/invalid-id-format")
+
+        assert response.status_code == 400
+        assert "thread_id must be a valid UUID4" in response.json()["detail"]

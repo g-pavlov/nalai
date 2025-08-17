@@ -195,6 +195,10 @@ export class ErrorHandler {
         }, 5000);
     }
 
+    static showUserSuccess(message) {
+        this.showSuccessMessage(message);
+    }
+
     static showWarningMessage(message) {
         const warningDiv = document.createElement('div');
         warningDiv.className = 'message warning-message fade-in';

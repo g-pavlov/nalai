@@ -159,7 +159,6 @@ function displayConversations() {
 function createConversationElement(conversation) {
     const element = document.createElement('div');
     element.className = 'conversation-item';
-    element.onclick = () => selectConversation(conversation);
     
     // Format dates
     const createdDate = conversation.created_at ? formatDate(conversation.created_at) : 'Unknown';
@@ -172,12 +171,19 @@ function createConversationElement(conversation) {
     const preview = conversation.preview || 'No preview available';
     
     element.innerHTML = `
-        <div class="conversation-item-header">
-            <h4 class="conversation-item-title">${escapeHtml(title)}</h4>
-            <span class="conversation-item-date">${updatedDate}</span>
+        <div class="conversation-item-content" onclick="window.selectConversationFromElement('${conversation.conversation_id}')">
+            <div class="conversation-item-header">
+                <h4 class="conversation-item-title">${escapeHtml(title)}</h4>
+                <span class="conversation-item-date">${updatedDate}</span>
+            </div>
+            <p class="conversation-item-preview">${escapeHtml(preview)}</p>
+            ${createMetadataTags(conversation.metadata)}
         </div>
-        <p class="conversation-item-preview">${escapeHtml(preview)}</p>
-        ${createMetadataTags(conversation.metadata)}
+        <div class="conversation-item-actions">
+            <button class="conversation-delete-btn" onclick="window.deleteConversationFromElement('${conversation.conversation_id}', '${escapeHtml(title)}')" title="Delete conversation">
+                🗑️
+            </button>
+        </div>
     `;
     
     return element;
@@ -232,6 +238,81 @@ async function selectConversation(conversation) {
         ErrorHandler.showUserError(`Failed to load conversation: ${error.message}`);
     }
 }
+
+async function deleteConversation(conversationId, conversationTitle) {
+    try {
+        Logger.info('Deleting conversation', { conversationId, conversationTitle });
+        
+        // Show confirmation dialog
+        const confirmed = confirm(`Are you sure you want to delete "${conversationTitle}"?\n\nThis action cannot be undone.`);
+        if (!confirmed) {
+            Logger.info('Conversation deletion cancelled by user');
+            return;
+        }
+        
+        // Check network status
+        if (!NetworkManager.isOnline()) {
+            throw new Error('No internet connection. Please check your network and try again.');
+        }
+        
+        // Build the API URL
+        const url = buildApiUrl(API_CONFIG.URL_TEMPLATES.CONVERSATION, { conversation_id: conversationId });
+        const headers = getRequestHeaders(false, false); // No streaming for deletion
+        
+        Logger.info('Deleting conversation from API', { url });
+        
+        // Make the API request
+        const response = await NetworkManager.fetchWithRetry(url, {
+            method: 'DELETE',
+            headers
+        });
+        
+        if (!response.ok) {
+            let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+            try {
+                const errorBody = await response.text();
+                if (errorBody) {
+                    const errorJson = JSON.parse(errorBody);
+                    if (errorJson.detail) {
+                        errorMessage += ` - ${errorJson.detail}`;
+                    }
+                }
+            } catch (parseError) {
+                Logger.warn('Could not parse error response', { parseError });
+            }
+            
+            const error = new Error(errorMessage);
+            error.status = response.status;
+            throw error;
+        }
+        
+        Logger.info('Conversation deleted successfully', { conversationId });
+        
+        // Show success message
+        ErrorHandler.showUserSuccess(`Conversation "${conversationTitle}" deleted successfully`);
+        
+        // Refresh the conversations list
+        await refreshConversationsList();
+        
+    } catch (error) {
+        Logger.error('Failed to delete conversation', { conversationId, error });
+        ErrorHandler.showUserError(`Failed to delete conversation: ${error.message}`);
+    }
+}
+
+// Global functions for onclick handlers
+window.selectConversationFromElement = async function(conversationId) {
+    const conversation = conversations.find(c => c.conversation_id === conversationId);
+    if (conversation) {
+        await selectConversation(conversation);
+    }
+};
+
+window.deleteConversationFromElement = async function(conversationId, conversationTitle) {
+    // Prevent event bubbling to avoid triggering the select function
+    event.stopPropagation();
+    await deleteConversation(conversationId, conversationTitle);
+};
 
 function formatDate(dateString) {
     try {
