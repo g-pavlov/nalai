@@ -117,11 +117,27 @@ def initialize_app():
 
     # Mount UI static files
     ui_path = Path(__file__).parent.parent.parent.parent / "demo" / "ui"
+    logger.info(f"Attempting to mount UI from path: {ui_path}")
+    logger.info(f"Path exists: {ui_path.exists()}")
+    logger.info(f"Path is absolute: {ui_path.is_absolute()}")
+    logger.info(f"Current working directory: {Path.cwd()}")
+    
     if ui_path.exists():
         app.mount("/ui", StaticFiles(directory=str(ui_path)), name="ui")
         logger.info(f"Mounted UI static files from {ui_path}")
     else:
         logger.warning(f"UI directory not found at {ui_path}")
+        # Try alternative paths
+        alt_paths = [
+            Path.cwd() / "demo" / "ui",
+            Path.cwd() / "src" / "nalai" / "server" / ".." / ".." / ".." / ".." / "demo" / "ui"
+        ]
+        for alt_path in alt_paths:
+            logger.info(f"Trying alternative path: {alt_path}")
+            if alt_path.exists():
+                app.mount("/ui", StaticFiles(directory=str(alt_path)), name="ui")
+                logger.info(f"Mounted UI static files from alternative path: {alt_path}")
+                break
 
     # Create basic routes
     create_basic_routes(app)

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Assistant Chat</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-content">
+                <h1>🤖 nalAI</h1>
+                <button class="settings-button" id="settingsButton" onclick="toggleSettings()" title="Settings">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Settings Panel -->
+        <div class="settings-panel" id="settingsPanel">
+            <div class="settings-header">
+                <h3>Settings</h3>
+                <button class="close-settings" onclick="toggleSettings()" title="Back to Application">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12,19 5,12 12,5"></polyline>
+                    </svg>
+                    Back to Application
+                </button>
+            </div>
+            <div class="settings-content">
+                <div class="setting-group">
+                    <label for="modelSelector">Model:</label>
+                    <select id="modelSelector">
+                        <option value='{"name":"gpt-4.1o","platform":"openai"}'>OpenAI (gpt-4o)</option>
+                        <!--option value='{"name":"claude-3-5-sonnet-20241022","platform":"aws_bedrock"}'>Bedrock (Claude 3.5 Sonnet)</option-->
+                        <option value='{"name":"llama3.1:8b","platform":"ollama"}'>Ollama (llama3.1:8b)</option>
+                    </select>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="streamingToggle">Streaming:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="streamingToggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                    <span id="streamingStatus">ON</span>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="noCacheToggle">No Cache:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="noCacheToggle">
+                        <span class="slider round"></span>
+                    </label>
+                    <span id="noCacheStatus">OFF</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chat-container" id="chatContainer">
+        </div>
+        
+        <div class="loading" id="loading">
+            <p id="loadingText">🤔 Thinking...</p>
+        </div>
+        
+        <div class="input-container">
+            <input type="text" class="message-input" id="messageInput" placeholder="Type your message here..." />
+            <button class="send-button" id="sendButton" onclick="sendMessage()" title="Send message">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22,2 15,22 11,13 2,9"></polygon>
+                </svg>
+                <span>Send</span>
+            </button>
+            <button class="new-conversation-button" id="newConversationButton" onclick="startNewConversation()" title="Start new conversation">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 5v14"></path>
+                    <path d="M5 12h14"></path>
+                </svg>
+                <span>New Conversation</span>
+            </button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 

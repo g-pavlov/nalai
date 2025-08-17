@@ -85,6 +85,10 @@ def create_basic_routes(app: FastAPI) -> None:
     async def redirect_root_to_docs() -> RedirectResponse:
         return RedirectResponse("/docs")
 
+    @app.get("/ui", include_in_schema=False)
+    async def redirect_ui_to_index() -> RedirectResponse:
+        return RedirectResponse("/ui/index.html")
+
     @app.get("/healthz", tags=["System"])
     async def healthz() -> HealthzResponse:
         return HealthzResponse(status="Healthy")

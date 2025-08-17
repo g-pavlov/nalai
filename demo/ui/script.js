@@ -638,7 +638,9 @@ const DOM = {
     streamingStatus: null,
     noCacheToggle: null,
     noCacheStatus: null,
-    modelSelector: null
+    modelSelector: null,
+    settingsPanel: null,
+    settingsButton: null
 };
 
 // ============================================================================
@@ -694,11 +696,14 @@ function initializeDOMElements() {
     DOM.noCacheToggle = document.getElementById('noCacheToggle');
     DOM.noCacheStatus = document.getElementById('noCacheStatus');
     DOM.modelSelector = document.getElementById('modelSelector');
+    DOM.settingsPanel = document.getElementById('settingsPanel');
+    DOM.settingsButton = document.getElementById('settingsButton');
 
     // Validate required elements
     const requiredElements = [
         'chatContainer', 'messageInput', 'sendButton', 'loading',
-        'streamingToggle', 'noCacheToggle', 'modelSelector'
+        'streamingToggle', 'noCacheToggle', 'modelSelector',
+        'settingsPanel', 'settingsButton'
     ];
 
     for (const elementName of requiredElements) {
@@ -795,6 +800,9 @@ function setupEventListeners() {
     DOM.noCacheToggle.addEventListener('change', handleNoCacheToggle);
     DOM.modelSelector.addEventListener('change', handleModelChange);
     
+    // Settings panel events
+    document.addEventListener('click', handleClickOutside);
+    
     // Global events
     window.addEventListener('beforeunload', handleBeforeUnload);
     
@@ -881,6 +889,43 @@ function updateStatusIndicators() {
     updateStreamingStatus();
     updateNoCacheStatus();
     updateConnectionIndicator();
+}
+
+// ============================================================================
+// SETTINGS PANEL FUNCTIONS
+// ============================================================================
+
+function toggleSettings() {
+    console.log('toggleSettings called');
+    console.log('DOM.settingsPanel:', DOM.settingsPanel);
+    console.log('DOM.settingsButton:', DOM.settingsButton);
+    
+    if (!DOM.settingsPanel || !DOM.settingsButton) {
+        console.error('Settings panel elements not found');
+        return;
+    }
+    
+    const isActive = DOM.settingsPanel.classList.contains('active');
+    console.log('Panel is active:', isActive);
+    
+    if (isActive) {
+        DOM.settingsPanel.classList.remove('active');
+        DOM.settingsButton.setAttribute('aria-expanded', 'false');
+        console.log('Settings panel closed');
+    } else {
+        DOM.settingsPanel.classList.add('active');
+        DOM.settingsButton.setAttribute('aria-expanded', 'true');
+        console.log('Settings panel opened');
+    }
+}
+
+function handleClickOutside(event) {
+    // Close settings panel if clicking outside of it or the settings button
+    if (!DOM.settingsPanel.contains(event.target) && 
+        !DOM.settingsButton.contains(event.target)) {
+        DOM.settingsPanel.classList.remove('active');
+        DOM.settingsButton.setAttribute('aria-expanded', 'false');
+    }
 }
 
 function updateConnectionIndicator() {
@@ -1493,6 +1538,50 @@ function parseInterruptFallback(interruptString) {
     }
 }
 
+function disableInterruptActions() {
+    const interruptContainer = document.querySelector('.interrupt-container');
+    if (!interruptContainer) return;
+    
+    // Disable all buttons
+    const buttons = interruptContainer.querySelectorAll('.interrupt-button');
+    buttons.forEach(button => {
+        button.disabled = true;
+        button.style.opacity = '0.6';
+        button.style.cursor = 'not-allowed';
+    });
+    
+    // Add progress indicator
+    const actionsDiv = interruptContainer.querySelector('.interrupt-actions');
+    if (actionsDiv) {
+        const progressDiv = document.createElement('div');
+        progressDiv.className = 'interrupt-progress';
+        progressDiv.innerHTML = `
+            <div class="progress-spinner"></div>
+            <span>Processing...</span>
+        `;
+        actionsDiv.appendChild(progressDiv);
+    }
+}
+
+function enableInterruptActions() {
+    const interruptContainer = document.querySelector('.interrupt-container');
+    if (!interruptContainer) return;
+    
+    // Re-enable all buttons
+    const buttons = interruptContainer.querySelectorAll('.interrupt-button');
+    buttons.forEach(button => {
+        button.disabled = false;
+        button.style.opacity = '1';
+        button.style.cursor = 'pointer';
+    });
+    
+    // Remove progress indicator
+    const progressDiv = interruptContainer.querySelector('.interrupt-progress');
+    if (progressDiv) {
+        progressDiv.remove();
+    }
+}
+
 function createInterruptUI(assistantMessageDiv, actionRequest, interruptInfo) {
     // Remove any existing interrupt UI first
     const existingInterrupt = document.querySelector('.interrupt-container');
@@ -1660,6 +1749,9 @@ async function handleInterrupt(responseType, args = null) {
         return;
     }
     
+    // Disable all action buttons and show progress
+    disableInterruptActions();
+    
     // For now, allow all interrupt handling to proceed
     // The main issue was state cleanup, which we've fixed
 
@@ -1766,6 +1858,9 @@ async function handleInterrupt(responseType, args = null) {
             errorStack: error?.stack 
         });
         ErrorHandler.handleError(error, 'Interrupt handling');
+        
+        // Re-enable buttons on error
+        enableInterruptActions();
     }
 }
 
