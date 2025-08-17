@@ -498,3 +498,123 @@ class TestLoadConversation:
         response = client.get(f"/api/v1/conversations/{conversation_id}")
 
         assert response.status_code == 400
+
+
+class TestListConversations:
+    """Test list conversations endpoint."""
+
+    @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    @patch("nalai.services.checkpointing_service.get_checkpointer")
+    def test_list_conversations_success(
+        self,
+        mock_get_checkpointer,
+        mock_get_access_control,
+        mock_get_user_context,
+        client,
+        app_and_agent,
+    ):
+        """Should list conversations for authenticated user."""
+        # Mock user context
+        mock_user_context = MagicMock()
+        mock_user_context.user_id = "test-user"
+        mock_get_user_context.return_value = mock_user_context
+
+        # Mock access control - return user's threads
+        mock_access_control = AsyncMock()
+        from datetime import datetime
+
+        from nalai.services.thread_access_control import ThreadOwnership
+
+        mock_threads = [
+            ThreadOwnership(
+                thread_id="conv-1",
+                user_id="test-user",
+                created_at=datetime(2023, 1, 1, 12, 0, 0),
+                last_accessed=datetime(2023, 1, 2, 12, 0, 0),
+                metadata={"title": "First Conversation"},
+            ),
+            ThreadOwnership(
+                thread_id="conv-2",
+                user_id="test-user",
+                created_at=datetime(2023, 1, 3, 12, 0, 0),
+                last_accessed=datetime(2023, 1, 4, 12, 0, 0),
+                metadata={"title": "Second Conversation"},
+            ),
+        ]
+        mock_access_control.list_user_threads.return_value = mock_threads
+        mock_access_control.create_user_scoped_thread_id.side_effect = (
+            lambda user_id, thread_id: f"user:{user_id}:{thread_id}"
+        )
+        mock_get_access_control.return_value = mock_access_control
+
+        # Mock checkpointing service - return conversation data
+        mock_checkpointer = AsyncMock()
+        mock_checkpointer.aget.return_value = {
+            "channel_values": {
+                "messages": [
+                    ("human", "Hello, this is a test message"),
+                    ("ai", "Hi there! How can I help you?"),
+                ]
+            }
+        }
+        mock_get_checkpointer.return_value = mock_checkpointer
+
+        response = client.get("/api/v1/conversations")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_count"] == 2
+        assert len(data["conversations"]) == 2
+
+        # Check first conversation
+        conv1 = data["conversations"][0]
+        assert conv1["conversation_id"] == "conv-1"
+        assert conv1["created_at"] == "2023-01-01T12:00:00"
+        assert conv1["last_updated"] == "2023-01-02T12:00:00"
+        assert conv1["preview"] == "Hello, this is a test message"
+        assert conv1["metadata"]["title"] == "First Conversation"
+
+        # Check second conversation
+        conv2 = data["conversations"][1]
+        assert conv2["conversation_id"] == "conv-2"
+        assert conv2["created_at"] == "2023-01-03T12:00:00"
+        assert conv2["last_updated"] == "2023-01-04T12:00:00"
+        assert conv2["preview"] == "Hello, this is a test message"
+        assert conv2["metadata"]["title"] == "Second Conversation"
+
+    @patch("nalai.server.runtime_config.get_user_context")
+    def test_list_conversations_unauthorized(
+        self, mock_get_user_context, client, app_and_agent
+    ):
+        """Should return 401 when user context is not available."""
+        # Mock user context to raise exception
+        mock_get_user_context.side_effect = Exception("No user context")
+
+        response = client.get("/api/v1/conversations")
+
+        assert response.status_code == 401
+        assert "Authentication required" in response.json()["detail"]
+
+    @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    def test_list_conversations_empty_list(
+        self, mock_get_access_control, mock_get_user_context, client, app_and_agent
+    ):
+        """Should return empty list when user has no conversations."""
+        # Mock user context
+        mock_user_context = MagicMock()
+        mock_user_context.user_id = "test-user"
+        mock_get_user_context.return_value = mock_user_context
+
+        # Mock access control - return empty list
+        mock_access_control = AsyncMock()
+        mock_access_control.list_user_threads.return_value = []
+        mock_get_access_control.return_value = mock_access_control
+
+        response = client.get("/api/v1/conversations")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_count"] == 0
+        assert len(data["conversations"]) == 0

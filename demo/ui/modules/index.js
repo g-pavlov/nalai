@@ -20,3 +20,4 @@ export * from './api.js';
 export * from './streaming.js';
 export * from './interrupts.js';
 export * from './conversations.js';
+export * from './conversationsManager.js';

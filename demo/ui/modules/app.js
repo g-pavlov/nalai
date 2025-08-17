@@ -18,6 +18,7 @@ import { toggleSettings } from './settings.js';
 import { sendMessage } from './api.js';
 import { loadConversation } from './conversations.js';
 import { handleInterrupt } from './interrupts.js';
+import { showConversationsList, hideConversationsList, refreshConversationsList } from './conversationsManager.js';
 
 export async function initializeApp() {
     try {
@@ -54,6 +55,6 @@ export async function initializeApp() {
 }
 
 // Global functions for HTML onclick handlers
-export { sendMessage, startNewConversation, loadConversation, handleInterrupt, toggleSettings };
+export { sendMessage, startNewConversation, loadConversation, handleInterrupt, toggleSettings, showConversationsList, hideConversationsList, refreshConversationsList };
 
 

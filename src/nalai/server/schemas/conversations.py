@@ -206,3 +206,54 @@ class LoadConversationResponse(BaseModel):
         if not isinstance(metadata, dict):
             raise ValueError("Metadata must be a dictionary")
         return metadata
+
+
+class ConversationSummary(BaseModel):
+    """Summary model for a conversation in the list."""
+
+    model_config = ConfigDict(extra="allow")  # Allow extra fields for flexibility
+
+    conversation_id: str = Field(..., description="Conversation identifier")
+    created_at: str | None = Field(None, description="Creation timestamp")
+    last_updated: str | None = Field(None, description="Last update timestamp")
+    preview: str | None = Field(
+        None, description="First 256 characters of conversation"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Conversation metadata"
+    )
+
+    @field_validator("preview")
+    @classmethod
+    def validate_preview(cls, preview):
+        """Validate preview text."""
+        if preview is not None and len(preview) > 256:
+            raise ValueError("Preview cannot exceed 256 characters")
+        return preview
+
+
+class ListConversationsResponse(BaseModel):
+    """Response model for listing conversations."""
+
+    model_config = ConfigDict(extra="allow")  # Allow extra fields for flexibility
+
+    conversations: list[ConversationSummary] = Field(
+        ..., description="List of conversation summaries"
+    )
+    total_count: int = Field(..., description="Total number of conversations")
+
+    @field_validator("conversations")
+    @classmethod
+    def validate_conversations(cls, conversations):
+        """Validate conversations list."""
+        if not isinstance(conversations, list):
+            raise ValueError("Conversations must be a list")
+        return conversations
+
+    @field_validator("total_count")
+    @classmethod
+    def validate_total_count(cls, total_count):
+        """Validate total count."""
+        if total_count < 0:
+            raise ValueError("Total count cannot be negative")
+        return total_count

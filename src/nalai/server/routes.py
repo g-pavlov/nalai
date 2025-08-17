@@ -23,7 +23,9 @@ from .runtime_config import (
 from .schemas import (
     ConversationRequest,
     ConversationResponse,
+    ConversationSummary,
     HealthzResponse,
+    ListConversationsResponse,
     LoadConversationResponse,
     ResumeDecisionRequest,
     ResumeDecisionResponse,
@@ -312,6 +314,40 @@ def create_conversation_routes(
         """
         return await _handle_load_conversation_internal(conversation_id, req)
 
+    # List conversations endpoint
+    @app.get(
+        f"{settings.api_prefix}/conversations",
+        response_model=ListConversationsResponse,
+        tags=["Conversation API v1"],
+        summary="List Conversations",
+        description="List all conversations that the current user has access to. Returns conversation IDs, metadata, and previews.",
+        responses={
+            200: {
+                "description": "Conversations listed successfully",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ListConversationsResponse"
+                        }
+                    },
+                },
+            },
+            401: {
+                "description": "Authentication required",
+                "content": {
+                    "application/json": {
+                        "example": {"detail": "Authentication required"}
+                    },
+                },
+            },
+        },
+    )
+    async def list_conversations(req: Request) -> ListConversationsResponse:
+        """
+        List conversations endpoint that returns all conversations accessible to the current user.
+        """
+        return await _handle_list_conversations_internal(req)
+
     # Resume decision endpoint
     @app.post(
         f"{settings.api_prefix}/conversations/{{conversation_id}}/resume-decision",
@@ -598,6 +634,101 @@ def create_conversation_routes(
             logger.error(f"Failed to load conversation {conversation_id}: {e}")
             raise HTTPException(
                 status_code=500, detail="Failed to load conversation"
+            ) from e
+
+    async def _handle_list_conversations_internal(
+        req: Request,
+    ) -> ListConversationsResponse:
+        """
+        Internal handler for listing conversations.
+        """
+        # Get user context for access control
+        try:
+            from ..server.runtime_config import get_user_context
+
+            user_context = get_user_context(req)
+            user_id = user_context.user_id
+        except Exception as e:
+            logger.error(f"Failed to get user context: {e}")
+            raise HTTPException(
+                status_code=401, detail="Authentication required"
+            ) from e
+
+        # Get access control service
+        from ..services.thread_access_control import get_thread_access_control
+
+        access_control = get_thread_access_control()
+
+        # Get checkpointing service
+        from ..services.checkpointing_service import get_checkpointer
+
+        checkpointer = get_checkpointer()
+
+        try:
+            # Get all threads owned by the user
+            user_threads = await access_control.list_user_threads(user_id)
+
+            conversations = []
+
+            for thread_ownership in user_threads:
+                conversation_id = thread_ownership.thread_id
+
+                # Create user-scoped conversation ID for LangGraph
+                user_scoped_conversation_id = (
+                    await access_control.create_user_scoped_thread_id(
+                        user_id, conversation_id
+                    )
+                )
+
+                # Get the checkpoint state to extract preview
+                checkpoint_state = await checkpointer.aget(
+                    {"configurable": {"thread_id": user_scoped_conversation_id}}
+                )
+
+                # Extract preview from messages
+                preview = None
+                if checkpoint_state and "channel_values" in checkpoint_state:
+                    channel_values = checkpoint_state["channel_values"]
+                    if "messages" in channel_values:
+                        messages = channel_values["messages"]
+                        if messages:
+                            # Get the first message content for preview
+                            first_msg = messages[0]
+                            if hasattr(first_msg, "content"):
+                                preview = first_msg.content[:256]
+                            elif isinstance(first_msg, tuple) and len(first_msg) >= 2:
+                                preview = str(first_msg[1])[:256]
+
+                # Create conversation summary
+                conversation_summary = ConversationSummary(
+                    conversation_id=conversation_id,
+                    created_at=(
+                        thread_ownership.created_at.isoformat()
+                        if thread_ownership.created_at
+                        else None
+                    ),
+                    last_updated=(
+                        thread_ownership.last_accessed.isoformat()
+                        if thread_ownership.last_accessed
+                        else None
+                    ),
+                    preview=preview,
+                    metadata=thread_ownership.metadata,
+                )
+
+                conversations.append(conversation_summary)
+
+            return ListConversationsResponse(
+                conversations=conversations, total_count=len(conversations)
+            )
+
+        except HTTPException:
+            # Re-raise HTTP exceptions
+            raise
+        except Exception as e:
+            logger.error(f"Failed to list conversations for user {user_id}: {e}")
+            raise HTTPException(
+                status_code=500, detail="Failed to list conversations"
             ) from e
 
     async def _handle_conversation_internal(

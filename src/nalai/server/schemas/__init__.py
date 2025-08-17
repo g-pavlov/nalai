@@ -11,6 +11,8 @@ This package contains all API input/output schemas organized by HTTP resources:
 from .conversations import (
     ConversationRequest,
     ConversationResponse,
+    ConversationSummary,
+    ListConversationsResponse,
     LoadConversationResponse,
     MessageInput,
 )
@@ -21,7 +23,9 @@ __all__ = [
     # Conversation resource schemas
     "ConversationRequest",
     "ConversationResponse",
+    "ConversationSummary",
     "LoadConversationResponse",
+    "ListConversationsResponse",
     "MessageInput",
     # Resume decision resource schemas
     "ResumeDecisionRequest",

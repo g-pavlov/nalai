@@ -17,7 +17,12 @@ export const DOM = {
     noCacheStatus: null,
     modelSelector: null,
     settingsPanel: null,
-    settingsButton: null
+    settingsButton: null,
+    conversationsPanel: null,
+    conversationsList: null,
+    conversationsLoading: null,
+    conversationsEmpty: null,
+    conversationsError: null
 };
 
 export function initializeDOMElements() {
@@ -33,12 +38,18 @@ export function initializeDOMElements() {
     DOM.modelSelector = document.getElementById('modelSelector');
     DOM.settingsPanel = document.getElementById('settingsPanel');
     DOM.settingsButton = document.getElementById('settingsButton');
+    DOM.conversationsPanel = document.getElementById('conversationsPanel');
+    DOM.conversationsList = document.getElementById('conversationsList');
+    DOM.conversationsLoading = document.getElementById('conversationsLoading');
+    DOM.conversationsEmpty = document.getElementById('conversationsEmpty');
+    DOM.conversationsError = document.getElementById('conversationsError');
 
     // Validate required elements
     const requiredElements = [
         'chatContainer', 'messageInput', 'sendButton', 'loading',
         'streamingToggle', 'noCacheToggle', 'modelSelector',
-        'settingsPanel', 'settingsButton'
+        'settingsPanel', 'settingsButton', 'conversationsPanel',
+        'conversationsList', 'conversationsLoading', 'conversationsEmpty', 'conversationsError'
     ];
 
     for (const elementName of requiredElements) {
