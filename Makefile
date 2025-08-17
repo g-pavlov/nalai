@@ -240,13 +240,13 @@ build: install
 	@poetry build
 	@echo "✅ Build completed"
 
-# Demo Commands
-# ============
+# Demo
+# ====
 
-.PHONY: ui-run ui-stop
+.PHONY: demo-start demo-stop
 
 # Start API Assistant with UI demo
-ui-run:
+demo-start:
 	@echo "🚀 Starting Demo Agent Application..."
 	@echo "=============================================="
 	@./scripts/check_env.sh
@@ -258,10 +258,10 @@ ui-run:
 	@echo "🌐 UI will be available at: http://localhost:3001"
 	@echo "🔧 API will be available at: http://localhost:8000"
 	@echo ""
-	@echo "📋 To stop the demo, run: make ui-stop"
+	@echo "📋 To stop the demo, run: make demo-stop"
 
 # Stop all demo services
-ui-stop:
+demo-stop:
 	@echo "🛑 Stopping all demo services..."
 	@docker-compose down
 	@echo "✅ Demo services stopped"
@@ -426,8 +426,6 @@ help:
 	@echo "  make docker-build        - Build Docker image (development - fast)"
 	@echo "  make docker-build-prod   - Build Docker image (production - configurable)"
 	@echo "  make docker-run          - Run Docker container"
-	@echo "  make ui-run              - Start API Assistant with UI demo"
-	@echo "  make ui-stop             - Stop all demo services"
 	@echo ""
 	@echo "\033[1m🧪 Testing:\033[0m"
 	@echo "  make test                - Run unit tests with coverage (fast, parallel)"
@@ -452,6 +450,10 @@ help:
 	@echo "  make bump-patch          - Bump patch version (bug fixes)"
 	@echo "  make bump-minor          - Bump minor version (new features)"
 	@echo "  make bump-major          - Bump major version (breaking changes)"
+	@echo ""
+	@echo "\033[1m🎯 Demo:\033[0m"
+	@echo "  make demo-start          - Start demo environment services"
+	@echo "  make demo-stop           - Stop demo environment services"
 	@echo ""
 	@echo "\033[1m🛠️  Utils:\033[0m"
 	@echo "  make clean               - Clean up generated files"
