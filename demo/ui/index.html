@@ -99,6 +99,31 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script type="module">
+        import { initializeApp, sendMessage, startNewConversation, toggleSettings, loadConversation } from './modules/app.js';
+        import { handleInterrupt, showEditInterruptUI, showRejectInput, cancelEditInterrupt, cancelRejectInput, submitRejectInput, submitEditedInterrupt } from './modules/interrupts.js';
+        
+        // Make functions available globally for onclick handlers
+        window.sendMessage = sendMessage;
+        window.startNewConversation = startNewConversation;
+        window.toggleSettings = toggleSettings;
+        window.loadConversation = loadConversation;
+        
+        // Make interrupt functions available globally
+        window.handleInterrupt = handleInterrupt;
+        window.showEditInterruptUI = showEditInterruptUI;
+        window.showRejectInput = showRejectInput;
+        window.cancelEditInterrupt = cancelEditInterrupt;
+        window.cancelRejectInput = cancelRejectInput;
+        window.submitRejectInput = submitRejectInput;
+        window.submitEditedInterrupt = submitEditedInterrupt;
+        
+        // Initialize app when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeApp);
+        } else {
+            initializeApp();
+        }
+    </script>
 </body>
 </html> 

@@ -179,7 +179,9 @@ class LoadConversationResponse(BaseModel):
     model_config = ConfigDict(extra="allow")  # Allow extra fields for flexibility
 
     conversation_id: str = Field(..., description="Conversation identifier")
-    messages: list[MessageInput] = Field(..., description="List of conversation messages")
+    messages: list[MessageInput] = Field(
+        ..., description="List of conversation messages"
+    )
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Conversation metadata"
     )

@@ -8,7 +8,12 @@ This package contains all API input/output schemas organized by HTTP resources:
 - common: Shared types and constants used across resources
 """
 
-from .conversations import ConversationRequest, ConversationResponse, LoadConversationResponse, MessageInput
+from .conversations import (
+    ConversationRequest,
+    ConversationResponse,
+    LoadConversationResponse,
+    MessageInput,
+)
 from .health import HealthzResponse
 from .resume_decisions import ResumeDecisionRequest, ResumeDecisionResponse
 

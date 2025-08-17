@@ -371,7 +371,12 @@ class TestLoadConversation:
     @patch("nalai.services.thread_access_control.get_thread_access_control")
     @patch("nalai.services.checkpointing_service.get_checkpointer")
     def test_load_conversation_success(
-        self, mock_get_checkpointer, mock_get_access_control, mock_get_user_context, client, app_and_agent
+        self,
+        mock_get_checkpointer,
+        mock_get_access_control,
+        mock_get_user_context,
+        client,
+        app_and_agent,
     ):
         """Should load conversation successfully."""
         # Mock user context
@@ -382,11 +387,13 @@ class TestLoadConversation:
         # Mock access control
         mock_access_control = AsyncMock()
         mock_access_control.validate_thread_access.return_value = True
-        mock_access_control.create_user_scoped_thread_id.return_value = "user:test-user:550e8400-e29b-41d4-a716-446655440000"
+        mock_access_control.create_user_scoped_thread_id.return_value = (
+            "user:test-user:550e8400-e29b-41d4-a716-446655440000"
+        )
         mock_access_control.get_thread_ownership.return_value = MagicMock(
             metadata={"title": "Test Conversation"},
             created_at=MagicMock(isoformat=lambda: "2024-01-01T00:00:00"),
-            last_accessed=MagicMock(isoformat=lambda: "2024-01-01T12:00:00")
+            last_accessed=MagicMock(isoformat=lambda: "2024-01-01T12:00:00"),
         )
         mock_get_access_control.return_value = mock_access_control
 
@@ -396,9 +403,16 @@ class TestLoadConversation:
             "messages": [
                 ("human", "Hello"),
                 ("ai", "Hi there!"),
-                ("tool", {"content": "API response", "name": "test_api", "tool_call_id": "call_123"})
+                (
+                    "tool",
+                    {
+                        "content": "API response",
+                        "name": "test_api",
+                        "tool_call_id": "call_123",
+                    },
+                ),
             ],
-            "completed": False
+            "completed": False,
         }
         mock_get_checkpointer.return_value = mock_checkpointer
 
@@ -446,7 +460,12 @@ class TestLoadConversation:
     @patch("nalai.services.thread_access_control.get_thread_access_control")
     @patch("nalai.services.checkpointing_service.get_checkpointer")
     def test_load_conversation_not_found(
-        self, mock_get_checkpointer, mock_get_access_control, mock_get_user_context, client, app_and_agent
+        self,
+        mock_get_checkpointer,
+        mock_get_access_control,
+        mock_get_user_context,
+        client,
+        app_and_agent,
     ):
         """Should return 404 when conversation doesn't exist."""
         # Mock user context
@@ -457,7 +476,9 @@ class TestLoadConversation:
         # Mock access control
         mock_access_control = AsyncMock()
         mock_access_control.validate_thread_access.return_value = True
-        mock_access_control.create_user_scoped_thread_id.return_value = "user:test-user:550e8400-e29b-41d4-a716-446655440000"
+        mock_access_control.create_user_scoped_thread_id.return_value = (
+            "user:test-user:550e8400-e29b-41d4-a716-446655440000"
+        )
         mock_get_access_control.return_value = mock_access_control
 
         # Mock checkpointing service - return None (not found)
