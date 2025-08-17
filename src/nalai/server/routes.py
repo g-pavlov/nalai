@@ -129,79 +129,6 @@ def create_conversation_routes(
         accept_header = req.headers.get("accept", "text/event-stream")
         return "text/event-stream" in accept_header
 
-    def get_user_context_safe(req: Request):
-        """Get user context with proper error handling."""
-        try:
-            from ..server.runtime_config import get_user_context
-
-            return get_user_context(req)
-        except Exception as e:
-            logger.error(f"Failed to get user context: {e}")
-            raise HTTPException(
-                status_code=401, detail="Authentication required"
-            ) from e
-
-    def get_access_control_service():
-        """Get thread access control service."""
-        from ..services.thread_access_control import get_thread_access_control
-
-        return get_thread_access_control()
-
-    def get_checkpointing_service():
-        """Get checkpointing service."""
-        from ..services.checkpointing_service import get_checkpointer
-
-        return get_checkpointer()
-
-    async def validate_and_scope_conversation_id(
-        conversation_id: str, user_id: str, access_control
-    ) -> str:
-        """
-        Validate conversation ID format and scope it to user if needed.
-
-        Returns:
-            user_scoped_conversation_id: The conversation ID scoped to the user
-        """
-        # Validate conversation_id format
-        try:
-            validate_thread_id_format(conversation_id)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-
-        # Determine the conversation ID to use for LangGraph
-        # If the conversation_id is already user-scoped, use it directly
-        # Otherwise, create a user-scoped version
-        if conversation_id.startswith("user:"):
-            # Already user-scoped, validate it belongs to this user
-            parts = conversation_id.split(":", 2)
-            if len(parts) >= 3 and parts[1] == user_id:
-                return conversation_id
-            else:
-                raise HTTPException(
-                    status_code=403, detail="Access denied to conversation"
-                )
-        else:
-            # Not user-scoped, validate access and create user-scoped version
-            has_access = await access_control.validate_thread_access(
-                user_id, conversation_id
-            )
-            if not has_access:
-                raise HTTPException(
-                    status_code=403, detail="Access denied to conversation"
-                )
-
-            return await access_control.create_user_scoped_thread_id(
-                user_id, conversation_id
-            )
-
-    def extract_base_conversation_id(conversation_id: str) -> str:
-        """Extract base conversation ID from user-scoped ID."""
-        if conversation_id.startswith("user:"):
-            parts = conversation_id.split(":", 2)
-            if len(parts) >= 3:
-                return parts[2]
-        return conversation_id
-
     async def setup_runtime_config(
         config: BaseRuntimeConfiguration, req: Request, is_initial_request: bool = True
     ) -> tuple[dict, str]:
@@ -234,6 +161,240 @@ def create_conversation_routes(
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e)) from e
             return agent_config, conversation_id
+
+    async def get_user_context_safe(req: Request) -> tuple[str, str]:
+        """
+        Safely extract user context from request.
+        
+        Returns:
+            tuple: (user_id, user_context)
+            
+        Raises:
+            HTTPException: If user context cannot be extracted
+        """
+        try:
+            from ..server.runtime_config import get_user_context
+
+            user_context = get_user_context(req)
+            return user_context.user_id, user_context
+        except Exception as e:
+            logger.error(f"Failed to get user context: {e}")
+            raise HTTPException(
+                status_code=401, detail="Authentication required"
+            ) from e
+
+    async def validate_conversation_access(
+        conversation_id: str, user_id: str
+    ) -> tuple[str, str]:
+        """
+        Validate conversation access and return user-scoped conversation ID.
+        
+        Args:
+            conversation_id: The conversation ID to validate
+            user_id: The user ID requesting access
+            
+        Returns:
+            tuple: (user_scoped_conversation_id, base_conversation_id)
+            
+        Raises:
+            HTTPException: If access is denied
+        """
+        from ..services.thread_access_control import get_thread_access_control
+
+        access_control = get_thread_access_control()
+
+        # Determine the conversation ID to use for LangGraph
+        if conversation_id.startswith("user:"):
+            # Already user-scoped, validate it belongs to this user
+            parts = conversation_id.split(":", 2)
+            if len(parts) >= 3 and parts[1] == user_id:
+                user_scoped_conversation_id = conversation_id
+                base_conversation_id = parts[2]
+            else:
+                raise HTTPException(
+                    status_code=403, detail="Access denied to conversation"
+                )
+        else:
+            # Not user-scoped, validate access and create user-scoped version
+            has_access = await access_control.validate_thread_access(
+                user_id, conversation_id
+            )
+            if not has_access:
+                raise HTTPException(
+                    status_code=403, detail="Access denied to conversation"
+                )
+
+            user_scoped_conversation_id = (
+                await access_control.create_user_scoped_thread_id(
+                    user_id, conversation_id
+                )
+            )
+            base_conversation_id = conversation_id
+
+        return user_scoped_conversation_id, base_conversation_id
+
+    def extract_messages_from_checkpoint(checkpoint_state: dict) -> list[dict]:
+        """
+        Extract messages from checkpoint state in a standardized format.
+        
+        Args:
+            checkpoint_state: The checkpoint state from LangGraph
+            
+        Returns:
+            list: List of message dictionaries in our API format
+        """
+        messages = []
+
+        # Try to get messages from channel_values first (LangGraph format)
+        if checkpoint_state and "channel_values" in checkpoint_state:
+            channel_values = checkpoint_state["channel_values"]
+            logger.debug(
+                f"Channel values keys: {list(channel_values.keys()) if channel_values else 'None'}"
+            )
+
+            # Look for messages in channel_values
+            if "messages" in channel_values:
+                checkpoint_messages = channel_values["messages"]
+                logger.debug(
+                    f"Processing {len(checkpoint_messages)} messages from channel_values"
+                )
+
+                for i, msg_obj in enumerate(checkpoint_messages):
+                    logger.debug(f"Processing message {i}: {msg_obj}")
+
+                    # Handle LangChain message objects
+                    if hasattr(msg_obj, "content") and hasattr(msg_obj, "__class__"):
+                        msg_type = msg_obj.__class__.__name__.lower()
+                        msg_content = msg_obj.content
+
+                        # Map LangChain message types to our format
+                        if "human" in msg_type:
+                            messages.append({"content": msg_content, "type": "human"})
+                        elif "ai" in msg_type:
+                            # Handle AI messages with tool calls
+                            tool_calls = getattr(msg_obj, "tool_calls", None)
+                            messages.append(
+                                {
+                                    "content": msg_content,
+                                    "type": "ai",
+                                    "tool_calls": tool_calls,
+                                }
+                            )
+                        elif "tool" in msg_type:
+                            # Handle tool messages
+                            tool_name = getattr(msg_obj, "name", None)
+                            tool_call_id = getattr(msg_obj, "tool_call_id", None)
+                            messages.append(
+                                {
+                                    "content": msg_content,
+                                    "type": "tool",
+                                    "name": tool_name,
+                                    "tool_call_id": tool_call_id,
+                                }
+                            )
+                        else:
+                            logger.warning(f"Unknown LangChain message type: {msg_type}")
+
+                    # Handle tuple format (fallback)
+                    elif isinstance(msg_obj, tuple) and len(msg_obj) >= 2:
+                        msg_type, msg_content = msg_obj[0], msg_obj[1]
+                        logger.debug(
+                            f"Processing tuple message - type: {msg_type}, content: {msg_content}"
+                        )
+
+                        if msg_type == "human":
+                            messages.append({"content": msg_content, "type": "human"})
+                        elif msg_type == "ai":
+                            # Handle AI messages with tool calls in tuple format
+                            tool_calls = None
+                            if (
+                                isinstance(msg_content, dict)
+                                and "tool_calls" in msg_content
+                            ):
+                                tool_calls = msg_content.get("tool_calls")
+                            messages.append(
+                                {
+                                    "content": msg_content
+                                    if isinstance(msg_content, str)
+                                    else "",
+                                    "type": "ai",
+                                    "tool_calls": tool_calls,
+                                }
+                            )
+                        elif msg_type == "tool" and isinstance(msg_content, dict):
+                            # Ensure content is not None for tool messages
+                            tool_content = msg_content.get("content", "")
+                            if tool_content is None:
+                                tool_content = ""
+                            messages.append(
+                                {
+                                    "content": tool_content,
+                                    "type": "tool",
+                                    "name": msg_content.get("name"),
+                                    "tool_call_id": msg_content.get("tool_call_id"),
+                                }
+                            )
+                        else:
+                            logger.warning(
+                                f"Unknown message type or format: {msg_type}, {msg_content}"
+                            )
+                    else:
+                        logger.warning(f"Invalid message format: {msg_obj}")
+
+        # Fallback to direct messages key (if it exists)
+        elif checkpoint_state and "messages" in checkpoint_state:
+            checkpoint_messages = checkpoint_state["messages"]
+            logger.debug(
+                f"Processing {len(checkpoint_messages)} messages from direct messages key"
+            )
+
+            for i, msg_tuple in enumerate(checkpoint_messages):
+                logger.debug(f"Processing message {i}: {msg_tuple}")
+                if isinstance(msg_tuple, tuple) and len(msg_tuple) >= 2:
+                    msg_type, msg_content = msg_tuple[0], msg_tuple[1]
+                    logger.debug(f"Message type: {msg_type}, content: {msg_content}")
+
+                    if msg_type == "human":
+                        messages.append({"content": msg_content, "type": "human"})
+                    elif msg_type == "ai":
+                        # Handle AI messages with tool calls in tuple format
+                        tool_calls = None
+                        if isinstance(msg_content, dict) and "tool_calls" in msg_content:
+                            tool_calls = msg_content.get("tool_calls")
+                        messages.append(
+                            {
+                                "content": msg_content
+                                if isinstance(msg_content, str)
+                                else "",
+                                "type": "ai",
+                                "tool_calls": tool_calls,
+                            }
+                        )
+                    elif msg_type == "tool" and isinstance(msg_content, dict):
+                        # Ensure content is not None for tool messages
+                        tool_content = msg_content.get("content", "")
+                        if tool_content is None:
+                            tool_content = ""
+                        messages.append(
+                            {
+                                "content": tool_content,
+                                "type": "tool",
+                                "name": msg_content.get("name"),
+                                "tool_call_id": msg_content.get("tool_call_id"),
+                            }
+                        )
+                    else:
+                        logger.warning(
+                            f"Unknown message type or format: {msg_type}, {msg_content}"
+                        )
+                else:
+                    logger.warning(f"Invalid message format: {msg_tuple}")
+
+        logger.debug(f"Extracted {len(messages)} messages")
+        for i, msg in enumerate(messages):
+            logger.debug(f"Extracted message {i}: {msg}")
+
+        return messages
 
     async def _handle_resume_decision_internal(
         request: ResumeDecisionRequest,
@@ -471,18 +632,29 @@ def create_conversation_routes(
         """
         Internal handler for loading conversation state.
         """
-        # Get user context for access control
-        user_context = get_user_context_safe(req)
-        user_id = user_context.user_id
+        # Validate conversation_id format
+        try:
+            validate_thread_id_format(conversation_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
 
-        # Get services
-        access_control = get_access_control_service()
-        checkpointer = get_checkpointing_service()
+        # Get user context for access control
+        user_id, _ = await get_user_context_safe(req)
+
+        # Get access control service
+        from ..services.thread_access_control import get_thread_access_control
+
+        access_control = get_thread_access_control()
+
+        # Get conversation state from checkpointing service
+        from ..services.checkpointing_service import get_checkpointer
+
+        checkpointer = get_checkpointer()
 
         try:
-            # Validate and scope conversation ID
-            user_scoped_conversation_id = await validate_and_scope_conversation_id(
-                conversation_id, user_id, access_control
+            # Validate conversation access and get user-scoped ID
+            user_scoped_conversation_id, base_conversation_id = (
+                await validate_conversation_access(conversation_id, user_id)
             )
 
             # Get the checkpoint state
@@ -512,179 +684,10 @@ def create_conversation_routes(
                             f"Channel message {i}: type={type(msg)}, content={getattr(msg, 'content', 'N/A') if hasattr(msg, 'content') else msg}"
                         )
 
-            # Extract messages from the checkpoint state
-            messages = []
-
-            # Try to get messages from channel_values first (LangGraph format)
-            if checkpoint_state and "channel_values" in checkpoint_state:
-                channel_values = checkpoint_state["channel_values"]
-                logger.debug(
-                    f"Channel values keys: {list(channel_values.keys()) if channel_values else 'None'}"
-                )
-
-                # Look for messages in channel_values
-                if "messages" in channel_values:
-                    checkpoint_messages = channel_values["messages"]
-                    logger.debug(
-                        f"Processing {len(checkpoint_messages)} messages from channel_values"
-                    )
-
-                    for i, msg_obj in enumerate(checkpoint_messages):
-                        logger.debug(f"Processing message {i}: {msg_obj}")
-
-                        # Handle LangChain message objects
-                        if hasattr(msg_obj, "content") and hasattr(
-                            msg_obj, "__class__"
-                        ):
-                            msg_type = msg_obj.__class__.__name__.lower()
-                            msg_content = msg_obj.content
-
-                            # Map LangChain message types to our format
-                            if "human" in msg_type:
-                                messages.append(
-                                    {"content": msg_content, "type": "human"}
-                                )
-                            elif "ai" in msg_type:
-                                # Handle AI messages with tool calls
-                                tool_calls = getattr(msg_obj, "tool_calls", None)
-                                messages.append(
-                                    {
-                                        "content": msg_content,
-                                        "type": "ai",
-                                        "tool_calls": tool_calls,
-                                    }
-                                )
-                            elif "tool" in msg_type:
-                                # Handle tool messages
-                                tool_name = getattr(msg_obj, "name", None)
-                                tool_call_id = getattr(msg_obj, "tool_call_id", None)
-                                messages.append(
-                                    {
-                                        "content": msg_content,
-                                        "type": "tool",
-                                        "name": tool_name,
-                                        "tool_call_id": tool_call_id,
-                                    }
-                                )
-                            else:
-                                logger.warning(
-                                    f"Unknown LangChain message type: {msg_type}"
-                                )
-
-                        # Handle tuple format (fallback)
-                        elif isinstance(msg_obj, tuple) and len(msg_obj) >= 2:
-                            msg_type, msg_content = msg_obj[0], msg_obj[1]
-                            logger.debug(
-                                f"Processing tuple message - type: {msg_type}, content: {msg_content}"
-                            )
-
-                            if msg_type == "human":
-                                messages.append(
-                                    {"content": msg_content, "type": "human"}
-                                )
-                            elif msg_type == "ai":
-                                # Handle AI messages with tool calls in tuple format
-                                tool_calls = None
-                                if (
-                                    isinstance(msg_content, dict)
-                                    and "tool_calls" in msg_content
-                                ):
-                                    tool_calls = msg_content.get("tool_calls")
-                                messages.append(
-                                    {
-                                        "content": msg_content
-                                        if isinstance(msg_content, str)
-                                        else "",
-                                        "type": "ai",
-                                        "tool_calls": tool_calls,
-                                    }
-                                )
-                            elif msg_type == "tool" and isinstance(msg_content, dict):
-                                # Ensure content is not None for tool messages
-                                tool_content = msg_content.get("content", "")
-                                if tool_content is None:
-                                    tool_content = ""
-                                messages.append(
-                                    {
-                                        "content": tool_content,
-                                        "type": "tool",
-                                        "name": msg_content.get("name"),
-                                        "tool_call_id": msg_content.get("tool_call_id"),
-                                    }
-                                )
-                            else:
-                                logger.warning(
-                                    f"Unknown message type or format: {msg_type}, {msg_content}"
-                                )
-                        else:
-                            logger.warning(f"Invalid message format: {msg_obj}")
-
-            # Fallback to direct messages key (if it exists)
-            elif checkpoint_state and "messages" in checkpoint_state:
-                checkpoint_messages = checkpoint_state["messages"]
-                logger.debug(
-                    f"Processing {len(checkpoint_messages)} messages from direct messages key"
-                )
-
-                for i, msg_tuple in enumerate(checkpoint_messages):
-                    logger.debug(f"Processing message {i}: {msg_tuple}")
-                    if isinstance(msg_tuple, tuple) and len(msg_tuple) >= 2:
-                        msg_type, msg_content = msg_tuple[0], msg_tuple[1]
-                        logger.debug(
-                            f"Message type: {msg_type}, content: {msg_content}"
-                        )
-
-                        if msg_type == "human":
-                            messages.append({"content": msg_content, "type": "human"})
-                        elif msg_type == "ai":
-                            # Handle AI messages with tool calls in tuple format
-                            tool_calls = None
-                            if (
-                                isinstance(msg_content, dict)
-                                and "tool_calls" in msg_content
-                            ):
-                                tool_calls = msg_content.get("tool_calls")
-                            messages.append(
-                                {
-                                    "content": msg_content
-                                    if isinstance(msg_content, str)
-                                    else "",
-                                    "type": "ai",
-                                    "tool_calls": tool_calls,
-                                }
-                            )
-                        elif msg_type == "tool" and isinstance(msg_content, dict):
-                            # Ensure content is not None for tool messages
-                            tool_content = msg_content.get("content", "")
-                            if tool_content is None:
-                                tool_content = ""
-                            messages.append(
-                                {
-                                    "content": tool_content,
-                                    "type": "tool",
-                                    "name": msg_content.get("name"),
-                                    "tool_call_id": msg_content.get("tool_call_id"),
-                                }
-                            )
-                        else:
-                            logger.warning(
-                                f"Unknown message type or format: {msg_type}, {msg_content}"
-                            )
-                    else:
-                        logger.warning(f"Invalid message format: {msg_tuple}")
-
-            logger.debug(f"Extracted {len(messages)} messages")
-            for i, msg in enumerate(messages):
-                logger.debug(f"Extracted message {i}: {msg}")
+            # Extract messages using the helper function
+            messages = extract_messages_from_checkpoint(checkpoint_state)
 
             # Get thread ownership information for metadata
-            # Use the base conversation ID (without user scope) for ownership lookup
-            base_conversation_id = conversation_id
-            if conversation_id.startswith("user:"):
-                parts = conversation_id.split(":", 2)
-                if len(parts) >= 3:
-                    base_conversation_id = parts[2]
-
             thread_ownership = await access_control.get_thread_ownership(
                 base_conversation_id
             )
@@ -738,12 +741,17 @@ def create_conversation_routes(
         Internal handler for listing conversations.
         """
         # Get user context for access control
-        user_context = get_user_context_safe(req)
-        user_id = user_context.user_id
+        user_id, _ = await get_user_context_safe(req)
 
-        # Get services
-        access_control = get_access_control_service()
-        checkpointer = get_checkpointing_service()
+        # Get access control service
+        from ..services.thread_access_control import get_thread_access_control
+
+        access_control = get_thread_access_control()
+
+        # Get checkpointing service
+        from ..services.checkpointing_service import get_checkpointer
+
+        checkpointer = get_checkpointer()
 
         try:
             # Get all threads owned by the user
@@ -851,11 +859,11 @@ def create_conversation_routes(
                     yield event
 
             # Get user context for headers
-            user_context = get_user_context_safe(req)
+            user_id, _ = await get_user_context_safe(req)
 
             return SSEStreamingResponse(
                 generate(),
-                headers=get_conversation_headers(conversation_id, user_context.user_id),
+                headers=get_conversation_headers(conversation_id, user_id),
             )
         else:
             # Return JSON response
@@ -863,14 +871,12 @@ def create_conversation_routes(
                 result = await agent.ainvoke(agent_input, config=agent_config)
                 serialized_result = serialize_event(result)
                 # Get user context for headers
-                user_context = get_user_context_safe(req)
+                user_id, _ = await get_user_context_safe(req)
 
                 return Response(
                     content=json.dumps({"output": serialized_result}),
                     media_type="application/json",
-                    headers=get_conversation_headers(
-                        conversation_id, user_context.user_id
-                    ),
+                    headers=get_conversation_headers(conversation_id, user_id),
                 )
             except Exception as e:
                 logger.error(f"Agent invocation failed: {e}")
@@ -918,18 +924,29 @@ def create_conversation_routes(
         """
         Internal handler for deleting conversation.
         """
-        # Get user context for access control
-        user_context = get_user_context_safe(req)
-        user_id = user_context.user_id
+        # Validate conversation_id format
+        try:
+            validate_thread_id_format(conversation_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
 
-        # Get services
-        access_control = get_access_control_service()
-        checkpointer = get_checkpointing_service()
+        # Get user context for access control
+        user_id, _ = await get_user_context_safe(req)
+
+        # Get access control service
+        from ..services.thread_access_control import get_thread_access_control
+
+        access_control = get_thread_access_control()
+
+        # Get checkpointing service
+        from ..services.checkpointing_service import get_checkpointer
+
+        checkpointer = get_checkpointer()
 
         try:
-            # Validate and scope conversation ID
-            user_scoped_conversation_id = await validate_and_scope_conversation_id(
-                conversation_id, user_id, access_control
+            # Validate conversation access and get user-scoped ID
+            user_scoped_conversation_id, base_conversation_id = (
+                await validate_conversation_access(conversation_id, user_id)
             )
 
             # Delete the checkpoint state from LangGraph
@@ -945,9 +962,6 @@ def create_conversation_routes(
             except Exception as e:
                 logger.warning(f"Failed to clear checkpoint state: {e}")
                 # Continue with deletion even if checkpoint clearing fails
-
-            # Extract base UUID for access control (access control stores base UUIDs)
-            base_conversation_id = extract_base_conversation_id(conversation_id)
 
             # Delete the thread ownership record
             deleted = await access_control.delete_thread(user_id, base_conversation_id)
