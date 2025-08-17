@@ -279,15 +279,15 @@ export function createInterruptUI(assistantMessageDiv, actionRequest, interruptI
     let actionButtons = '';
     
     if (allowAccept) {
-        actionButtons += '<button class="interrupt-button accept" onclick="handleInterrupt(\'accept\')">Accept</button>';
+        actionButtons += '<button class="interrupt-button accept" onclick="handleInterrupt(\'accept\')" title="Accept and execute this tool call">Accept</button>';
     }
     
     if (allowEdit) {
-        actionButtons += '<button class="interrupt-button edit" onclick="handleInterrupt(\'edit\')">Edit</button>';
+        actionButtons += '<button class="interrupt-button edit" onclick="handleInterrupt(\'edit\')" title="Edit the tool arguments before execution">Edit</button>';
     }
     
     if (allowRespond) {
-        actionButtons += '<button class="interrupt-button reject" onclick="showRejectInput()">Reject</button>';
+        actionButtons += '<button class="interrupt-button reject" onclick="showRejectInput()" title="Reject this tool call with optional reason">Reject</button>';
     }
     
     // If no actions are allowed, show a message
@@ -348,8 +348,8 @@ export function showEditInterruptUI() {
             <div class="edit-validation" id="editValidation"></div>
         </div>
         <div class="interrupt-actions">
-            <button class="interrupt-button cancel" onclick="cancelEditInterrupt()">Cancel</button>
-            <button class="interrupt-button submit" onclick="submitEditedInterrupt()">Submit</button>
+            <button class="interrupt-button cancel" onclick="cancelEditInterrupt()" title="Cancel editing and return to original interrupt">Cancel</button>
+            <button class="interrupt-button submit" onclick="submitEditedInterrupt()" title="Submit the edited arguments">Submit</button>
         </div>
     `;
 
@@ -388,8 +388,8 @@ export function showRejectInput() {
             <div class="reject-validation" id="rejectValidation"></div>
         </div>
         <div class="interrupt-actions">
-            <button class="interrupt-button cancel" onclick="cancelRejectInput()">Cancel</button>
-            <button class="interrupt-button submit" onclick="submitRejectInput()">Submit Rejection</button>
+            <button class="interrupt-button cancel" onclick="cancelRejectInput()" title="Cancel rejection and return to original interrupt">Cancel</button>
+            <button class="interrupt-button submit" onclick="submitRejectInput()" title="Submit the rejection with optional reason">Submit Rejection</button>
         </div>
     `;
 

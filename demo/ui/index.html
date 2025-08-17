@@ -19,6 +19,7 @@
                             <path d="M5 12h14"></path>
                         </svg>
                     </button>
+
                     <button class="conversation-button" id="conversationButton" onclick="showConversationsList()" title="Load previous conversation">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
@@ -38,12 +39,12 @@
         <div class="settings-panel" id="settingsPanel">
             <div class="settings-header">
                 <h3>Settings</h3>
-                <button class="close-settings" onclick="toggleSettings()" title="Back to Application">
+                <button class="close-settings" onclick="toggleSettings()" title="Back">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="19" y1="12" x2="5" y2="12"></line>
                         <polyline points="12,19 5,12 12,5"></polyline>
                     </svg>
-                    Back to Application
+                    Back
                 </button>
             </div>
             <div class="settings-content">
@@ -80,23 +81,13 @@
         <div class="conversations-panel" id="conversationsPanel">
             <div class="conversations-header">
                 <h3>Conversations</h3>
-                <div class="conversations-header-buttons">
-                    <button class="refresh-conversations" onclick="refreshConversationsList()" title="Refresh conversations">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
-                            <path d="M21 3v5h-5"></path>
-                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
-                            <path d="M3 21v-5h5"></path>
-                        </svg>
-                    </button>
-                    <button class="close-conversations" onclick="hideConversationsList()" title="Close">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="19" y1="12" x2="5" y2="12"></line>
-                            <polyline points="12,19 5,12 12,5"></polyline>
-                        </svg>
-                        Close
-                    </button>
-                </div>
+                <button class="close-conversations" onclick="hideConversationsList()" title="Back">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12,19 5,12 12,5"></polyline>
+                    </svg>
+                    Back
+                </button>
             </div>
             <div class="conversations-content">
                 <div class="conversations-loading" id="conversationsLoading">
