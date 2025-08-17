@@ -36,13 +36,54 @@ export function hideConversationsList() {
 }
 
 export async function refreshConversationsList() {
+    if (isLoading) {
+        Logger.warn('Conversations already loading, skipping request');
+        return;
+    }
+    
+    isLoading = true;
+    
     try {
-        Logger.info('Refreshing conversations list');
-        await loadConversations();
+        const conversations = await loadConversationsFromAPI();
+        updateConversationsList(conversations);
     } catch (error) {
         Logger.error('Failed to refresh conversations list', { error });
-        ErrorHandler.showUserError('Failed to refresh conversations list');
+        ErrorHandler.handleError(error, 'Refreshing conversations list');
+    } finally {
+        isLoading = false;
     }
+}
+
+async function loadConversationsFromAPI() {
+    const url = buildApiUrl(API_CONFIG.URL_TEMPLATES.CONVERSATIONS);
+    const headers = getRequestHeaders(false, false);
+    
+    const response = await NetworkManager.fetchWithRetry(url, {
+        method: 'GET',
+        headers
+    });
+    
+    if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+            const errorBody = await response.text();
+            if (errorBody) {
+                const errorJson = JSON.parse(errorBody);
+                if (errorJson.detail) {
+                    errorMessage += ` - ${errorJson.detail}`;
+                }
+            }
+        } catch (parseError) {
+            Logger.warn('Could not parse error response', { parseError });
+        }
+        
+        const error = new Error(errorMessage);
+        error.status = response.status;
+        throw error;
+    }
+    
+    const conversations = await response.json();
+    return conversations;
 }
 
 async function loadConversations() {

@@ -26,7 +26,7 @@ def http_request_tool(method: str, is_safe: bool, name: str, description: str):
     def _http_request(
         url: str,
         input_data: dict | None = None,
-        config: RunnableConfig | None = None,
+        config: RunnableConfig = None,
         run_manager: CallbackManagerForToolRun | None = None,
     ) -> dict:
         logger.debug("sending HTTP request: %s %s", method, url)

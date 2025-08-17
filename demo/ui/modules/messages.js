@@ -17,36 +17,44 @@ export function createAssistantMessageElement() {
     return assistantMessageDiv;
 }
 
-export function updateMessageContent(element, content) {
-    // If no element is provided (for resume streams), find the last assistant message
-    if (!element) {
-        element = DOM.chatContainer.querySelector('.assistant-message:last-child');
-        if (!element) {
-            Logger.warn('No assistant message element found for content update');
-            return;
-        }
-        Logger.info('Found last assistant message element for resume stream update');
+export function updateMessageContent(assistantMessageDiv, content) {
+    if (!assistantMessageDiv) {
+        Logger.warn('No assistant message element found for content update');
+        return;
     }
     
-    Logger.info('Updating message content', { 
-        contentLength: content?.length || 0,
-        hasElement: !!element,
-        elementClass: element?.className 
-    });
-    
-    try {
-        element.innerHTML = marked.parse(content);
-        DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
-    } catch (error) {
-        ErrorHandler.handleParsingError(error, content, 'Markdown parsing');
-        element.textContent = content; // Fallback to plain text
+    const messageContent = assistantMessageDiv.querySelector('.message-content');
+    if (messageContent) {
+        messageContent.innerHTML = marked.parse(content);
     }
 }
 
 export function showWelcomeMessage() {
-    const welcomeMessage = 'Hello! I\'m nalAI. I can help you with API integration, data processing, and more. What would you like to work on?';
-    Logger.info('Showing welcome message');
-    addMessage(welcomeMessage, 'assistant');
+    const welcomeMessage = `
+# Welcome to nalAI Chat Interface! 🤖
+
+This is an AI assistant that can help you with various tasks. You can:
+
+- **Ask questions** and get intelligent responses
+- **Use tools** to perform actions (when available)
+- **Review and approve** tool calls before execution
+- **Manage conversations** and view chat history
+
+## Getting Started
+
+Simply type your message below and press Enter or click the Send button to start chatting!
+
+## Features
+
+- **Streaming responses** for real-time interaction
+- **Conversation management** to save and load chats
+- **Tool integration** for enhanced capabilities
+- **Human review** for safety and control
+
+Start by asking me something!
+    `;
+    
+    addMessage('assistant', welcomeMessage);
 }
 
 export function showConversationIndicator() {
@@ -123,10 +131,10 @@ export function setupMessageProcessing(message) {
 }
 
 export function cleanupMessageProcessing() {
-    setProcessing(false);
+    setProcessingStatus(false);
     DOM.sendButton.disabled = false;
-    DOM.loading.style.display = 'none';
-    handleInputChange(); // Re-enable send button if there's content
+    DOM.messageInput.disabled = false;
+    DOM.messageInput.focus();
 }
 
 export function handleMessageError(error) {

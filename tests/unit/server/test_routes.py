@@ -149,7 +149,7 @@ class TestConversationInvoke:
         mock_agent.ainvoke.return_value = {"output": "test response"}
 
         payload = {
-            "messages": [{"type": "human", "content": "Hello"}],
+            "input": [{"type": "human", "content": "Hello"}],
         }
 
         response = client.post("/api/v1/conversations", json=payload)
@@ -162,10 +162,10 @@ class TestConversationInvoke:
     @pytest.mark.parametrize(
         "payload,expected_status",
         [
-            ({"messages": []}, 422),  # Empty messages
+            ({"input": []}, 422),  # Empty messages
             (
                 {
-                    "messages": [{"type": "human", "content": ""}],
+                    "input": [{"type": "human", "content": ""}],
                 },
                 422,
             ),  # Empty content
@@ -191,7 +191,7 @@ class TestConversationInvoke:
         client = TestClient(app)
 
         payload = {
-            "messages": [{"type": "human", "content": "Hello"}],
+            "input": [{"type": "human", "content": "Hello"}],
         }
 
         # Check the actual response
@@ -235,7 +235,7 @@ class TestConversationStreamEvents:
         mock_agent.astream_events = lambda *a, **kw: async_gen()
 
         payload = {
-            "messages": [{"type": "human", "content": "Hello"}],
+            "input": [{"type": "human", "content": "Hello"}],
         }
 
         response = client.post(
@@ -643,7 +643,9 @@ class TestDeleteConversation:
         # Mock access control - user owns the conversation
         mock_access_control = AsyncMock()
         mock_access_control.validate_thread_access.return_value = True
-        mock_access_control.create_user_scoped_thread_id.return_value = "user:test-user:550e8400-e29b-41d4-a716-446655440001"
+        mock_access_control.create_user_scoped_thread_id.return_value = (
+            "user:test-user:550e8400-e29b-41d4-a716-446655440001"
+        )
         mock_access_control.delete_thread.return_value = True
         mock_get_access_control.return_value = mock_access_control
 
@@ -651,15 +653,23 @@ class TestDeleteConversation:
         mock_checkpointer = AsyncMock()
         mock_get_checkpointer.return_value = mock_checkpointer
 
-        response = client.delete("/api/v1/conversations/550e8400-e29b-41d4-a716-446655440001")
+        response = client.delete(
+            "/api/v1/conversations/550e8400-e29b-41d4-a716-446655440001"
+        )
 
         assert response.status_code == 204
         assert response.content == b""
 
         # Verify access control was called
-        mock_access_control.validate_thread_access.assert_called_once_with("test-user", "550e8400-e29b-41d4-a716-446655440001")
-        mock_access_control.create_user_scoped_thread_id.assert_called_once_with("test-user", "550e8400-e29b-41d4-a716-446655440001")
-        mock_access_control.delete_thread.assert_called_once_with("test-user", "550e8400-e29b-41d4-a716-446655440001")
+        mock_access_control.validate_thread_access.assert_called_once_with(
+            "test-user", "550e8400-e29b-41d4-a716-446655440001"
+        )
+        mock_access_control.create_user_scoped_thread_id.assert_called_once_with(
+            "test-user", "550e8400-e29b-41d4-a716-446655440001"
+        )
+        mock_access_control.delete_thread.assert_called_once_with(
+            "test-user", "550e8400-e29b-41d4-a716-446655440001"
+        )
 
         # Verify checkpoint clearing was attempted
         mock_checkpointer.aput.assert_called_once()
@@ -684,7 +694,9 @@ class TestDeleteConversation:
         mock_access_control.validate_thread_access.return_value = False
         mock_get_access_control.return_value = mock_access_control
 
-        response = client.delete("/api/v1/conversations/550e8400-e29b-41d4-a716-446655440001")
+        response = client.delete(
+            "/api/v1/conversations/550e8400-e29b-41d4-a716-446655440001"
+        )
 
         assert response.status_code == 403
         assert "Access denied to conversation" in response.json()["detail"]
@@ -707,11 +719,15 @@ class TestDeleteConversation:
         # Mock access control - user owns the conversation but deletion fails
         mock_access_control = AsyncMock()
         mock_access_control.validate_thread_access.return_value = True
-        mock_access_control.create_user_scoped_thread_id.return_value = "user:test-user:550e8400-e29b-41d4-a716-446655440001"
+        mock_access_control.create_user_scoped_thread_id.return_value = (
+            "user:test-user:550e8400-e29b-41d4-a716-446655440001"
+        )
         mock_access_control.delete_thread.return_value = False  # Conversation not found
         mock_get_access_control.return_value = mock_access_control
 
-        response = client.delete("/api/v1/conversations/550e8400-e29b-41d4-a716-446655440001")
+        response = client.delete(
+            "/api/v1/conversations/550e8400-e29b-41d4-a716-446655440001"
+        )
 
         assert response.status_code == 404
         assert "Conversation not found" in response.json()["detail"]
@@ -724,7 +740,9 @@ class TestDeleteConversation:
         # Mock user context to raise exception
         mock_get_user_context.side_effect = Exception("No user context")
 
-        response = client.delete("/api/v1/conversations/550e8400-e29b-41d4-a716-446655440001")
+        response = client.delete(
+            "/api/v1/conversations/550e8400-e29b-41d4-a716-446655440001"
+        )
 
         assert response.status_code == 401
         assert "Authentication required" in response.json()["detail"]

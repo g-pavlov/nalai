@@ -9,12 +9,16 @@ This package contains all API input/output schemas organized by HTTP resources:
 """
 
 from .conversations import (
+    AIMessageInput,
     ConversationRequest,
     ConversationResponse,
     ConversationSummary,
+    HumanMessageInput,
     ListConversationsResponse,
     LoadConversationResponse,
     MessageInput,
+    MessageInputUnion,
+    ToolMessageInput,
 )
 from .health import HealthzResponse
 from .resume_decisions import ResumeDecisionRequest, ResumeDecisionResponse
@@ -27,6 +31,10 @@ __all__ = [
     "LoadConversationResponse",
     "ListConversationsResponse",
     "MessageInput",
+    "HumanMessageInput",
+    "AIMessageInput",
+    "ToolMessageInput",
+    "MessageInputUnion",
     # Resume decision resource schemas
     "ResumeDecisionRequest",
     "ResumeDecisionResponse",

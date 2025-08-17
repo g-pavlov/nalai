@@ -59,138 +59,111 @@ export async function sendMessage() {
 
 async function sendApiRequest(message, config) {
     let url;
+    let options;
     
-    if (getCurrentThreadId()) {
-        // Continue existing conversation
-        url = buildApiUrl(API_CONFIG.URL_TEMPLATES.CONVERSATION, { conversation_id: getCurrentThreadId() });
-    } else {
-        // Create new conversation
-        url = buildApiUrl(API_CONFIG.URL_TEMPLATES.CONVERSATIONS);
-    }
-    
-    const requestPayload = buildRequestPayload(message, config);
-    const headers = getRequestHeaders(config.isStreamingEnabled, config.isNoCacheEnabled);
-    
-    Logger.info('Sending API request', { 
-        url,
-        isStreaming: config.isStreamingEnabled,
-        hasThreadId: !!getCurrentThreadId(),
-        payload: requestPayload
-    });
-
-    try {
-        const response = await NetworkManager.fetchWithRetry(url, {
+    if (config.isStreamingEnabled) {
+        url = buildApiUrl(API_CONFIG.URL_TEMPLATES.STREAM, {});
+        options = {
             method: 'POST',
-            headers,
-            body: JSON.stringify(requestPayload)
-        });
-        
-        // If response is not ok, capture the error body for detailed error messages
-        if (!response.ok) {
-            let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-            
-            // Try to get the error details from the response body
-            try {
-                const errorBody = await response.text();
-                if (errorBody) {
-                    try {
-                        const errorJson = JSON.parse(errorBody);
-                        if (errorJson.detail) {
-                            errorMessage += ` - ${errorJson.detail}`;
-                        } else if (errorJson.message) {
-                            errorMessage += ` - ${errorJson.message}`;
-                        } else {
-                            errorMessage += ` - ${errorBody}`;
-                        }
-                    } catch (parseError) {
-                        errorMessage += ` - ${errorBody}`;
-                    }
-                }
-            } catch (bodyError) {
-                Logger.warn('Could not read error response body', { bodyError });
-            }
-            
-            const error = new Error(errorMessage);
-            error.response = response; // Attach response for error handling
-            throw error;
-        }
-        
-        return response;
-    } catch (error) {
-        if (error.message.includes('timed out')) {
-            throw ErrorHandler.handleTimeoutError('API request');
-        } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
-            throw ErrorHandler.handleNetworkError(error, 'API request');
-        } else {
-            throw error;
-        }
+            headers: getRequestHeaders(true, true),
+            body: JSON.stringify({
+                input: [{
+                    content: message,
+                    type: 'human'
+                }],
+                model: config.model
+            })
+        };
+    } else {
+        url = buildApiUrl(API_CONFIG.URL_TEMPLATES.INVOKE, {});
+        options = {
+            method: 'POST',
+            headers: getRequestHeaders(false, false),
+            body: JSON.stringify({
+                input: [{
+                    content: message,
+                    type: 'human'
+                }],
+                model: config.model
+            })
+        };
     }
+
+    return await NetworkManager.fetchWithRetry(url, options);
 }
 
 async function processApiResponse(response, assistantMessageDiv, isStreamingEnabled) {
-    try {
-        Validator.validateApiResponse(response);
-        
-        // Handle thread ID
-        handleThreadIdResponse(response);
-
-        // Process response based on type
-        if (isStreamingEnabled) {
-            await handleStreamingResponse(response, assistantMessageDiv);
-        } else {
-            await handleNonStreamingResponse(response, assistantMessageDiv);
-        }
-
-    } catch (error) {
-        if (error.message.includes('HTTP')) {
-            const status = parseInt(error.message.match(/HTTP (\d+)/)?.[1] || '500');
-            // Extract the full error message after the status code
-            const fullErrorMatch = error.message.match(/HTTP \d+: (.+)/);
-            const statusText = fullErrorMatch ? fullErrorMatch[1] : 'Unknown error';
-            throw ErrorHandler.handleApiError(status, statusText, 'API response processing');
-        } else {
-            throw error;
-        }
+    if (isStreamingEnabled) {
+        await handleStreamingResponse(response, assistantMessageDiv);
+    } else {
+        await handleNonStreamingResponse(response, assistantMessageDiv);
     }
 }
 
-function handleThreadIdResponse(response) {
-    const conversationId = response.headers.get('X-Conversation-ID');
-    Logger.info('Received conversation ID from response', { 
-        conversationId, 
-        conversationIdType: typeof conversationId,
-        hasConversationId: !!conversationId,
-        currentThreadId: getCurrentThreadId(),
-        willUpdate: conversationId && conversationId !== getCurrentThreadId()
-    });
-    
-            if (conversationId && conversationId !== getCurrentThreadId()) {
-            const normalizedThreadId = normalizeThreadId(conversationId);
-            if (normalizedThreadId) {
-                setCurrentThreadId(normalizedThreadId);
-                Logger.info('New conversation thread started', { 
-                    originalConversationId: conversationId, 
-                    normalizedThreadId 
-                });
-                
-                // Auto-refresh conversations list when a new conversation is created
-                // Import the refresh function dynamically to avoid circular imports
-                import('./conversationsManager.js').then(module => {
-                    if (module.refreshConversationsList) {
-                        Logger.info('Auto-refreshing conversations list after new conversation creation');
-                        module.refreshConversationsList();
-                    }
-                }).catch(error => {
-                    Logger.warn('Failed to auto-refresh conversations list', { error });
-                });
-            } else {
-                Logger.warn('Failed to normalize conversation ID', { conversationId });
+async function handleNonStreamingResponse(response, assistantMessageDiv) {
+    try {
+        const data = await response.json();
+        
+        // Extract conversation ID if present
+        if (data.conversation_id) {
+            setCurrentThreadId(data.conversation_id);
+        }
+        
+        // Process messages
+        if (data.messages && Array.isArray(data.messages)) {
+            for (const message of data.messages) {
+                if (message.type === 'ai' && message.content) {
+                    updateMessageContent(assistantMessageDiv, message.content);
+                }
             }
         }
+        
+        // Auto-refresh conversations list after new conversation creation
+        if (data.conversation_id && !getCurrentThreadId()) {
+            try {
+                await refreshConversationsList();
+            } catch (error) {
+                Logger.warn('Failed to auto-refresh conversations list', { error });
+            }
+        }
+        
+    } catch (error) {
+        Logger.error('Failed to process non-streaming response', { error });
+        throw error;
+    }
 }
 
-// Import streaming functions
-import { handleStreamingResponse, handleNonStreamingResponse } from './streaming.js';
+function handleMessageError(error) {
+    Logger.error('Message processing failed', { error: error?.message || 'Unknown error' });
+    ErrorHandler.handleError(error, 'Message processing');
+    cleanupMessageProcessing();
+}
 
-// Import the processing status function
-import { getProcessingStatus } from './state.js';
+function setupMessageProcessing(message) {
+    setProcessingStatus(true);
+    DOM.sendButton.disabled = true;
+    DOM.messageInput.disabled = true;
+}
+
+function cleanupMessageProcessing() {
+    setProcessingStatus(false);
+    DOM.sendButton.disabled = false;
+    DOM.messageInput.disabled = false;
+    DOM.messageInput.focus();
+}
+
+function createAssistantMessageElement() {
+    const assistantMessageDiv = document.createElement('div');
+    assistantMessageDiv.className = 'message assistant-message fade-in';
+    assistantMessageDiv.innerHTML = '<div class="message-content">🤔 Thinking...</div>';
+    DOM.messagesContainer.appendChild(assistantMessageDiv);
+    return assistantMessageDiv;
+}
+
+function getMessageConfig() {
+    return {
+        isStreamingEnabled: getStreamingEnabled(),
+        isNoCacheEnabled: getNoCacheEnabled(),
+        model: getModelConfig()
+    };
+}

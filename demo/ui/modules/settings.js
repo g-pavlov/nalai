@@ -8,24 +8,22 @@ import { DOM } from './dom.js';
 import { Logger } from './logger.js';
 
 export function toggleSettings() {
-    Logger.info('toggleSettings called');
+    const settingsPanel = document.getElementById('settings-panel');
+    const settingsButton = document.getElementById('settings-button');
     
-    if (!DOM.settingsPanel || !DOM.settingsButton) {
+    if (!settingsPanel || !settingsButton) {
         Logger.error('Settings panel elements not found');
         return;
     }
     
-    const isActive = DOM.settingsPanel.classList.contains('active');
-    Logger.info('Panel is active:', { isActive });
+    const isActive = settingsPanel.classList.contains('active');
     
     if (isActive) {
-        DOM.settingsPanel.classList.remove('active');
-        DOM.settingsButton.setAttribute('aria-expanded', 'false');
-        Logger.info('Settings panel closed');
+        settingsPanel.classList.remove('active');
+        settingsButton.classList.remove('active');
     } else {
-        DOM.settingsPanel.classList.add('active');
-        DOM.settingsButton.setAttribute('aria-expanded', 'true');
-        Logger.info('Settings panel opened');
+        settingsPanel.classList.add('active');
+        settingsButton.classList.add('active');
     }
 }
 
@@ -57,7 +55,7 @@ export function getRequestHeaders(isStreamingEnabled, isNoCacheEnabled) {
 
 export function buildRequestPayload(message, config) {
     const payload = {
-        messages: [{
+        input: [{
             content: message,
             type: MESSAGE_TYPES.HUMAN
         }]

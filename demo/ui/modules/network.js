@@ -13,20 +13,12 @@ export class NetworkManager {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-        Logger.info('NetworkManager.fetchWithTimeout called', { url, options, timeout });
-
         try {
             const response = await fetch(url, {
                 ...options,
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
-            Logger.info('NetworkManager.fetchWithTimeout succeeded', { 
-                url, 
-                status: response.status, 
-                statusText: response.statusText,
-                headers: Object.fromEntries(response.headers.entries())
-            });
             return response;
         } catch (error) {
             clearTimeout(timeoutId);

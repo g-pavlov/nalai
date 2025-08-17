@@ -33,7 +33,7 @@ def main():
     agent_config = {
         "configurable": {
             "thread_id": "thread-1",
-            "auth_token": "abcdefg123456789",
+            "auth_token": "dev-token",
             # "model": {
             #     "name": "gpt-4.1",
             #     "platform": "openai",

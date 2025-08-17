@@ -178,7 +178,7 @@ class TestStreamEvents:
         mock_agent.astream = mock_astream
 
         config = {"thread_id": "test-thread"}
-        agent_input = {"messages": [{"type": "human", "content": "Hello"}]}
+        agent_input = {"messages": [("human", "Hello")]}
 
         events = []
         async for event in stream_events(mock_agent, config, agent_input):
@@ -228,7 +228,7 @@ class TestStreamEvents:
         mock_agent.astream = mock_astream
 
         config = {"thread_id": "test-thread"}
-        agent_input = {"messages": [{"type": "human", "content": "Hello"}]}
+        agent_input = {"messages": [("human", "Hello")]}
 
         events = []
         async for event in stream_events(mock_agent, config, agent_input):
@@ -256,7 +256,7 @@ class TestStreamEvents:
         mock_agent.astream = mock_astream
 
         config = {"thread_id": "test-thread"}
-        agent_input = {"messages": [{"type": "human", "content": "Hello"}]}
+        agent_input = {"messages": [("human", "Hello")]}
 
         events = []
         async for event in stream_events(
