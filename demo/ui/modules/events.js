@@ -70,7 +70,7 @@ export function handleConnectionStatusChange(isOnline) {
     setConnectionStatus(isOnline ? 'online' : 'offline');
     
     if (isOnline) {
-        ErrorHandler.showSuccessMessage('Network connection restored');
+        Logger.info('Network connection restored');
     } else {
         ErrorHandler.showWarningMessage('Network connection lost. Some features may be unavailable.');
     }

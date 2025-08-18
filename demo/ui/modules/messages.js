@@ -101,7 +101,6 @@ export function startNewConversation() {
         }
         
         Logger.info('Started new conversation');
-        ErrorHandler.showSuccessMessage('New conversation started');
         
     } catch (error) {
         ErrorHandler.handleError(error, 'Starting new conversation');
@@ -113,19 +112,11 @@ export function setupMessageProcessing(message) {
     DOM.messageInput.value = '';
     setProcessing(true);
     DOM.sendButton.disabled = true;
-    DOM.loading.style.display = 'block';
-    
-    // We'll need to get config from settings module
-    const config = { isStreamingEnabled: DOM.streamingToggle.checked };
-    DOM.loadingText.textContent = config.isStreamingEnabled ? 
-        '🤔 Thinking...' : 
-        '⏳ Processing...';
 }
 
 export function cleanupMessageProcessing() {
     setProcessing(false);
     DOM.sendButton.disabled = false;
-    DOM.loading.style.display = 'none';
     handleInputChange(); // Re-enable send button if there's content
 }
 

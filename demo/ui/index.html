@@ -51,7 +51,7 @@
                 <div class="setting-group">
                     <label for="modelSelector">Model:</label>
                     <select id="modelSelector">
-                        <option value='{"name":"gpt-4.1o","platform":"openai"}'>OpenAI (gpt-4o)</option>
+                        <option value='{"name":"gpt-4.1o","platform":"openai"}'>OpenAI (gpt-4.1)</option>
                         <!--option value='{"name":"claude-3-5-sonnet-20241022","platform":"aws_bedrock"}'>Bedrock (Claude 3.5 Sonnet)</option-->
                         <option value='{"name":"llama3.1:8b","platform":"ollama"}'>Ollama (llama3.1:8b)</option>
                     </select>
@@ -73,6 +73,26 @@
                         <span class="slider round"></span>
                     </label>
                     <span id="noCacheStatus">OFF</span>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="debugToggle">Debug:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="debugToggle">
+                        <span class="slider round"></span>
+                    </label>
+                    <span id="debugStatus">OFF</span>
+                    <div class="description">Show agent progress and execution details for troubleshooting</div>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="jsonFormatToggle">JSON Format:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="jsonFormatToggle">
+                        <span class="slider round"></span>
+                    </label>
+                    <span id="jsonFormatStatus">OFF</span>
+                    <div class="description">Automatically format JSON responses in tool calls</div>
                 </div>
             </div>
         </div>
@@ -108,9 +128,7 @@
         <div class="chat-container" id="chatContainer">
         </div>
         
-        <div class="loading" id="loading">
-            <p id="loadingText">🤔 Thinking...</p>
-        </div>
+
         
         <div class="input-container">
             <input type="text" class="message-input" id="messageInput" placeholder="Type your message here..." />

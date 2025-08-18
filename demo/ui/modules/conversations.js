@@ -16,9 +16,7 @@ export async function loadConversation(conversationId, showUserErrors = true) {
     try {
         Logger.info('Loading conversation', { conversationId });
         
-        // Show loading state
-        DOM.loading.style.display = 'block';
-        DOM.loadingText.textContent = '📂 Loading conversation...';
+        
         
         // Build the API URL
         const url = buildApiUrl(API_CONFIG.URL_TEMPLATES.CONVERSATION, { conversation_id: conversationId });
@@ -65,17 +63,12 @@ export async function loadConversation(conversationId, showUserErrors = true) {
         showConversationIndicator();
         
         Logger.info('Conversation loaded successfully', { conversationId });
-        if (showUserErrors) {
-            ErrorHandler.showSuccessMessage('Conversation loaded successfully');
-        }
         
     } catch (error) {
         Logger.error('Failed to load conversation', { conversationId, error });
         if (showUserErrors) {
             ErrorHandler.showUserError(`Failed to load conversation: ${error.message}`);
         }
-    } finally {
-        DOM.loading.style.display = 'none';
     }
 }
 

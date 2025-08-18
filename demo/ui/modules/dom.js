@@ -9,12 +9,15 @@ export const DOM = {
     chatContainer: null,
     messageInput: null,
     sendButton: null,
-    loading: null,
-    loadingText: null,
+
     streamingToggle: null,
     streamingStatus: null,
     noCacheToggle: null,
     noCacheStatus: null,
+    debugToggle: null,
+    debugStatus: null,
+    jsonFormatToggle: null,
+    jsonFormatStatus: null,
     modelSelector: null,
     settingsPanel: null,
     settingsButton: null,
@@ -29,12 +32,15 @@ export function initializeDOMElements() {
     DOM.chatContainer = document.getElementById('chatContainer');
     DOM.messageInput = document.getElementById('messageInput');
     DOM.sendButton = document.getElementById('sendButton');
-    DOM.loading = document.getElementById('loading');
-    DOM.loadingText = document.getElementById('loadingText');
+
     DOM.streamingToggle = document.getElementById('streamingToggle');
     DOM.streamingStatus = document.getElementById('streamingStatus');
     DOM.noCacheToggle = document.getElementById('noCacheToggle');
     DOM.noCacheStatus = document.getElementById('noCacheStatus');
+    DOM.debugToggle = document.getElementById('debugToggle');
+    DOM.debugStatus = document.getElementById('debugStatus');
+    DOM.jsonFormatToggle = document.getElementById('jsonFormatToggle');
+    DOM.jsonFormatStatus = document.getElementById('jsonFormatStatus');
     DOM.modelSelector = document.getElementById('modelSelector');
     DOM.settingsPanel = document.getElementById('settingsPanel');
     DOM.settingsButton = document.getElementById('settingsButton');
@@ -46,8 +52,8 @@ export function initializeDOMElements() {
 
     // Validate required elements
     const requiredElements = [
-        'chatContainer', 'messageInput', 'sendButton', 'loading',
-        'streamingToggle', 'noCacheToggle', 'modelSelector',
+        'chatContainer', 'messageInput', 'sendButton',
+        'streamingToggle', 'noCacheToggle', 'debugToggle', 'jsonFormatToggle', 'modelSelector',
         'settingsPanel', 'settingsButton', 'conversationsPanel',
         'conversationsList', 'conversationsLoading', 'conversationsEmpty', 'conversationsError'
     ];
@@ -71,9 +77,23 @@ export function updateNoCacheStatus() {
     DOM.noCacheStatus.style.color = isEnabled ? '#dc2626' : '#6b7280';
 }
 
+export function updateDebugStatus() {
+    const isEnabled = DOM.debugToggle.checked;
+    DOM.debugStatus.textContent = isEnabled ? 'ON' : 'OFF';
+    DOM.debugStatus.style.color = isEnabled ? '#f59e0b' : '#6b7280';
+}
+
+export function updateJsonFormatStatus() {
+    const isEnabled = DOM.jsonFormatToggle.checked;
+    DOM.jsonFormatStatus.textContent = isEnabled ? 'ON' : 'OFF';
+    DOM.jsonFormatStatus.style.color = isEnabled ? '#2563eb' : '#6b7280';
+}
+
 export function updateStatusIndicators() {
     updateStreamingStatus();
     updateNoCacheStatus();
+    updateDebugStatus();
+    updateJsonFormatStatus();
     updateConnectionIndicator();
 }
 
@@ -82,6 +102,6 @@ export function updateConnectionIndicator() {
     if (indicator) {
         const connectionStatus = getConnectionStatus();
         indicator.className = `status-indicator ${connectionStatus}`;
-        indicator.textContent = connectionStatus === 'online' ? '🟢 Online' : '�� Offline';
+        indicator.textContent = connectionStatus === 'online' ? '🟢 Online' : '🔴 Offline';
     }
 }

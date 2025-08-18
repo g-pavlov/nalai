@@ -9,7 +9,7 @@ import { ErrorHandler } from './errorHandler.js';
 import { NetworkManager } from './network.js';
 import { buildApiUrl, API_CONFIG } from './config.js';
 import { getCurrentThreadId } from './state.js';
-import { processStreamEvent } from './streaming.js';
+import { processStreamEvent, resetStreamingStateAfterInterrupt, handleStreamingCompletion, captureToolCall } from './streaming.js';
 
 export async function handleInterrupt(responseType, args = null) {
     if (!window.currentInterrupt) {
@@ -27,6 +27,19 @@ export async function handleInterrupt(responseType, args = null) {
     if (responseType === 'edit' && !args) {
         showEditInterruptUI();
         return;
+    }
+    
+    // Capture edited tool call arguments if this is an edit submission
+    if (responseType === 'edit' && args && window.currentInterrupt?.value?.action_request?.action) {
+        const actionRequest = window.currentInterrupt.value.action_request;
+        Logger.info('Capturing edited tool call arguments', { 
+            toolName: actionRequest.action, 
+            originalArgs: actionRequest.args, 
+            editedArgs: args 
+        });
+        
+        // Capture the edited tool call arguments
+        captureToolCall(actionRequest.action, args, 'interrupt_edit');
     }
 
     try {
@@ -196,42 +209,58 @@ async function handleResumeStream(response) {
     } finally {
         reader.releaseLock();
         
-        // Clear interrupt state after successful completion
+        // Remove the interrupt container after the entire flow is complete
+        const existingInterrupt = document.querySelector('.interrupt-container');
+        if (existingInterrupt) {
+            existingInterrupt.remove();
+            Logger.info('Interrupt container removed after resume stream completion');
+        }
+        
+        // Clear interrupt state after container removal
         if (window.currentInterrupt) {
             window.currentInterrupt = null;
-            const existingInterrupt = document.querySelector('.interrupt-container');
-            if (existingInterrupt) {
-                existingInterrupt.remove();
-            }
+            
+            // Reset streaming state to clear accumulated content
+            resetStreamingStateAfterInterrupt();
+            
             Logger.info('Interrupt state cleared after successful resume stream completion');
-            ErrorHandler.showSuccessMessage('Interrupt handled successfully');
+        }
+        
+        // Handle streaming completion for resume stream (after interrupt is cleared)
+        const lastAssistantMessage = document.querySelector('.assistant-message:last-child');
+        if (lastAssistantMessage) {
+            handleStreamingCompletion(true, lastAssistantMessage);
         }
     }
 }
 
 function disableInterruptActions() {
     const interruptContainer = document.querySelector('.interrupt-container');
-    if (!interruptContainer) return;
+    if (!interruptContainer) {
+        Logger.warn('No interrupt container found');
+        return;
+    }
     
     // Disable all buttons
     const buttons = interruptContainer.querySelectorAll('.interrupt-button');
     buttons.forEach(button => {
         button.disabled = true;
-        button.style.opacity = '0.6';
+        button.style.opacity = '0.5';
         button.style.cursor = 'not-allowed';
     });
     
     // Add progress indicator
-    const actionsDiv = interruptContainer.querySelector('.interrupt-actions');
-    if (actionsDiv) {
-        const progressDiv = document.createElement('div');
-        progressDiv.className = 'interrupt-progress';
-        progressDiv.innerHTML = `
-            <div class="progress-spinner"></div>
-            <span>Processing...</span>
-        `;
-        actionsDiv.appendChild(progressDiv);
+    const progressDiv = document.createElement('div');
+    progressDiv.className = 'interrupt-progress';
+    progressDiv.innerHTML = '<div class="progress-spinner"></div><span>Processing...</span>';
+    
+    // Insert progress indicator after the action buttons
+    const actionButtons = interruptContainer.querySelector('.interrupt-actions');
+    if (actionButtons) {
+        actionButtons.appendChild(progressDiv);
     }
+    
+    Logger.info('Interrupt actions disabled and progress indicator added');
 }
 
 function enableInterruptActions() {
@@ -259,6 +288,13 @@ export function createInterruptUI(assistantMessageDiv, actionRequest, interruptI
     if (existingInterrupt) {
         existingInterrupt.remove();
         Logger.info('Removed existing interrupt UI before creating new one');
+    }
+    
+    // Clear the streaming content area and replace it with the interrupt UI
+    const streamingContent = assistantMessageDiv.querySelector('.streaming-content');
+    if (streamingContent) {
+        streamingContent.remove();
+        Logger.info('Removed streaming content to make room for interrupt UI');
     }
     
     const interruptDiv = document.createElement('div');

@@ -6,6 +6,8 @@
 import { API_CONFIG, MESSAGE_TYPES } from './config.js';
 import { DOM } from './dom.js';
 import { Logger } from './logger.js';
+import { toggleDebug } from './debug.js';
+import { updateJsonFormatStatus } from './dom.js';
 
 export function toggleSettings() {
     Logger.info('toggleSettings called');
@@ -80,12 +82,61 @@ export function getMessageConfig() {
         selectedModel = JSON.parse(DOM.modelSelector.value);
     } catch (error) {
         // Fallback to default model if parsing fails
-        selectedModel = { name: "gpt-4.1o", platform: "openai" };
+        selectedModel = { name: "gpt-4.1", platform: "openai" };
     }
     
     return {
         selectedModel,
         isStreamingEnabled: DOM.streamingToggle.checked,
-        isNoCacheEnabled: DOM.noCacheToggle.checked
+        isNoCacheEnabled: DOM.noCacheToggle.checked,
+        isJsonFormatEnabled: DOM.jsonFormatToggle.checked
     };
+}
+
+export function isJsonFormatEnabled() {
+    try {
+        return DOM.jsonFormatToggle ? DOM.jsonFormatToggle.checked : false;
+    } catch (error) {
+        // Fallback if DOM not initialized yet
+        return false;
+    }
+}
+
+export function initializeSettings() {
+    // Initialize streaming toggle
+    if (DOM.streamingToggle) {
+        DOM.streamingToggle.addEventListener('change', function() {
+            const status = DOM.streamingToggle.checked ? 'ON' : 'OFF';
+            if (DOM.streamingStatus) {
+                DOM.streamingStatus.textContent = status;
+            }
+            Logger.info('Streaming toggled', { enabled: DOM.streamingToggle.checked });
+        });
+    }
+    
+    // Initialize no cache toggle
+    if (DOM.noCacheToggle) {
+        DOM.noCacheToggle.addEventListener('change', function() {
+            const status = DOM.noCacheToggle.checked ? 'ON' : 'OFF';
+            if (DOM.noCacheStatus) {
+                DOM.noCacheStatus.textContent = status;
+            }
+            Logger.info('No cache toggled', { enabled: DOM.noCacheToggle.checked });
+        });
+    }
+    
+    // Initialize debug toggle
+    if (DOM.debugToggle) {
+        DOM.debugToggle.addEventListener('change', function() {
+            toggleDebug();
+        });
+    }
+    
+    // Initialize JSON format toggle
+    if (DOM.jsonFormatToggle) {
+        DOM.jsonFormatToggle.addEventListener('change', function() {
+            updateJsonFormatStatus();
+            Logger.info('JSON format toggled', { enabled: DOM.jsonFormatToggle.checked });
+        });
+    }
 }
