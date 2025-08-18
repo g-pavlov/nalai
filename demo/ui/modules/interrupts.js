@@ -169,7 +169,9 @@ async function handleResumeStream(response) {
                         const event = JSON.parse(data);
 
                         // Use the same event processing logic as regular streaming
-                        processStreamEvent(event, null); // Pass null for assistantMessageDiv since we're updating the last message
+                        // Find the last assistant message div to update
+                        const lastAssistantMessage = document.querySelector('.assistant-message:last-child');
+                        processStreamEvent(event, lastAssistantMessage);
                     } catch (e) {
                         Logger.warn('Failed to parse resume event', { error: e.message });
                     }
