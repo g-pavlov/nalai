@@ -57,7 +57,7 @@ export function getRequestHeaders(isStreamingEnabled, isNoCacheEnabled) {
 
 export function buildRequestPayload(message, config) {
     const payload = {
-        messages: [{
+        input: [{
             content: message,
             type: MESSAGE_TYPES.HUMAN
         }]
