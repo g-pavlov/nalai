@@ -165,10 +165,10 @@ def create_conversation_routes(
     async def get_user_context_safe(req: Request) -> tuple[str, str]:
         """
         Safely extract user context from request.
-        
+
         Returns:
             tuple: (user_id, user_context)
-            
+
         Raises:
             HTTPException: If user context cannot be extracted
         """
@@ -188,14 +188,14 @@ def create_conversation_routes(
     ) -> tuple[str, str]:
         """
         Validate conversation access and return user-scoped conversation ID.
-        
+
         Args:
             conversation_id: The conversation ID to validate
             user_id: The user ID requesting access
-            
+
         Returns:
             tuple: (user_scoped_conversation_id, base_conversation_id)
-            
+
         Raises:
             HTTPException: If access is denied
         """
@@ -236,10 +236,10 @@ def create_conversation_routes(
     def extract_messages_from_checkpoint(checkpoint_state: dict) -> list[dict]:
         """
         Extract messages from checkpoint state in a standardized format.
-        
+
         Args:
             checkpoint_state: The checkpoint state from LangGraph
-            
+
         Returns:
             list: List of message dictionaries in our API format
         """
@@ -293,7 +293,9 @@ def create_conversation_routes(
                                 }
                             )
                         else:
-                            logger.warning(f"Unknown LangChain message type: {msg_type}")
+                            logger.warning(
+                                f"Unknown LangChain message type: {msg_type}"
+                            )
 
                     # Handle tuple format (fallback)
                     elif isinstance(msg_obj, tuple) and len(msg_obj) >= 2:
@@ -359,7 +361,10 @@ def create_conversation_routes(
                     elif msg_type == "ai":
                         # Handle AI messages with tool calls in tuple format
                         tool_calls = None
-                        if isinstance(msg_content, dict) and "tool_calls" in msg_content:
+                        if (
+                            isinstance(msg_content, dict)
+                            and "tool_calls" in msg_content
+                        ):
                             tool_calls = msg_content.get("tool_calls")
                         messages.append(
                             {
@@ -653,9 +658,10 @@ def create_conversation_routes(
 
         try:
             # Validate conversation access and get user-scoped ID
-            user_scoped_conversation_id, base_conversation_id = (
-                await validate_conversation_access(conversation_id, user_id)
-            )
+            (
+                user_scoped_conversation_id,
+                base_conversation_id,
+            ) = await validate_conversation_access(conversation_id, user_id)
 
             # Get the checkpoint state
             checkpoint_state = await checkpointer.aget(
@@ -945,9 +951,10 @@ def create_conversation_routes(
 
         try:
             # Validate conversation access and get user-scoped ID
-            user_scoped_conversation_id, base_conversation_id = (
-                await validate_conversation_access(conversation_id, user_id)
-            )
+            (
+                user_scoped_conversation_id,
+                base_conversation_id,
+            ) = await validate_conversation_access(conversation_id, user_id)
 
             # Delete the checkpoint state from LangGraph
             try:
