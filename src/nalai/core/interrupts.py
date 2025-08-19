@@ -74,7 +74,7 @@ def add_human_in_the_loop(
                 "args": tool_input,
             },
             "config": interrupt_config,
-            "description": "Please review the tool call",
+            "description": tool.description,
         }
         logger.info(f"Interrupt request: {request}")
         response = interrupt([request])[0]

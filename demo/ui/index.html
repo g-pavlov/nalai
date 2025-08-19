@@ -158,7 +158,7 @@
 
     <script type="module">
         import { initializeApp, sendMessage, startNewConversation, toggleSettings, loadConversation, showConversationsList, hideConversationsList, refreshConversationsList } from './modules/app.js';
-        import { handleInterrupt, showEditInterruptUI, showRejectInput, cancelEditInterrupt, cancelRejectInput, submitRejectInput, submitEditedInterrupt } from './modules/interrupts.js';
+        import { handleInterrupt, showEditInterruptUI, cancelEditInterrupt, submitEditedInterrupt } from './modules/interrupts.js';
         
         // Make functions available globally for onclick handlers
         window.sendMessage = sendMessage;
@@ -172,10 +172,7 @@
         // Make interrupt functions available globally
         window.handleInterrupt = handleInterrupt;
         window.showEditInterruptUI = showEditInterruptUI;
-        window.showRejectInput = showRejectInput;
         window.cancelEditInterrupt = cancelEditInterrupt;
-        window.cancelRejectInput = cancelRejectInput;
-        window.submitRejectInput = submitRejectInput;
         window.submitEditedInterrupt = submitEditedInterrupt;
         
         // Initialize app when DOM is ready

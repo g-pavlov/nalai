@@ -15,14 +15,24 @@ let debugState = {
     isComplete: false
 };
 
-// Node mapping for human-readable names
+// Node mapping for human-readable names (current/active status)
 const NODE_DISPLAY_NAMES = {
-    'call_model': 'AI Processing',
-    'call_api': 'API Call',
-    'check_cache': 'Cache Check',
-    'load_api_summaries': 'Loading API Summaries',
-    'load_api_specs': 'Loading API Specifications',
-    'select_relevant_apis': 'Selecting Relevant APIs'
+    'call_model': 'AI processing',
+    'call_api': 'Tool calling',
+    'check_cache': 'Checking cache',
+    'load_api_summaries': 'Loading API summaries',
+    'load_api_specs': 'Loading API specifications',
+    'select_relevant_apis': 'AI selecting APIs'
+};
+
+// Node mapping for completed status (past tense for update events)
+const NODE_COMPLETED_NAMES = {
+    'call_model': 'AI processed',
+    'call_api': 'Tool called',
+    'check_cache': 'Cache checked',
+    'load_api_summaries': 'API summaries loaded',
+    'load_api_specs': 'API specifications loaded',
+    'select_relevant_apis': 'APIs selected'
 };
 
 export function initializeDebug() {
@@ -70,7 +80,7 @@ export function addNodeLog(nodeName, updateValue) {
     
     const nodeLog = {
         node: nodeName,
-        displayName: NODE_DISPLAY_NAMES[nodeName] || nodeName,
+        displayName: NODE_COMPLETED_NAMES[nodeName] || NODE_DISPLAY_NAMES[nodeName] || nodeName,
         status: 'completed',
         timestamp: new Date().toISOString(),
         output: updateValue

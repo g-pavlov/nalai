@@ -29,6 +29,9 @@ def serialize_event_default(event: object) -> object:
                 # Only filter the sensitive data, keep workflow state
                 if k in ["api_specs", "api_summaries"]:
                     continue  # Skip these entirely
+                elif k == "__interrupt__" and isinstance(v, list):
+                    # Handle interrupt list - serialize each interrupt object completely
+                    filtered_event[k] = [serialize_event_default(item) for item in v]
                 elif k == "data" and isinstance(v, dict):
                     # Recursively filter nested data objects
                     filtered_data = {}
@@ -38,6 +41,17 @@ def serialize_event_default(event: object) -> object:
                         else:
                             filtered_data[data_k] = serialize_event_default(data_v)
                     filtered_event[k] = filtered_data
+                elif k == "config" and isinstance(v, dict):
+                    # Ensure config dictionaries preserve JSON boolean values
+                    config_dict = {}
+                    for config_k, config_v in v.items():
+                        if isinstance(config_v, bool):
+                            config_dict[config_k] = bool(
+                                config_v
+                            )  # Ensure JSON boolean
+                        else:
+                            config_dict[config_k] = serialize_event_default(config_v)
+                    filtered_event[k] = config_dict
                 else:
                     filtered_event[k] = serialize_event_default(v)
             return filtered_event
@@ -66,9 +80,34 @@ def serialize_event_default(event: object) -> object:
                 }
         elif isinstance(event, list | tuple):
             return [serialize_event_default(item) for item in event]
+        elif hasattr(event, "__class__") and event.__class__.__name__ == "Interrupt":
+            # Handle LangGraph Interrupt objects by type name - serialize all attributes
+            interrupt_dict = {}
+            # Get all attributes, including those that might not be in __dict__
+            for attr_name in dir(event):
+                if not attr_name.startswith("_"):  # Skip private attributes
+                    try:
+                        attr_value = getattr(event, attr_name)
+                        if not callable(attr_value):  # Skip methods
+                            # Ensure boolean values are properly serialized
+                            if isinstance(attr_value, bool):
+                                interrupt_dict[attr_name] = attr_value
+                            else:
+                                interrupt_dict[attr_name] = serialize_event_default(
+                                    attr_value
+                                )
+                    except Exception:
+                        continue  # Skip attributes that can't be accessed
+            return interrupt_dict
         else:
-            # Try to convert to string for other types
-            return str(event)
+            # Handle specific types that might be converted to strings incorrectly
+            if isinstance(event, bool):
+                return bool(event)  # Ensure JSON boolean
+            elif event is None:
+                return None
+            else:
+                # Try to convert to string for other types
+                return str(event)
     except Exception as e:
         logger.warning(f"Error serializing event: {e}")
         return str(event)

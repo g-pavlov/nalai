@@ -81,9 +81,9 @@ async function loadConversationMessages(conversation) {
             const metadataDiv = document.createElement('div');
             metadataDiv.className = 'conversation-metadata fade-in';
             metadataDiv.innerHTML = `
-                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(0,0,0,0.05); border-radius: 8px; margin-bottom: 16px;">
-                    <span style="font-size: 14px;">📋</span>
-                    <div style="font-size: 12px; color: #666;">
+                <div class="conversation-metadata-content">
+                    <span class="conversation-metadata-icon">📋</span>
+                    <div class="conversation-metadata-text">
                         <strong>Conversation Info:</strong> 
                         ${metadata.title || 'Untitled'} 
                         ${status ? `(${status})` : ''}

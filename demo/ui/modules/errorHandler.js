@@ -136,12 +136,12 @@ export class ErrorHandler {
         const errorDiv = document.createElement('div');
         errorDiv.className = 'message error-message fade-in';
         errorDiv.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 16px;">⚠️</span>
+            <div class="message-content-layout">
+                <span class="message-icon">⚠️</span>
                 <div>
                     <strong>Error${context ? ` (${context})` : ''}:</strong> ${message}
                     <br>
-                    <small style="opacity: 0.7;">Please try again or contact support if the problem persists.</small>
+                    <small class="message-text-muted">Please try again or contact support if the problem persists.</small>
                 </div>
             </div>
         `;
@@ -170,8 +170,8 @@ export class ErrorHandler {
         const successDiv = document.createElement('div');
         successDiv.className = 'message success-message fade-in';
         successDiv.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 16px;">✅</span>
+            <div class="message-content-layout">
+                <span class="message-icon">✅</span>
                 <div>${message}</div>
             </div>
         `;
@@ -203,8 +203,8 @@ export class ErrorHandler {
         const warningDiv = document.createElement('div');
         warningDiv.className = 'message warning-message fade-in';
         warningDiv.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 16px;">⚠️</span>
+            <div class="message-content-layout">
+                <span class="message-icon">⚠️</span>
                 <div>${message}</div>
             </div>
         `;
@@ -232,8 +232,8 @@ export class ErrorHandler {
         const infoDiv = document.createElement('div');
         infoDiv.className = 'message info-message fade-in';
         infoDiv.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 16px;">ℹ️</span>
+            <div class="message-content-layout">
+                <span class="message-icon">ℹ️</span>
                 <div>${message}</div>
             </div>
         `;

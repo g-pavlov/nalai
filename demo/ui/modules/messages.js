@@ -7,6 +7,7 @@ import { DOM } from './dom.js';
 import { Logger } from './logger.js';
 import { ErrorHandler } from './errorHandler.js';
 import { setCurrentThreadId, setProcessing, getProcessingStatus } from './state.js';
+import { addToolCallsIndicatorToMessage } from './toolCalls.js';
 
 export function createAssistantMessageElement() {
     const assistantMessageDiv = document.createElement('div');
@@ -61,6 +62,15 @@ export function addMessage(content, type, options = {}) {
         
         if (type === 'assistant') {
             updateMessageContent(messageDiv, content);
+            
+            // Add tool calls indicator if tool calls are provided
+            if (options.toolCalls && options.toolCalls.length > 0) {
+                addToolCallsIndicatorToMessage(
+                    messageDiv, 
+                    options.toolCalls.length, 
+                    options.toolCalls
+                );
+            }
         } else if (type === 'tool') {
             // Handle tool messages with additional metadata
             const toolName = options.name || 'Unknown tool';
@@ -112,11 +122,20 @@ export function setupMessageProcessing(message) {
     DOM.messageInput.value = '';
     setProcessing(true);
     DOM.sendButton.disabled = true;
+    
+    // Disable input field and change placeholder to indicate processing
+    DOM.messageInput.disabled = true;
+    DOM.messageInput.placeholder = 'Processing your request...';
 }
 
 export function cleanupMessageProcessing() {
     setProcessing(false);
     DOM.sendButton.disabled = false;
+    
+    // Re-enable input field and restore original placeholder
+    DOM.messageInput.disabled = false;
+    DOM.messageInput.placeholder = 'Type your message here...';
+    
     handleInputChange(); // Re-enable send button if there's content
 }
 
@@ -127,12 +146,12 @@ export function handleMessageError(error) {
     const errorDiv = document.createElement('div');
     errorDiv.className = 'message error-message fade-in';
     errorDiv.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 16px;">❌</span>
+        <div class="message-content-layout">
+            <span class="message-icon">❌</span>
             <div>
                 <strong>Failed to send message:</strong> ${error?.message || 'Unknown error'}
                 <br>
-                <small style="opacity: 0.7;">Please try again or check your connection.</small>
+                <small class="message-text-muted">Please try again or check your connection.</small>
             </div>
         </div>
     `;

@@ -6,6 +6,7 @@
 import { EVENT_TYPES, MESSAGE_TYPES } from './config.js';
 import { Logger } from './logger.js';
 import { ErrorHandler } from './errorHandler.js';
+import { DOM } from './dom.js';
 import { updateMessageContent, cleanupMessageProcessing } from './messages.js';
 import { setFullMessageContent, getFullMessageContent } from './state.js';
 import { Validator } from './validator.js';
@@ -20,6 +21,7 @@ import {
     updateFinalMessageContent, 
     createFinalUI 
 } from './debug.js';
+import { addToolCallsIndicatorToMessage } from './toolCalls.js';
 // Check JSON format setting directly from DOM
 function isJsonFormatEnabled() {
     const toggle = document.getElementById('jsonFormatToggle');
@@ -37,14 +39,24 @@ let streamingProgressState = {
     isComplete: false
 };
 
-// Node mapping for human-readable names
+// Node mapping for human-readable names (current/active status)
 const NODE_DISPLAY_NAMES = {
-    'call_model': 'AI Processing',
-    'call_api': 'API Call',
-    'check_cache': 'Cache Check',
-    'load_api_summaries': 'Loading API Summaries',
-    'load_api_specs': 'Loading API Specifications',
-    'select_relevant_apis': 'Selecting Relevant APIs'
+    'call_model': 'AI processing',
+    'call_api': 'Tool calling',
+    'check_cache': 'Checking cache',
+    'load_api_summaries': 'Loading API summaries',
+    'load_api_specs': 'Loading API specifications',
+    'select_relevant_apis': 'AI selecting APIs'
+};
+
+// Node mapping for completed status (past tense for update events)
+const NODE_COMPLETED_NAMES = {
+    'call_model': 'AI processed',
+    'call_api': 'Tool called',
+    'check_cache': 'Cache checked',
+    'load_api_summaries': 'API summaries loaded',
+    'load_api_specs': 'API specifications loaded',
+    'select_relevant_apis': 'APIs selected'
 };
 
 export async function handleStreamingResponse(response, assistantMessageDiv) {
@@ -164,6 +176,15 @@ function handleAIMessageChunk(message, assistantMessageDiv) {
     const newContent = currentContent + message.content;
     setFullMessageContent(newContent);
     
+    // Update streaming progress to show "AI processing..." during real-time streaming
+    const progressContainer = assistantMessageDiv.querySelector('.streaming-progress');
+    if (progressContainer) {
+        const progressTitle = progressContainer.querySelector('.progress-title');
+        if (progressTitle) {
+            progressTitle.textContent = 'AI processing';
+        }
+    }
+    
     // Update the streaming content in real-time
     updateStreamingContent(assistantMessageDiv, newContent);
     
@@ -279,8 +300,21 @@ function handleToolMessage(message, assistantMessageDiv) {
         name: message.name || 'Unknown tool',
         content: message.content,
         args: toolCallInfo ? toolCallInfo.args : {},
+        response: message.content, // Store the response content
+        source: toolCallInfo ? toolCallInfo.source : 'unknown',
         timestamp: new Date().toISOString()
     };
+    
+    // Check if this tool call was from an interrupt flow and update status
+    if (toolCallInfo && toolCallInfo.source === 'interrupt') {
+        // Check if the tool call was confirmed or rejected
+        if (toolCallInfo.confirmed === false) {
+            toolCall.confirmed = false;
+            toolCall.response = 'User rejected the tool call';
+        } else if (toolCallInfo.confirmed === true) {
+            toolCall.confirmed = true;
+        }
+    }
     
     streamingProgressState.toolCalls.push(toolCall);
     
@@ -298,6 +332,9 @@ function handleToolMessage(message, assistantMessageDiv) {
     if (isDebugEnabled()) {
         addToolCall(message.name, message.content);
     }
+    
+    // Display tool call in streaming content
+    displayToolCallInStreamingContent(assistantMessageDiv, toolCall);
     
     // Update streaming UI to show tool call
     updateStreamingUI(assistantMessageDiv);
@@ -343,7 +380,7 @@ function handleNodeUpdate(nodeName, updateValue, assistantMessageDiv) {
     
     const nodeLog = {
         node: nodeName,
-        displayName: NODE_DISPLAY_NAMES[nodeName] || nodeName,
+        displayName: NODE_COMPLETED_NAMES[nodeName] || nodeName,
         status: 'completed',
         timestamp: new Date().toISOString(),
         output: updateValue
@@ -367,7 +404,7 @@ function handleNodeUpdate(nodeName, updateValue, assistantMessageDiv) {
 function handleCallModelEvent(updateValue, assistantMessageDiv) {
     const nodeLog = {
         node: 'call_model',
-        displayName: NODE_DISPLAY_NAMES['call_model'],
+        displayName: NODE_COMPLETED_NAMES['call_model'],
         status: 'completed',
         timestamp: new Date().toISOString(),
         output: updateValue
@@ -445,7 +482,7 @@ function handleCallApiEvent(updateValue, assistantMessageDiv) {
     
     const nodeLog = {
         node: 'call_api',
-        displayName: NODE_DISPLAY_NAMES['call_api'],
+        displayName: NODE_COMPLETED_NAMES['call_api'],
         status: 'completed',
         timestamp: new Date().toISOString(),
         output: updateValue
@@ -562,6 +599,87 @@ function createStreamingContentContainer(assistantMessageDiv) {
     return contentContainer;
 }
 
+/**
+ * Displays a tool call in the streaming content container
+ * @param {HTMLElement} assistantMessageDiv - The assistant message container
+ * @param {Object} toolCall - The tool call object
+ */
+function displayToolCallInStreamingContent(assistantMessageDiv, toolCall) {
+    // Create or get the streaming content container
+    let contentContainer = assistantMessageDiv.querySelector('.streaming-content');
+    if (!contentContainer) {
+        contentContainer = createStreamingContentContainer(assistantMessageDiv);
+    }
+    
+    // Clear previous content for non-interrupt tool calls to avoid prepending
+    if (toolCall.source !== 'interrupt') {
+        contentContainer.innerHTML = '';
+        Logger.info('Cleared streaming content for non-interrupt tool call', { toolName: toolCall.name });
+    }
+    
+    // Create tool call element using the same structure as tool-call-item
+    const toolCallElement = document.createElement('div');
+    toolCallElement.className = 'tool-call-item';
+    
+    // Format the tool call display
+    const toolName = toolCall.name;
+    const args = toolCall.args;
+    const response = toolCall.response;
+    
+    // Determine status based on tool call source and confirmation
+    let status = 'completed';
+    let statusClass = 'completed';
+    if (toolCall.source === 'interrupt') {
+        if (toolCall.confirmed === false) {
+            status = 'rejected';
+            statusClass = 'rejected';
+        } else if (toolCall.confirmed === true) {
+            status = 'confirmed';
+            statusClass = 'confirmed';
+        }
+    }
+    
+    // Create the tool call HTML using the same structure as the example
+    let toolCallHTML = `
+        <div class="tool-call-header">
+            <div class="tool-call-name">${toolName}</div>
+            <div class="tool-call-status ${statusClass}">${status}</div>
+        </div>
+    `;
+    
+    // Add arguments if available
+    if (args && Object.keys(args).length > 0) {
+        toolCallHTML += `
+            <div class="tool-call-section">
+                <div class="tool-call-section-title">Arguments</div>
+                <div class="tool-call-args">${JSON.stringify(args, null, 2)}</div>
+            </div>
+        `;
+    }
+    
+    // Add response if available
+    if (response) {
+        toolCallHTML += `
+            <div class="tool-call-section">
+                <div class="tool-call-section-title">Response</div>
+                <div class="tool-call-response">${typeof response === 'string' ? response : JSON.stringify(response, null, 2)}</div>
+            </div>
+        `;
+    }
+    
+    toolCallElement.innerHTML = toolCallHTML;
+    
+    // Add to content container
+    contentContainer.appendChild(toolCallElement);
+    
+    Logger.info('Displayed tool call in streaming content', { 
+        toolName: toolCall.name,
+        hasArgs: !!args,
+        hasResponse: !!response,
+        status: status
+    });
+}
+
 
 
 function createStreamingToolElement(tool) {
@@ -663,6 +781,45 @@ export function captureToolCall(name, args, source = 'unknown') {
     return toolCallInfo;
 }
 
+/**
+ * Updates the status of a tool call based on interrupt decision
+ * @param {string} toolName - Name of the tool
+ * @param {string} decision - Decision made (accept, reject, edit)
+ */
+export function updateToolCallStatus(toolName, decision) {
+    // Find the tool call in the toolCalls array and update its status
+    for (const toolCall of streamingProgressState.toolCalls) {
+        if (toolCall.name === toolName) {
+            if (decision === 'accept') {
+                toolCall.confirmed = true;
+            } else if (decision === 'reject') {
+                toolCall.confirmed = false;
+            } else if (decision === 'edit') {
+                toolCall.confirmed = true; // Edited calls are considered confirmed
+            }
+            Logger.info('Updated tool call status', { toolName, decision, confirmed: toolCall.confirmed });
+            break;
+        }
+    }
+    
+    // Also update any pending tool calls
+    if (streamingProgressState.pendingToolCalls) {
+        for (const [id, toolCallInfo] of streamingProgressState.pendingToolCalls.entries()) {
+            if (toolCallInfo.name === toolName) {
+                if (decision === 'accept') {
+                    toolCallInfo.confirmed = true;
+                } else if (decision === 'reject') {
+                    toolCallInfo.confirmed = false;
+                } else if (decision === 'edit') {
+                    toolCallInfo.confirmed = true;
+                }
+                Logger.info('Updated pending tool call status', { toolName, decision, confirmed: toolCallInfo.confirmed });
+                break;
+            }
+        }
+    }
+}
+
 function resetStreamingProgressState() {
     streamingProgressState = {
         currentNode: null,
@@ -682,54 +839,7 @@ export function resetStreamingStateAfterInterrupt() {
     Logger.info('Streaming content state reset after interrupt completion');
 }
 
-function createCollapsibleToolPanel(toolItems) {
-    const toolPanel = document.createElement('div');
-    toolPanel.className = 'tool-panel';
-    
-    // Create clickable text with chevron
-    const panelHeader = document.createElement('div');
-    panelHeader.className = 'tool-panel-header';
-    panelHeader.innerHTML = `
-        <span class="tool-panel-chevron">▶</span>
-        <span class="tool-panel-text">Tool Calls (${toolItems.length})</span>
-    `;
-    
-    // Create content container
-    const panelContent = document.createElement('div');
-    panelContent.className = 'tool-panel-content';
-    
-    // Move tool items to the panel and apply global JSON formatting setting
-    toolItems.forEach(toolItem => {
-        const clonedItem = toolItem.cloneNode(true);
-        const contentDiv = clonedItem.querySelector('.tool-content');
-        if (contentDiv) {
-            const originalContent = contentDiv.textContent || contentDiv.innerText || '';
-            // Apply global JSON formatting setting
-            if (isJsonFormatEnabled()) {
-                contentDiv.innerHTML = formatToolContent(originalContent);
-            } else {
-                contentDiv.innerHTML = `<span class="text-content">${escapeHtml(originalContent)}</span>`;
-            }
-        }
-        panelContent.appendChild(clonedItem);
-        toolItem.remove(); // Remove from original location
-    });
-    
-    // Add click handler for toggle
-    panelHeader.addEventListener('click', () => {
-        const isExpanded = panelContent.style.display !== 'none';
-        panelContent.style.display = isExpanded ? 'none' : 'block';
-        panelHeader.querySelector('.tool-panel-chevron').textContent = isExpanded ? '▶' : '▼';
-    });
-    
-    // Initially collapsed
-    panelContent.style.display = 'none';
-    
-    toolPanel.appendChild(panelHeader);
-    toolPanel.appendChild(panelContent);
-    
-    return toolPanel;
-}
+
 
 function formatTime(timestamp) {
     const date = new Date(timestamp);
@@ -775,43 +885,7 @@ export function handleStreamingCompletion(hasReceivedEvents, assistantMessageDiv
                 Logger.info('Progress header removed');
             }
             
-            // Check if there are tool items to fold
-            let toolItems = progressContainer.querySelectorAll('.tool-item');
-            Logger.info('Tool items found in DOM', { toolItemCount: toolItems.length });
-            
-            // If no tool items in DOM but we have tool calls in state, create them
-            if (toolItems.length === 0 && streamingProgressState.toolCalls && streamingProgressState.toolCalls.length > 0) {
-                Logger.info('No tool items in DOM, but tool calls in state', { 
-                    toolCallsCount: streamingProgressState.toolCalls.length 
-                });
-                
-                // Create tool items from state data
-                streamingProgressState.toolCalls.forEach(toolCall => {
-                    const toolItem = createStreamingToolElement(toolCall);
-                    progressContainer.appendChild(toolItem);
-                });
-                
-                // Get the newly created tool items
-                toolItems = progressContainer.querySelectorAll('.tool-item');
-                Logger.info('Created tool items from state', { toolItemCount: toolItems.length });
-            }
-            
-            if (toolItems.length > 0) {
-                // Create collapsible tool panel
-                const toolPanel = createCollapsibleToolPanel(toolItems);
-                
-                // Find the streaming content to insert after it
-                const streamingContent = assistantMessageDiv.querySelector('.streaming-content');
-                if (streamingContent) {
-                    // Insert tool panel after streaming content
-                    streamingContent.parentNode.insertBefore(toolPanel, streamingContent.nextSibling);
-                    Logger.info('Collapsible tool panel inserted after streaming content');
-                } else {
-                    // Fallback: append to progress container
-                    progressContainer.appendChild(toolPanel);
-                    Logger.info('Collapsible tool panel appended to progress container');
-                }
-            }
+
             
             // Remove or hide the progress content container to save space
             const progressContent = progressContainer.querySelector('.progress-content');
@@ -841,6 +915,18 @@ export function handleStreamingCompletion(hasReceivedEvents, assistantMessageDiv
         if (finalContent.trim()) {
             // Content exists and is already in DOM - just ensure it's visible
             Logger.info('Final content confirmed, streaming content already displayed');
+            
+            // Add tool calls indicator if there are tool calls
+            if (streamingProgressState.toolCalls && streamingProgressState.toolCalls.length > 0) {
+                addToolCallsIndicatorToMessage(
+                    assistantMessageDiv, 
+                    streamingProgressState.toolCalls.length, 
+                    streamingProgressState.toolCalls
+                );
+                Logger.info('Added tool calls indicator', { 
+                    toolCount: streamingProgressState.toolCalls.length 
+                });
+            }
         } else {
             assistantMessageDiv.textContent = 'Response incomplete - please try again';
             assistantMessageDiv.style.color = '#dc2626';
@@ -870,12 +956,12 @@ function handleErrorEvent(errorData, assistantMessageDiv) {
     const errorDiv = document.createElement('div');
     errorDiv.className = 'message error-message fade-in';
     errorDiv.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 16px;">Error</span>
+        <div class="message-content-layout">
+            <span class="message-icon">Error</span>
             <div>
                 <strong>Server Error:</strong> ${errorMessage}
                 <br>
-                <small style="opacity: 0.7;">Please try again or check your input.</small>
+                <small class="message-text-muted">Please try again or check your input.</small>
             </div>
         </div>
     `;
@@ -895,8 +981,12 @@ function handleErrorEvent(errorData, assistantMessageDiv) {
         chatContainer.scrollTop = chatContainer.scrollHeight;
     }
     
-    // Clear processing state
-    cleanupMessageProcessing();
+    // Clear processing state only if there's no active interrupt
+    if (!window.currentInterrupt) {
+        cleanupMessageProcessing();
+    } else {
+        Logger.info('Skipping cleanup during active interrupt');
+    }
 }
 
 function handleInterruptEvent(updateValue, assistantMessageDiv) {
@@ -906,8 +996,42 @@ function handleInterruptEvent(updateValue, assistantMessageDiv) {
     setFullMessageContent('');
     Logger.info('Cleared content state for interrupt');
     
-    const interruptInfo = parseInterruptString(updateValue[0]);
+    // Keep processing state active during interrupt - don't clear it
+    // The processing state should remain true until the entire workflow is complete
+    Logger.info('Maintaining processing state during interrupt');
+    
+    // Parse interrupt data first
+    const interruptObject = updateValue[0];
+    const interruptInfo = interruptObject.value[0]; // Get the first interrupt from the value array
     const actionRequest = interruptInfo?.action_request || {};
+    
+    // Update input field placeholder to indicate tool call decision is needed
+    const config = interruptInfo?.config || {};
+    const allowAccept = config.allow_accept !== false;
+    const allowEdit = config.allow_edit === true;
+    const allowRespond = config.allow_respond === true;
+    
+    let placeholderText = 'Waiting for tool call decision...';
+    if (allowAccept && allowEdit && allowRespond) {
+        placeholderText = 'Please accept, edit, or reject the tool call above...';
+    } else if (allowAccept && allowEdit) {
+        placeholderText = 'Please accept or edit the tool call above...';
+    } else if (allowAccept && allowRespond) {
+        placeholderText = 'Please accept or reject the tool call above...';
+    } else if (allowAccept) {
+        placeholderText = 'Please accept the tool call above...';
+    }
+    
+    DOM.messageInput.placeholder = placeholderText;
+    
+    // Update streaming progress to show "Tool calling..." status during interrupt
+    const progressContainer = assistantMessageDiv.querySelector('.streaming-progress');
+    if (progressContainer) {
+        const progressTitle = progressContainer.querySelector('.progress-title');
+        if (progressTitle) {
+            progressTitle.textContent = 'Tool calling';
+        }
+    }
     
     // Capture tool call arguments from interrupt data
     if (actionRequest && actionRequest.action) {
@@ -922,50 +1046,13 @@ function handleInterruptEvent(updateValue, assistantMessageDiv) {
     
     window.currentInterrupt = {
         value: interruptInfo,
-        resumable: true
+        resumable: interruptObject.resumable,
+        ns: interruptObject.ns
     };
 }
 
-function parseInterruptString(interruptString) {
-    try {
-        const valueMatch = interruptString.match(/value=\[([^\]]+)\]/);
-        if (!valueMatch) return null;
-
-        let valueStr = valueMatch[1];
-        valueStr = valueStr
-            .replace(/'/g, '"')
-            .replace(/True/g, 'true')
-            .replace(/False/g, 'false')
-            .replace(/None/g, 'null');
-
-        return JSON.parse(valueStr);
-    } catch (error) {
-        Logger.warn('Failed to parse interrupt string, using fallback', { error: error.message });
-        return parseInterruptFallback(interruptString);
-    }
-}
-
-function parseInterruptFallback(interruptString) {
-    try {
-        const actionMatch = interruptString.match(/'action': '([^']+)'/);
-        const argsMatch = interruptString.match(/'args': \{([^}]+)\}/);
-        
-        return {
-            action_request: {
-                action: actionMatch ? actionMatch[1] : 'Unknown tool',
-                args: argsMatch ? JSON.parse('{' + argsMatch[1].replace(/'/g, '"').replace(/True/g, 'true').replace(/False/g, 'false') + '}') : {}
-            }
-        };
-    } catch (error) {
-        Logger.error('Fallback interrupt parsing failed', { error: error.message });
-        return {
-            action_request: {
-                action: 'Unknown tool',
-                args: {}
-            }
-        };
-    }
-}
+// Removed parseInterruptString and parseInterruptFallback functions
+// as they are no longer needed with proper JSON serialization
 
 export async function handleNonStreamingResponse(response, assistantMessageDiv) {
     try {
