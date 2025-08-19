@@ -58,43 +58,54 @@
                         <!--option value='{"name":"claude-3-5-sonnet-20241022","platform":"aws_bedrock"}'>Bedrock (Claude 3.5 Sonnet)</option-->
                         <option value='{"name":"llama3.1:8b","platform":"ollama"}'>Ollama (llama3.1:8b)</option>
                     </select>
+                    <div class="description">Choose the AI model to use for generating responses</div>
                 </div>
                 
                 <div class="setting-group">
                     <label for="streamingToggle">Streaming:</label>
-                    <label class="switch">
-                        <input type="checkbox" id="streamingToggle" checked>
-                        <span class="slider round"></span>
-                    </label>
-                    <span id="streamingStatus">ON</span>
+                    <div class="toggle-container">
+                        <label class="switch">
+                            <input type="checkbox" id="streamingToggle" checked>
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="toggle-status" id="streamingStatus">ON</span>
+                    </div>
+                    <div class="description">Enable real-time streaming of AI responses as they're generated</div>
                 </div>
                 
                 <div class="setting-group">
                     <label for="noCacheToggle">No Cache:</label>
-                    <label class="switch">
-                        <input type="checkbox" id="noCacheToggle">
-                        <span class="slider round"></span>
-                    </label>
-                    <span id="noCacheStatus">OFF</span>
+                    <div class="toggle-container">
+                        <label class="switch">
+                            <input type="checkbox" id="noCacheToggle">
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="toggle-status" id="noCacheStatus">OFF</span>
+                    </div>
+                    <div class="description">Bypass response caching to always get fresh AI responses</div>
                 </div>
                 
                 <div class="setting-group">
                     <label for="debugToggle">Debug:</label>
-                    <label class="switch">
-                        <input type="checkbox" id="debugToggle">
-                        <span class="slider round"></span>
-                    </label>
-                    <span id="debugStatus">OFF</span>
+                    <div class="toggle-container">
+                        <label class="switch">
+                            <input type="checkbox" id="debugToggle">
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="toggle-status" id="debugStatus">OFF</span>
+                    </div>
                     <div class="description">Show agent progress and execution details for troubleshooting</div>
                 </div>
                 
                 <div class="setting-group">
                     <label for="jsonFormatToggle">JSON Format:</label>
-                    <label class="switch">
-                        <input type="checkbox" id="jsonFormatToggle">
-                        <span class="slider round"></span>
-                    </label>
-                    <span id="jsonFormatStatus">OFF</span>
+                    <div class="toggle-container">
+                        <label class="switch">
+                            <input type="checkbox" id="jsonFormatToggle">
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="toggle-status" id="jsonFormatStatus">OFF</span>
+                    </div>
                     <div class="description">Automatically format JSON responses in tool calls</div>
                 </div>
             </div>
