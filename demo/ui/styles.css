@@ -59,6 +59,29 @@ body {
     justify-content: space-between;
 }
 
+/* Header Title */
+.header-title {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.header-title h1 {
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 600;
+}
+
+.demo-subtitle {
+    font-size: 0.8rem;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    opacity: 0.8;
+    margin-top: -5px;
+    margin-left: 2.7em;
+}
+
 /* Header Buttons */
 .header-buttons {
     display: flex;

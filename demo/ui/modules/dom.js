@@ -63,6 +63,10 @@ export function initializeDOMElements() {
             throw new Error(`Required DOM element not found: ${elementName}`);
         }
     }
+
+    // Initialize send button state - disable it if input is empty
+    const hasContent = DOM.messageInput.value.trim().length > 0;
+    DOM.sendButton.disabled = !hasContent;
 }
 
 export function updateStreamingStatus() {
