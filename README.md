@@ -70,9 +70,8 @@ Open **[http://localhost:3001](http://localhost:3001)** in your browser and try:
 💬 **"Show me how to create an order"** –  Provides instructions and an example code   
 💬 **"What is the Products API security schema?"** – Explains the security configuration defined in the API OpenAPi specification.
 
-> ⚠️ *Current demo UI does not support interactive approval for write operations (human‑in‑the‑loop). You can try this with API*
 
-![UI Demo](docs/nalAI.gif)
+![UI Demo](docs/ai-chat-demo.webp)
 
 
 ### 🌐 Optional: Use the HTTP API Directly

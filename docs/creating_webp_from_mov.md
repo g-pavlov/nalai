@@ -1,0 +1,1 @@
+ffmpeg -i ai-chat-demo.mov -vf "fps=8,scale=800:-1:flags=lanczos" -loop 0 ai-chat-demo.webp
