@@ -10,7 +10,6 @@ import { loadSavedState } from './state.js';
 import { showWelcomeMessage } from './messages.js';
 import { Logger } from './logger.js';
 import { ErrorHandler } from './errorHandler.js';
-import { initializeDebug } from './debug.js';
 import { initializeSettings } from './settings.js';
 
 // Import other modules as needed
@@ -31,9 +30,6 @@ export async function initializeApp() {
         
         // Configure marked.js
         configureMarked();
-        
-        // Initialize debug module
-        initializeDebug();
         
         // Initialize settings
         initializeSettings();

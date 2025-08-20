@@ -6,7 +6,6 @@
 import { API_CONFIG, MESSAGE_TYPES } from './config.js';
 import { DOM } from './dom.js';
 import { Logger } from './logger.js';
-import { toggleDebug } from './debug.js';
 import { updateJsonFormatStatus } from './dom.js';
 
 export function toggleSettings() {
@@ -122,13 +121,6 @@ export function initializeSettings() {
                 DOM.noCacheStatus.textContent = status;
             }
             Logger.info('No cache toggled', { enabled: DOM.noCacheToggle.checked });
-        });
-    }
-    
-    // Initialize debug toggle
-    if (DOM.debugToggle) {
-        DOM.debugToggle.addEventListener('change', function() {
-            toggleDebug();
         });
     }
     

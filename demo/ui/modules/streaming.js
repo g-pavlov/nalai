@@ -11,16 +11,6 @@ import { updateMessageContent, cleanupMessageProcessing } from './messages.js';
 import { setFullMessageContent, getFullMessageContent } from './state.js';
 import { Validator } from './validator.js';
 import { createInterruptUI } from './interrupts.js';
-import { 
-    isDebugEnabled, 
-    resetDebugState, 
-    addNodeLog, 
-    addToolCall, 
-    setFinalMessage, 
-    updateProgressDisplay, 
-    updateFinalMessageContent, 
-    createFinalUI 
-} from './debug.js';
 import { addToolCallsIndicatorToMessage } from './toolCalls.js';
 // Check JSON format setting directly from DOM
 function isJsonFormatEnabled() {
@@ -72,10 +62,7 @@ export async function handleStreamingResponse(response, assistantMessageDiv) {
     // Initialize streaming progress state
     resetStreamingProgressState();
     
-    // Initialize debug state if enabled
-    if (isDebugEnabled()) {
-        resetDebugState();
-    }
+
     
     try {
         while (true) {
@@ -188,10 +175,7 @@ function handleAIMessageChunk(message, assistantMessageDiv) {
     // Update the streaming content in real-time
     updateStreamingContent(assistantMessageDiv, newContent);
     
-    // Update debug mode if enabled
-    if (isDebugEnabled()) {
-        updateFinalMessageContent(assistantMessageDiv, newContent);
-    }
+
     
     Logger.info('Updated content with chunk', { 
         chunk: message.content, 
@@ -227,11 +211,7 @@ function handleAIMessage(message, assistantMessageDiv) {
     // Update streaming content (this will replace any existing content)
     updateStreamingContent(assistantMessageDiv, newContent);
     
-    // Set final message in debug mode
-    if (isDebugEnabled()) {
-        setFinalMessage(newContent);
-        updateFinalMessageContent(assistantMessageDiv, newContent);
-    }
+
     
     Logger.info('Set final AI message', { 
         length: newContent.length 
@@ -328,10 +308,7 @@ function handleToolMessage(message, assistantMessageDiv) {
         }
     }
     
-    // Add tool call to debug state if enabled
-    if (isDebugEnabled()) {
-        addToolCall(message.name, message.content);
-    }
+
     
     // Display tool call in streaming content
     displayToolCallInStreamingContent(assistantMessageDiv, toolCall);
@@ -392,11 +369,7 @@ function handleNodeUpdate(nodeName, updateValue, assistantMessageDiv) {
     // Update streaming UI to show progress
     updateStreamingUI(assistantMessageDiv);
     
-    // Add node log to debug state if enabled
-    if (isDebugEnabled()) {
-        addNodeLog(nodeName, updateValue);
-        updateProgressDisplay(assistantMessageDiv);
-    }
+
     
     Logger.info('Node completed', { nodeName });
 }
@@ -416,11 +389,7 @@ function handleCallModelEvent(updateValue, assistantMessageDiv) {
     // Update streaming UI to show progress
     updateStreamingUI(assistantMessageDiv);
     
-    // Add node log to debug state if enabled
-    if (isDebugEnabled()) {
-        addNodeLog('call_model', updateValue);
-        updateProgressDisplay(assistantMessageDiv);
-    }
+
     
     Logger.info('Call model completed', { updateValue });
 }
@@ -494,11 +463,7 @@ function handleCallApiEvent(updateValue, assistantMessageDiv) {
     // Update streaming UI to show progress
     updateStreamingUI(assistantMessageDiv);
     
-    // Add node log to debug state if enabled
-    if (isDebugEnabled()) {
-        addNodeLog('call_api', updateValue);
-        updateProgressDisplay(assistantMessageDiv);
-    }
+
     
     Logger.info('API call completed', { updateValue });
 }
@@ -868,69 +833,62 @@ export function handleStreamingCompletion(hasReceivedEvents, assistantMessageDiv
         return;
     }
     
-    // Create the final UI with debug information if enabled
-    if (isDebugEnabled()) {
-        createFinalUI(assistantMessageDiv);
+    // Standard completion - reorganize the UI
+    const progressContainer = assistantMessageDiv.querySelector('.streaming-progress');
+    Logger.info('Progress container found', { hasProgressContainer: !!progressContainer });
+    
+    if (progressContainer) {
+        // Remove the progress header
+        const progressHeader = progressContainer.querySelector('.progress-header');
+        Logger.info('Progress header found', { hasProgressHeader: !!progressHeader });
+        if (progressHeader) {
+            progressHeader.remove();
+            Logger.info('Progress header removed');
+        }
+        
+        // Remove or hide the progress content container to save space
+        const progressContent = progressContainer.querySelector('.progress-content');
+        if (progressContent) {
+            progressContent.remove();
+            Logger.info('Progress content container removed');
+        }
+    }
+    
+    // Show final content - get from DOM since state might be cleared
+    const streamingContent = assistantMessageDiv.querySelector('.streaming-content');
+    let finalContent = '';
+    
+    if (streamingContent) {
+        finalContent = streamingContent.textContent || streamingContent.innerText || '';
     } else {
-        // Standard completion - reorganize the UI
-        const progressContainer = assistantMessageDiv.querySelector('.streaming-progress');
-        Logger.info('Progress container found', { hasProgressContainer: !!progressContainer });
+        // Fallback to state if DOM doesn't have content
+        finalContent = getFullMessageContent();
+    }
+    
+    Logger.info('Final content check', { 
+        hasStreamingContent: !!streamingContent, 
+        contentLength: finalContent.length,
+        contentPreview: finalContent.substring(0, 100)
+    });
+    
+    if (finalContent.trim()) {
+        // Content exists and is already in DOM - just ensure it's visible
+        Logger.info('Final content confirmed, streaming content already displayed');
         
-        if (progressContainer) {
-            // Remove the progress header
-            const progressHeader = progressContainer.querySelector('.progress-header');
-            Logger.info('Progress header found', { hasProgressHeader: !!progressHeader });
-            if (progressHeader) {
-                progressHeader.remove();
-                Logger.info('Progress header removed');
-            }
-            
-
-            
-            // Remove or hide the progress content container to save space
-            const progressContent = progressContainer.querySelector('.progress-content');
-            if (progressContent) {
-                progressContent.remove();
-                Logger.info('Progress content container removed');
-            }
+        // Add tool calls indicator if there are tool calls
+        if (streamingProgressState.toolCalls && streamingProgressState.toolCalls.length > 0) {
+            addToolCallsIndicatorToMessage(
+                assistantMessageDiv, 
+                streamingProgressState.toolCalls.length, 
+                streamingProgressState.toolCalls
+            );
+            Logger.info('Added tool calls indicator', { 
+                toolCount: streamingProgressState.toolCalls.length 
+            });
         }
-        
-        // Show final content - get from DOM since state might be cleared
-        const streamingContent = assistantMessageDiv.querySelector('.streaming-content');
-        let finalContent = '';
-        
-        if (streamingContent) {
-            finalContent = streamingContent.textContent || streamingContent.innerText || '';
-        } else {
-            // Fallback to state if DOM doesn't have content
-            finalContent = getFullMessageContent();
-        }
-        
-        Logger.info('Final content check', { 
-            hasStreamingContent: !!streamingContent, 
-            contentLength: finalContent.length,
-            contentPreview: finalContent.substring(0, 100)
-        });
-        
-        if (finalContent.trim()) {
-            // Content exists and is already in DOM - just ensure it's visible
-            Logger.info('Final content confirmed, streaming content already displayed');
-            
-            // Add tool calls indicator if there are tool calls
-            if (streamingProgressState.toolCalls && streamingProgressState.toolCalls.length > 0) {
-                addToolCallsIndicatorToMessage(
-                    assistantMessageDiv, 
-                    streamingProgressState.toolCalls.length, 
-                    streamingProgressState.toolCalls
-                );
-                Logger.info('Added tool calls indicator', { 
-                    toolCount: streamingProgressState.toolCalls.length 
-                });
-            }
-        } else {
-            assistantMessageDiv.textContent = 'Response incomplete - please try again';
-            assistantMessageDiv.style.color = '#dc2626';
-        }
+    } else {
+        assistantMessageDiv.textContent = 'Response incomplete - please try again';
+        assistantMessageDiv.style.color = '#dc2626';
     }
 }
 

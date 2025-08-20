@@ -14,8 +14,6 @@ export const DOM = {
     streamingStatus: null,
     noCacheToggle: null,
     noCacheStatus: null,
-    debugToggle: null,
-    debugStatus: null,
     jsonFormatToggle: null,
     jsonFormatStatus: null,
     modelSelector: null,
@@ -37,8 +35,6 @@ export function initializeDOMElements() {
     DOM.streamingStatus = document.getElementById('streamingStatus');
     DOM.noCacheToggle = document.getElementById('noCacheToggle');
     DOM.noCacheStatus = document.getElementById('noCacheStatus');
-    DOM.debugToggle = document.getElementById('debugToggle');
-    DOM.debugStatus = document.getElementById('debugStatus');
     DOM.jsonFormatToggle = document.getElementById('jsonFormatToggle');
     DOM.jsonFormatStatus = document.getElementById('jsonFormatStatus');
     DOM.modelSelector = document.getElementById('modelSelector');
@@ -53,7 +49,7 @@ export function initializeDOMElements() {
     // Validate required elements
     const requiredElements = [
         'chatContainer', 'messageInput', 'sendButton',
-        'streamingToggle', 'noCacheToggle', 'debugToggle', 'jsonFormatToggle', 'modelSelector',
+        'streamingToggle', 'noCacheToggle', 'jsonFormatToggle', 'modelSelector',
         'settingsPanel', 'settingsButton', 'conversationsPanel',
         'conversationsList', 'conversationsLoading', 'conversationsEmpty', 'conversationsError'
     ];
@@ -81,12 +77,6 @@ export function updateNoCacheStatus() {
     DOM.noCacheStatus.style.color = isEnabled ? '#dc2626' : '#6b7280';
 }
 
-export function updateDebugStatus() {
-    const isEnabled = DOM.debugToggle.checked;
-    DOM.debugStatus.textContent = isEnabled ? 'ON' : 'OFF';
-    DOM.debugStatus.style.color = isEnabled ? '#f59e0b' : '#6b7280';
-}
-
 export function updateJsonFormatStatus() {
     const isEnabled = DOM.jsonFormatToggle.checked;
     DOM.jsonFormatStatus.textContent = isEnabled ? 'ON' : 'OFF';
@@ -96,7 +86,6 @@ export function updateJsonFormatStatus() {
 export function updateStatusIndicators() {
     updateStreamingStatus();
     updateNoCacheStatus();
-    updateDebugStatus();
     updateJsonFormatStatus();
     updateConnectionIndicator();
 }
