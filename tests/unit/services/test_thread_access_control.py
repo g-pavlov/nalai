@@ -20,7 +20,6 @@ from nalai.services.thread_access_control import (
     InMemoryThreadAccessControl,
     ThreadAccessControl,
     ThreadAccessControlBackend,
-    create_user_scoped_thread_id,
     get_thread_access_control,
     set_thread_access_control,
     validate_thread_access,
@@ -263,17 +262,25 @@ class TestThreadAccessControl:
 
     @pytest.mark.asyncio
     async def test_validate_thread_access(self, access_control):
-        """Test thread access validation through service."""
+        """Test thread access validation."""
         user_id = "user-123"
-        thread_id = "550e8400-e29b-41d4-a716-446655440000"
+        thread_id = "550e8400-e29b-41d4-a716-446655440010"
 
-        # Create thread
+        # Create thread first
         await access_control.create_thread(user_id, thread_id)
 
         # Validate access
-        result = await access_control.validate_thread_access(user_id, thread_id)
+        access_result = await access_control.validate_thread_access(user_id, thread_id)
 
-        assert result is True
+        assert access_result is True
+
+        # Test access by different user
+        other_user_id = "user-456"
+        other_access_result = await access_control.validate_thread_access(
+            other_user_id, thread_id
+        )
+
+        assert other_access_result is False
 
     @pytest.mark.asyncio
     async def test_create_thread_with_id(self, access_control):
@@ -341,53 +348,21 @@ class TestThreadAccessControl:
 
     @pytest.mark.asyncio
     async def test_delete_thread(self, access_control):
-        """Test deleting thread through service."""
+        """Test deleting a thread."""
         user_id = "user-123"
         thread_id = "550e8400-e29b-41d4-a716-446655440005"
 
-        # Create thread
+        # Create thread first
         await access_control.create_thread(user_id, thread_id)
 
         # Delete thread
-        result = await access_control.delete_thread(user_id, thread_id)
+        delete_result = await access_control.delete_thread(user_id, thread_id)
 
-        assert result is True
+        assert delete_result is True
 
-        # Verify thread no longer exists
+        # Verify thread is deleted
         access_result = await access_control.validate_thread_access(user_id, thread_id)
         assert access_result is False
-
-    @pytest.mark.asyncio
-    async def test_create_user_scoped_thread_id(self, access_control):
-        """Test creating user-scoped thread ID."""
-        user_id = "user-123"
-        thread_id = "550e8400-e29b-41d4-a716-446655440006"
-
-        scoped_id = await access_control.create_user_scoped_thread_id(
-            user_id, thread_id
-        )
-
-        assert scoped_id == f"user:{user_id}:{thread_id}"
-
-    @pytest.mark.asyncio
-    async def test_extract_base_thread_id(self, access_control):
-        """Test extracting base thread ID from user-scoped ID."""
-        user_id = "user-123"
-        thread_id = "550e8400-e29b-41d4-a716-446655440007"
-        scoped_id = f"user:{user_id}:{thread_id}"
-
-        extracted_id = await access_control.extract_base_thread_id(scoped_id)
-
-        assert extracted_id == thread_id
-
-    @pytest.mark.asyncio
-    async def test_extract_base_thread_id_no_prefix(self, access_control):
-        """Test extracting base thread ID from non-scoped ID."""
-        thread_id = "550e8400-e29b-41d4-a716-446655440008"
-
-        extracted_id = await access_control.extract_base_thread_id(thread_id)
-
-        assert extracted_id == thread_id
 
     @pytest.mark.asyncio
     async def test_get_thread_ownership(self, access_control):
@@ -415,6 +390,29 @@ class TestThreadAccessControl:
         ownership = await access_control.get_thread_ownership(thread_id)
 
         assert ownership is None
+
+    @pytest.mark.asyncio
+    async def test_create_user_scoped_thread_id(self, access_control):
+        """Test creating user-scoped thread ID."""
+        user_id = "user-123"
+        thread_id = "550e8400-e29b-41d4-a716-446655440012"
+
+        user_scoped_id = await access_control.create_user_scoped_thread_id(
+            user_id, thread_id
+        )
+
+        assert user_scoped_id == f"user:{user_id}:{thread_id}"
+
+    @pytest.mark.asyncio
+    async def test_create_user_scoped_thread_id_invalid_uuid(self, access_control):
+        """Test creating user-scoped thread ID with invalid UUID."""
+        user_id = "user-123"
+        invalid_thread_id = "invalid-uuid"
+
+        with pytest.raises(ValueError, match="thread_id must be a valid UUID4"):
+            await access_control.create_user_scoped_thread_id(
+                user_id, invalid_thread_id
+            )
 
     def test_unsupported_backend(self):
         """Test initialization with unsupported backend."""
@@ -467,7 +465,7 @@ class TestThreadAccessControlGlobal:
         user_id = "user-123"
         thread_id = "550e8400-e29b-41d4-a716-446655440010"
 
-        # Create thread
+        # Create thread first
         access_control = get_thread_access_control()
         await access_control.create_thread(user_id, thread_id)
 
@@ -475,16 +473,6 @@ class TestThreadAccessControlGlobal:
         result = await validate_thread_access(user_id, thread_id)
 
         assert result is True
-
-    @pytest.mark.asyncio
-    async def test_create_user_scoped_thread_id_global(self, mock_settings):
-        """Test create_user_scoped_thread_id global function."""
-        user_id = "user-123"
-        thread_id = "550e8400-e29b-41d4-a716-446655440011"
-
-        scoped_id = await create_user_scoped_thread_id(user_id, thread_id)
-
-        assert scoped_id == f"user:{user_id}:{thread_id}"
 
 
 class TestThreadAccessControlIntegration:
@@ -521,36 +509,6 @@ class TestThreadAccessControlIntegration:
         assert user1_access_after is True
 
     @pytest.mark.asyncio
-    async def test_user_scoped_thread_id_isolation(self):
-        """Test that user-scoped thread IDs provide natural isolation."""
-        access_control = ThreadAccessControl(backend="memory")
-
-        user1_id = "user-123"
-        user2_id = "user-789"
-        base_thread_id = "550e8400-e29b-41d4-a716-446655440013"
-
-        # Create user-scoped thread IDs
-        user1_scoped_id = await access_control.create_user_scoped_thread_id(
-            user1_id, base_thread_id
-        )
-        user2_scoped_id = await access_control.create_user_scoped_thread_id(
-            user2_id, base_thread_id
-        )
-
-        # They should be different
-        assert user1_scoped_id != user2_scoped_id
-        assert user1_scoped_id == f"user:{user1_id}:{base_thread_id}"
-        assert user2_scoped_id == f"user:{user2_id}:{base_thread_id}"
-
-        # Extract base thread IDs
-        user1_base = await access_control.extract_base_thread_id(user1_scoped_id)
-        user2_base = await access_control.extract_base_thread_id(user2_scoped_id)
-
-        # Base thread IDs should be the same
-        assert user1_base == user2_base
-        assert user1_base == base_thread_id
-
-    @pytest.mark.asyncio
     async def test_thread_lifecycle(self):
         """Test complete thread lifecycle."""
         access_control = ThreadAccessControl(backend="memory")
@@ -572,19 +530,22 @@ class TestThreadAccessControlIntegration:
 
         # 4. Get ownership
         ownership = await access_control.get_thread_ownership(thread_id)
+        assert ownership is not None
         assert ownership.user_id == user_id
         assert ownership.thread_id == thread_id
 
         # 5. Delete thread
-        delete_result = await access_control.delete_thread(user_id, thread_id)
-        assert delete_result is True
+        deleted = await access_control.delete_thread(user_id, thread_id)
+        assert deleted is True
 
-        # 6. Verify thread no longer exists
-        access_after = await access_control.validate_thread_access(user_id, thread_id)
-        assert access_after is False
+        # 6. Verify thread is gone
+        access_after_delete = await access_control.validate_thread_access(
+            user_id, thread_id
+        )
+        assert access_after_delete is False
 
-        threads_after = await access_control.list_user_threads(user_id)
-        assert len(threads_after) == 0
+        threads_after_delete = await access_control.list_user_threads(user_id)
+        assert len(threads_after_delete) == 0
 
     @pytest.mark.asyncio
     async def test_concurrent_access_simulation(self):

@@ -125,7 +125,7 @@ class TestBasicRoutes:
 class TestConversationInvoke:
     """Test synchronous conversation invocation - critical business logic."""
 
-    @patch("nalai.services.thread_access_control.get_user_context")
+    @patch("nalai.server.runtime_config.get_user_context")
     def test_successful_conversation_invoke(
         self,
         mock_get_user_context,
@@ -206,7 +206,7 @@ class TestConversationInvoke:
 class TestConversationStreamEvents:
     """Test streaming conversation events - critical for real-time functionality."""
 
-    @patch("nalai.services.thread_access_control.get_user_context")
+    @patch("nalai.server.runtime_config.get_user_context")
     def test_successful_stream_events(
         self,
         mock_get_user_context,
@@ -274,8 +274,9 @@ class TestResumeDecision:
     """Test resume decision functionality - critical for human-in-the-loop."""
 
     @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.services.thread_access_control.get_thread_access_control")
     def test_resume_decision_stream_success_cases(
-        self, mock_get_user_context, client, app_and_agent
+        self, mock_get_access_control, mock_get_user_context, client, app_and_agent
     ):
         """Critical: Should handle resume decisions correctly."""
         _, mock_agent = app_and_agent
@@ -284,6 +285,11 @@ class TestResumeDecision:
         mock_user_context = MagicMock()
         mock_user_context.user_id = "test-user"
         mock_get_user_context.return_value = mock_user_context
+
+        # Mock access control
+        mock_access_control = AsyncMock()
+        mock_access_control.validate_thread_access.return_value = True
+        mock_get_access_control.return_value = mock_access_control
 
         conversation_id = str(uuid.uuid4())
         print(f"Generated thread_id: user:test-user:{conversation_id}")
@@ -318,12 +324,31 @@ class TestResumeDecision:
             ("reject", None, 200),
         ],
     )
+    @patch("nalai.server.runtime_config.get_user_context")
+    @patch("nalai.services.thread_access_control.get_thread_access_control")
     def test_resume_decision_batch_success_cases(
-        self, decision, args, expected_status, client, app_and_agent
+        self,
+        mock_get_access_control,
+        mock_get_user_context,
+        decision,
+        args,
+        expected_status,
+        client,
+        app_and_agent,
     ):
         """Critical: Should handle resume decisions in batch mode."""
         _, mock_agent = app_and_agent
         mock_agent.ainvoke.return_value = {"output": "test response"}
+
+        # Mock user context
+        mock_user_context = MagicMock()
+        mock_user_context.user_id = "test-user"
+        mock_get_user_context.return_value = mock_user_context
+
+        # Mock access control
+        mock_access_control = AsyncMock()
+        mock_access_control.validate_thread_access.return_value = True
+        mock_get_access_control.return_value = mock_access_control
 
         conversation_id = str(uuid.uuid4())
 
@@ -343,7 +368,11 @@ class TestResumeDecision:
     @pytest.mark.parametrize(
         "conversation_id,decision,expected_status",
         [
-            ("invalid-uuid", "accept", 400),  # Invalid UUID - should be 400 Bad Request
+            (
+                "invalid-uuid",
+                "accept",
+                422,
+            ),  # Invalid UUID - should be 422 Validation Error
             (
                 "12345678-1234-1234-1234-123456789abc",
                 "invalid_type",
@@ -493,11 +522,11 @@ class TestLoadConversation:
         assert "not found" in response.json()["detail"]
 
     def test_load_conversation_invalid_id(self, client, app_and_agent):
-        """Should return 400 for invalid conversation ID format."""
+        """Should return 422 for invalid conversation ID format."""
         conversation_id = "invalid-id"
         response = client.get(f"/api/v1/conversations/{conversation_id}")
 
-        assert response.status_code == 400
+        assert response.status_code == 422
 
 
 class TestListConversations:
@@ -664,9 +693,6 @@ class TestDeleteConversation:
         mock_access_control.validate_thread_access.assert_called_once_with(
             "test-user", "550e8400-e29b-41d4-a716-446655440001"
         )
-        mock_access_control.create_user_scoped_thread_id.assert_called_once_with(
-            "test-user", "550e8400-e29b-41d4-a716-446655440001"
-        )
         mock_access_control.delete_thread.assert_called_once_with(
             "test-user", "550e8400-e29b-41d4-a716-446655440001"
         )
@@ -719,9 +745,6 @@ class TestDeleteConversation:
         # Mock access control - user owns the conversation but deletion fails
         mock_access_control = AsyncMock()
         mock_access_control.validate_thread_access.return_value = True
-        mock_access_control.create_user_scoped_thread_id.return_value = (
-            "user:test-user:550e8400-e29b-41d4-a716-446655440001"
-        )
         mock_access_control.delete_thread.return_value = False  # Conversation not found
         mock_get_access_control.return_value = mock_access_control
 
@@ -748,8 +771,8 @@ class TestDeleteConversation:
         assert "Authentication required" in response.json()["detail"]
 
     def test_delete_conversation_invalid_id(self, client, app_and_agent):
-        """Should return 400 when conversation ID format is invalid."""
+        """Should return 422 when conversation ID format is invalid."""
         response = client.delete("/api/v1/conversations/invalid-id-format")
 
-        assert response.status_code == 400
-        assert "thread_id must be a valid UUID4" in response.json()["detail"]
+        assert response.status_code == 422
+        assert "conversation_id must be a valid UUID4" in response.json()["detail"]

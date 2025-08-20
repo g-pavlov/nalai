@@ -45,8 +45,9 @@ cd nalai
 ### 2. Launch the Demo Environment
 
 ```bash
-make ui-run
+make demo-start
 ```
+> You can stop the demo environment with `make demo-stop`
 
 #### 2.1. Select LLM Provider
 

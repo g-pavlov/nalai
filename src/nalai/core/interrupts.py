@@ -34,6 +34,15 @@ def log_human_review_action(
     thread_id = configurable.get("thread_id", "unknown")
     org_unit_id = configurable.get("org_unit_id", "unknown")
     user_id = configurable.get("user_id", "unknown")
+
+    # Extract base UUID from user-scoped thread_id for logging
+    base_thread_id = thread_id
+    if thread_id != "unknown" and thread_id.startswith("user:"):
+        try:
+            base_thread_id = thread_id.split(":", 2)[2]
+        except (IndexError, AttributeError):
+            logger.warning(f"Invalid user-scoped thread_id format: {thread_id}")
+            base_thread_id = thread_id
     # user_email = configurable.get("user_email", "unknown")  # Unused
     timestamp = datetime.now(UTC).isoformat()
 
@@ -45,7 +54,7 @@ def log_human_review_action(
 
     logger.info(
         f"Human review action: *{review_action}* is triggered by user: {masked_user_id} "
-        f"for threadId: {thread_id} in org_unit_id: {masked_org_unit_id}. "
+        f"for threadId: {base_thread_id} in org_unit_id: {masked_org_unit_id}. "
         f"Planned API to be executed: tool_call: {tool_call}. Timestamp: {timestamp}"
     )
 

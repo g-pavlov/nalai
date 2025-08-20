@@ -203,7 +203,7 @@ class ThreadAccessControl:
 
     async def validate_thread_access(self, user_id: str, thread_id: str) -> bool:
         """Validate that user owns the thread."""
-        # Validate thread_id format before processing
+        # Validate thread_id format before processing (must be UUID)
         validate_thread_id_format(thread_id)
         return await self.backend.validate_thread_access(user_id, thread_id)
 
@@ -217,7 +217,7 @@ class ThreadAccessControl:
         if not thread_id:
             thread_id = str(uuid.uuid4())
         else:
-            # Validate thread_id format if provided
+            # Validate thread_id format if provided (must be UUID)
             validate_thread_id_format(thread_id)
 
         await self.backend.create_thread(user_id, thread_id, metadata)
@@ -229,26 +229,9 @@ class ThreadAccessControl:
 
     async def delete_thread(self, user_id: str, thread_id: str) -> bool:
         """Delete a thread (only if user owns it)."""
-        # Validate thread_id format before processing
+        # Validate thread_id format before processing (must be UUID)
         validate_thread_id_format(thread_id)
         return await self.backend.delete_thread(user_id, thread_id)
-
-    async def create_user_scoped_thread_id(self, user_id: str, thread_id: str) -> str:
-        """Create user-scoped thread ID for LangGraph."""
-        # Validate thread_id format before processing
-        validate_thread_id_format(thread_id)
-        return f"user:{user_id}:{thread_id}"
-
-    async def extract_base_thread_id(self, user_scoped_thread_id: str) -> str:
-        """Extract base thread ID from user-scoped thread ID."""
-        # Validate thread_id format before processing
-        validate_thread_id_format(user_scoped_thread_id)
-
-        if user_scoped_thread_id.startswith("user:"):
-            parts = user_scoped_thread_id.split(":", 2)
-            if len(parts) >= 3:
-                return parts[2]
-        return user_scoped_thread_id
 
     async def get_thread_ownership(self, thread_id: str) -> ThreadOwnership | None:
         """Get thread ownership information."""
@@ -257,6 +240,16 @@ class ThreadAccessControl:
         if isinstance(self.backend, InMemoryThreadAccessControl):
             return self.backend._thread_ownership.get(thread_id)
         return None
+
+    async def create_user_scoped_thread_id(self, user_id: str, thread_id: str) -> str:
+        """Create a user-scoped thread ID for LangGraph checkpointing."""
+        # Validate thread_id format before processing (must be UUID)
+        validate_thread_id_format(thread_id)
+
+        # Create user-scoped ID format: user:{user_id}:{thread_id}
+        user_scoped_thread_id = f"user:{user_id}:{thread_id}"
+
+        return user_scoped_thread_id
 
 
 # Global thread access control instance
@@ -282,12 +275,6 @@ async def validate_thread_access(user_id: str, thread_id: str) -> bool:
     """Validate thread access for a user."""
     access_control = get_thread_access_control()
     return await access_control.validate_thread_access(user_id, thread_id)
-
-
-async def create_user_scoped_thread_id(user_id: str, thread_id: str) -> str:
-    """Create user-scoped thread ID for LangGraph."""
-    access_control = get_thread_access_control()
-    return await access_control.create_user_scoped_thread_id(user_id, thread_id)
 
 
 async def validate_conversation_access_and_scope(
@@ -391,21 +378,10 @@ async def validate_conversation_access_and_scope(
                 status_code=500, detail="Failed to create conversation"
             ) from e
 
-    # Create user-scoped conversation ID for LangGraph (only if not already scoped)
-    if conversation_id.startswith("user:"):
-        # Conversation ID is already user-scoped, validate it belongs to this user
-        parts = conversation_id.split(":", 2)
-        if len(parts) >= 3 and parts[1] == user_id:
-            user_scoped_conversation_id = conversation_id
-        else:
-            raise HTTPException(status_code=403, detail="Access denied to conversation")
-    else:
-        # Conversation ID is not scoped, create user-scoped version
-        user_scoped_conversation_id = await access_control.create_user_scoped_thread_id(
-            user_id, conversation_id
-        )
+    # Create user-scoped conversation ID for LangGraph
+    user_scoped_conversation_id = f"user:{user_id}:{conversation_id}"
 
-    # Update config with user-scoped conversation ID
+    # Update config with user-scoped conversation ID for LangGraph
     configurable = _ensure_configurable(config)
     configurable["thread_id"] = (
         user_scoped_conversation_id  # Keep using thread_id in data

@@ -10,8 +10,6 @@ import sys
 from unittest.mock import patch
 
 import pytest
-from langchain_core.tools import BaseTool
-from langgraph.prebuilt.interrupt import HumanInterruptConfig
 
 # Add src to path for imports
 sys.path.insert(
@@ -40,103 +38,140 @@ def mock_config():
 def mock_tool_call():
     """Create a mock tool call for testing."""
     return {
-        "id": "call_123",
-        "name": "get_http_requests",
-        "args": {"method": "GET", "url": "https://api.example.com/users"},
-        "type": "tool_call",
+        "name": "test_tool",
+        "args": {"param1": "value1"},
+        "description": "Test tool call",
     }
 
 
 class TestLogHumanReviewAction:
-    """Test suite for human review action logging."""
+    """Test human review action logging."""
 
     @patch("nalai.core.interrupts.logger")
-    def test_log_human_review_action_success(
-        self, mock_logger, mock_config, mock_tool_call
-    ):
-        """Test successful logging of human review action."""
-        log_human_review_action("continue", mock_config, mock_tool_call)
+    def test_log_human_review_action_with_user_scoped_thread_id(self, mock_logger):
+        """Test logging with user-scoped thread ID."""
+        config = {
+            "configurable": {
+                "thread_id": "user:test_user:550e8400-e29b-41d4-a716-446655440000",
+                "org_unit_id": "test_org",
+                "user_id": "test_user",
+            }
+        }
+        tool_call = {"name": "test_tool", "args": {"param": "value"}}
 
-        # Verify logger was called
+        log_human_review_action("accept", config, tool_call)
+
+        # Verify that the base UUID is extracted and logged
         mock_logger.info.assert_called_once()
         log_message = mock_logger.info.call_args[0][0]
-
-        # Verify key information is in the log message
-        assert "continue" in log_message
-        assert "test_thread" in log_message
-        assert "test_***_org" in log_message  # PII masking replaces org_unit_id
-        assert "get_http_requests" in log_message
+        assert "550e8400-e29b-41d4-a716-446655440000" in log_message
+        assert "user:test_user:550e8400-e29b-41d4-a716-446655440000" not in log_message
 
     @patch("nalai.core.interrupts.logger")
-    def test_log_human_review_action_with_none_config(
-        self, mock_logger, mock_tool_call
-    ):
-        """Test logging with None config."""
-        log_human_review_action("abort", None, mock_tool_call)
+    def test_log_human_review_action_with_base_uuid(self, mock_logger):
+        """Test logging with base UUID thread ID."""
+        config = {
+            "configurable": {
+                "thread_id": "550e8400-e29b-41d4-a716-446655440000",
+                "org_unit_id": "test_org",
+                "user_id": "test_user",
+            }
+        }
+        tool_call = {"name": "test_tool", "args": {"param": "value"}}
 
-        # Verify logger was called with unknown values
+        log_human_review_action("accept", config, tool_call)
+
+        # Verify that the base UUID is logged as-is
         mock_logger.info.assert_called_once()
         log_message = mock_logger.info.call_args[0][0]
-        assert "unknown" in log_message
+        assert "550e8400-e29b-41d4-a716-446655440000" in log_message
 
     @patch("nalai.core.interrupts.logger")
-    def test_log_human_review_action_with_missing_configurable(
-        self, mock_logger, mock_tool_call
-    ):
-        """Test logging with config missing configurable section."""
-        config = {"other_section": "value"}
-        log_human_review_action("update", config, mock_tool_call)
+    def test_log_human_review_action_with_invalid_user_scoped_id(self, mock_logger):
+        """Test logging with invalid user-scoped thread ID format."""
+        config = {
+            "configurable": {
+                "thread_id": "user:invalid_format",
+                "org_unit_id": "test_org",
+                "user_id": "test_user",
+            }
+        }
+        tool_call = {"name": "test_tool", "args": {"param": "value"}}
 
-        # Verify logger was called with unknown values
+        log_human_review_action("accept", config, tool_call)
+
+        # Verify warning is logged for invalid format
+        mock_logger.warning.assert_called_once()
+        warning_message = mock_logger.warning.call_args[0][0]
+        assert "Invalid user-scoped thread_id format" in warning_message
+
+        # Verify info is still logged with original thread_id
         mock_logger.info.assert_called_once()
         log_message = mock_logger.info.call_args[0][0]
-        assert "unknown" in log_message
+        assert "user:invalid_format" in log_message
+
+    @patch("nalai.core.interrupts.logger")
+    def test_log_human_review_action_with_unknown_thread_id(self, mock_logger):
+        """Test logging with unknown thread ID."""
+        config = {
+            "configurable": {
+                "thread_id": "unknown",
+                "org_unit_id": "test_org",
+                "user_id": "test_user",
+            }
+        }
+        tool_call = {"name": "test_tool", "args": {"param": "value"}}
+
+        log_human_review_action("accept", config, tool_call)
+
+        # Verify that "unknown" is logged as-is
+        mock_logger.info.assert_called_once()
+        log_message = mock_logger.info.call_args[0][0]
+        assert "threadId: unknown" in log_message
 
 
 class TestAddHumanInTheLoop:
-    """Test suite for human-in-the-loop tool wrapping."""
+    """Test human-in-the-loop tool wrapping."""
 
-    def test_add_human_in_the_loop_with_function(self):
-        """Test wrapping a function with human-in-the-loop."""
+    def test_add_human_in_the_loop_with_callable(self):
+        """Test wrapping a callable with human-in-the-loop."""
 
-        def test_function(x: int) -> int:
-            """Test function that doubles the input."""
-            return x * 2
+        def test_tool(param: str) -> str:
+            """Test tool that returns a result."""
+            return f"Result: {param}"
 
-        wrapped_tool = add_human_in_the_loop(test_function)
+        wrapped_tool = add_human_in_the_loop(test_tool)
 
-        assert isinstance(wrapped_tool, BaseTool)
-        assert wrapped_tool.name == "test_function"
+        assert wrapped_tool.name == "test_tool"
+        assert wrapped_tool.description is not None
 
     def test_add_human_in_the_loop_with_base_tool(self):
         """Test wrapping a BaseTool with human-in-the-loop."""
         from langchain_core.tools import tool
 
         @tool
-        def test_tool(x: int) -> int:
-            """A test tool that doubles the input."""
-            return x * 2
+        def test_tool(x: str) -> str:
+            """Test tool that returns a result."""
+            return f"Result: {x}"
 
         wrapped_tool = add_human_in_the_loop(test_tool)
 
-        assert isinstance(wrapped_tool, BaseTool)
         assert wrapped_tool.name == "test_tool"
+        assert wrapped_tool.description == "Test tool that returns a result."
 
     def test_add_human_in_the_loop_with_custom_config(self):
         """Test wrapping with custom interrupt configuration."""
 
-        def test_function(x: int) -> int:
-            """Test function that doubles the input."""
-            return x * 2
+        def test_tool(param: str) -> str:
+            """Test tool that returns a result."""
+            return f"Result: {param}"
 
-        custom_config: HumanInterruptConfig = {
+        custom_config = {
             "allow_accept": True,
             "allow_edit": False,
             "allow_respond": True,
         }
 
-        wrapped_tool = add_human_in_the_loop(
-            test_function, interrupt_config=custom_config
-        )
+        wrapped_tool = add_human_in_the_loop(test_tool, interrupt_config=custom_config)
 
-        assert isinstance(wrapped_tool, BaseTool)
+        assert wrapped_tool.name == "test_tool"

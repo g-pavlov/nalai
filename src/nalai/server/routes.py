@@ -7,20 +7,20 @@ and conversation endpoints with access control integration.
 
 import json
 import logging
+import uuid
 from collections.abc import Callable
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse, StreamingResponse
 from langgraph.graph.state import CompiledStateGraph
 
-from ..config import BaseRuntimeConfiguration, settings
-from ..services.thread_access_control import validate_conversation_access_and_scope
-from ..utils.validation import validate_thread_id_format
+from ..config import settings
 from .runtime_config import (
     default_modify_runtime_config,
     validate_runtime_config,
 )
 from .schemas import (
+    ConversationIdPathParam,
     ConversationRequest,
     ConversationResponse,
     ConversationSummary,
@@ -36,6 +36,20 @@ from .streaming import (
 )
 
 logger = logging.getLogger("nalai")
+
+
+def create_user_scoped_conversation_id(user_id: str, conversation_id: str) -> str:
+    """
+    Create a user-scoped conversation ID for LangGraph checkpointing.
+
+    Args:
+        user_id: The user ID
+        conversation_id: The conversation ID (UUID)
+
+    Returns:
+        str: User-scoped conversation ID in format "user:{user_id}:{conversation_id}"
+    """
+    return f"user:{user_id}:{conversation_id}"
 
 
 class SSEStreamingResponse(StreamingResponse):
@@ -113,54 +127,14 @@ def create_conversation_routes(
 ) -> None:
     """Create conversation endpoint routes."""
 
-    def get_conversation_headers(
-        conversation_id: str, user_id: str = "dev-user"
-    ) -> dict[str, str]:
+    def get_conversation_headers(conversation_id: str) -> dict[str, str]:
         """Get standard conversation response headers."""
-        # Always return user-scoped ID for consistency
-        if conversation_id.startswith("user:"):
-            return {"X-Conversation-ID": conversation_id}
-        else:
-            # Convert base UUID to user-scoped ID
-            return {"X-Conversation-ID": f"user:{user_id}:{conversation_id}"}
+        return {"X-Conversation-ID": conversation_id}
 
     def is_streaming_request(req: Request) -> bool:
         """Check if the request prefers streaming response."""
         accept_header = req.headers.get("accept", "text/event-stream")
         return "text/event-stream" in accept_header
-
-    async def setup_runtime_config(
-        config: BaseRuntimeConfiguration, req: Request, is_initial_request: bool = True
-    ) -> tuple[dict, str]:
-        """
-        Lean runtime configuration setup.
-
-        Args:
-            config: Configuration dictionary
-            req: FastAPI request object
-            is_initial_request: True for initial chat requests, False for resume operations
-        """
-        if is_initial_request:
-            # For initial requests: create user-scoped conversation ID if needed
-            (
-                config,
-                user_scoped_conversation_id,
-            ) = await validate_conversation_access_and_scope(config, req)
-            validate_runtime_config(config)
-            return config, user_scoped_conversation_id
-        else:
-            # For resume operations: validate existing conversation ID format only
-            agent_config = modify_runtime_config(config, req)
-            validate_runtime_config(agent_config)
-            conversation_id = agent_config.get("configurable", {}).get(
-                "thread_id", "unknown"
-            )
-            # Validate the conversation ID format without re-scoping
-            try:
-                validate_thread_id_format(conversation_id)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e)) from e
-            return agent_config, conversation_id
 
     async def get_user_context_safe(req: Request) -> tuple[str, str]:
         """
@@ -183,55 +157,63 @@ def create_conversation_routes(
                 status_code=401, detail="Authentication required"
             ) from e
 
-    async def validate_conversation_access(
-        conversation_id: str, user_id: str
-    ) -> tuple[str, str]:
+    async def validate_conversation_access(conversation_id: str, user_id: str) -> None:
         """
-        Validate conversation access and return user-scoped conversation ID.
+        Validate conversation access for a user.
 
         Args:
-            conversation_id: The conversation ID to validate
+            conversation_id: The conversation ID to validate (must be UUID)
             user_id: The user ID requesting access
 
-        Returns:
-            tuple: (user_scoped_conversation_id, base_conversation_id)
-
         Raises:
-            HTTPException: If access is denied
+            HTTPException: If access is denied or conversation_id is invalid
         """
         from ..services.thread_access_control import get_thread_access_control
 
         access_control = get_thread_access_control()
 
-        # Determine the conversation ID to use for LangGraph
-        if conversation_id.startswith("user:"):
-            # Already user-scoped, validate it belongs to this user
-            parts = conversation_id.split(":", 2)
-            if len(parts) >= 3 and parts[1] == user_id:
-                user_scoped_conversation_id = conversation_id
-                base_conversation_id = parts[2]
-            else:
-                raise HTTPException(
-                    status_code=403, detail="Access denied to conversation"
-                )
-        else:
-            # Not user-scoped, validate access and create user-scoped version
-            has_access = await access_control.validate_thread_access(
-                user_id, conversation_id
-            )
-            if not has_access:
-                raise HTTPException(
-                    status_code=403, detail="Access denied to conversation"
-                )
+        # Validate that conversation_id is a UUID using schema
+        try:
+            ConversationIdPathParam(conversation_id=conversation_id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
 
-            user_scoped_conversation_id = (
-                await access_control.create_user_scoped_thread_id(
-                    user_id, conversation_id
-                )
-            )
-            base_conversation_id = conversation_id
+        # Validate access using UUID
+        has_access = await access_control.validate_thread_access(
+            user_id, conversation_id
+        )
+        if not has_access:
+            raise HTTPException(status_code=403, detail="Access denied to conversation")
 
-        return user_scoped_conversation_id, base_conversation_id
+    async def create_agent_config(req: Request, conversation_id: str) -> dict:
+        """
+        Create agent configuration for conversation operations.
+
+        Args:
+            req: FastAPI request object
+            conversation_id: Conversation ID (assumes thread already exists and validation done)
+
+        Returns:
+            dict: Agent configuration
+
+        Raises:
+            HTTPException: If configuration creation fails
+        """
+        user_id, _ = await get_user_context_safe(req)
+
+        # Create user-scoped ID for LangGraph checkpointing
+        user_scoped_conversation_id = create_user_scoped_conversation_id(
+            user_id, conversation_id
+        )
+
+        # Create agent configuration
+        config = {"configurable": {"thread_id": user_scoped_conversation_id}}
+
+        # Apply runtime modifications (auth, user context, etc.)
+        agent_config = modify_runtime_config(config, req)
+        validate_runtime_config(agent_config)
+
+        return agent_config
 
     def extract_messages_from_checkpoint(checkpoint_state: dict) -> list[dict]:
         """
@@ -412,16 +394,15 @@ def create_conversation_routes(
             f"Resume decision: {request.input.decision} for conversation: {conversation_id}"
         )
 
+        # Validate conversation access before creating config
+        user_id, _ = await get_user_context_safe(req)
+        await validate_conversation_access(conversation_id, user_id)
+
         # Convert the request to internal format expected by LangGraph
         interrupt_response = request.to_internal()
 
-        # Convert request to dict for configuration setup
-        configurable = {"configurable": {"thread_id": conversation_id}}
-
-        # For resume operations: validate existing conversation ID format without re-scoping
-        agent_config, conversation_id = await setup_runtime_config(
-            configurable, req, is_initial_request=False
-        )
+        # Create agent configuration for resume operations
+        agent_config = await create_agent_config(req, conversation_id)
 
         if streaming:
             return SSEStreamingResponse(
@@ -432,7 +413,7 @@ def create_conversation_routes(
                     resume_input=interrupt_response,
                     serialize_event=serialize_event,
                 ),
-                headers=get_conversation_headers(conversation_id, "dev-user"),
+                headers=get_conversation_headers(conversation_id),
             )
         else:
             # For synchronous resume, invoke the agent directly
@@ -449,7 +430,7 @@ def create_conversation_routes(
             return Response(
                 content=json.dumps({"output": serialized_result}),
                 media_type="application/json",
-                headers=get_conversation_headers(conversation_id, "dev-user"),
+                headers=get_conversation_headers(conversation_id),
             )
 
     # Create new conversation endpoint
@@ -489,7 +470,7 @@ def create_conversation_routes(
         response_model=ConversationResponse,  # Add response model for schema generation
         tags=["Conversation API v1"],
         summary="Continue Conversation",
-        description="Continue an existing conversation. Accepts messages and returns agent response in a conversation.",
+        description="Continue an existing conversation. Accepts messages and returns agent response in a conversation. The conversation_id must be a valid UUID4.",
         responses={
             200: {
                 "description": success_response_description,
@@ -509,7 +490,14 @@ def create_conversation_routes(
         """
         Continue existing conversation endpoint that handles both JSON and streaming responses.
         Use Accept: text/event-stream header for streaming response.
+        The conversation_id must be a valid UUID4.
         """
+        # Validate conversation_id using schema
+        try:
+            ConversationIdPathParam(conversation_id=conversation_id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+
         streaming = is_streaming_request(req)
 
         return await _handle_conversation_internal(
@@ -522,7 +510,7 @@ def create_conversation_routes(
         response_model=LoadConversationResponse,
         tags=["Conversation API v1"],
         summary="Load Conversation",
-        description="Load a previous conversation state by conversation ID. Returns conversation messages and metadata.",
+        description="Load a previous conversation state by conversation ID. Returns conversation messages and metadata. The conversation_id must be a valid UUID4.",
         responses={
             200: {
                 "description": "Conversation loaded successfully",
@@ -557,7 +545,14 @@ def create_conversation_routes(
     ) -> LoadConversationResponse:
         """
         Load conversation endpoint that returns conversation state and metadata.
+        The conversation_id must be a valid UUID4.
         """
+        # Validate conversation_id using schema
+        try:
+            ConversationIdPathParam(conversation_id=conversation_id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+
         return await _handle_load_conversation_internal(conversation_id, req)
 
     # List conversations endpoint
@@ -601,7 +596,7 @@ def create_conversation_routes(
         tags=["Conversation API v1"],
         summary="Handle Resume Decision",
         description="""Resume a conversation workflow that was interrupted for tool execution approval with a decision. An interface for implementing human-in-the-loop.  
-        Use the conversation ID of the interrupted workflow conversation to resume it.
+        Use the conversation ID of the interrupted workflow conversation to resume it. The conversation_id must be a valid UUID4.
         """,  # noqa: W291
         responses={
             200: {
@@ -624,7 +619,14 @@ def create_conversation_routes(
         """
         Resume decision endpoint that handles both JSON and streaming responses.
         Use Accept: text/event-stream header for streaming response.
+        The conversation_id must be a valid UUID4.
         """
+        # Validate conversation_id using schema
+        try:
+            ConversationIdPathParam(conversation_id=conversation_id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+
         streaming = is_streaming_request(req)
 
         return await _handle_resume_decision_internal(
@@ -637,14 +639,11 @@ def create_conversation_routes(
         """
         Internal handler for loading conversation state.
         """
-        # Validate conversation_id format
-        try:
-            validate_thread_id_format(conversation_id)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-
         # Get user context for access control
         user_id, _ = await get_user_context_safe(req)
+
+        # Validate conversation access
+        await validate_conversation_access(conversation_id, user_id)
 
         # Get access control service
         from ..services.thread_access_control import get_thread_access_control
@@ -657,16 +656,11 @@ def create_conversation_routes(
         checkpointer = get_checkpointer()
 
         try:
-            # Validate conversation access and get user-scoped ID
-            (
-                user_scoped_conversation_id,
-                base_conversation_id,
-            ) = await validate_conversation_access(conversation_id, user_id)
+            # Create agent configuration using factory function
+            agent_config = await create_agent_config(req, conversation_id)
 
             # Get the checkpoint state
-            checkpoint_state = await checkpointer.aget(
-                {"configurable": {"thread_id": user_scoped_conversation_id}}
-            )
+            checkpoint_state = await checkpointer.aget(agent_config)
 
             if not checkpoint_state:
                 raise HTTPException(status_code=404, detail="Conversation not found")
@@ -695,7 +689,7 @@ def create_conversation_routes(
 
             # Get thread ownership information for metadata
             thread_ownership = await access_control.get_thread_ownership(
-                base_conversation_id
+                conversation_id
             )
 
             metadata = {}
@@ -769,10 +763,8 @@ def create_conversation_routes(
                 conversation_id = thread_ownership.thread_id
 
                 # Create user-scoped conversation ID for LangGraph
-                user_scoped_conversation_id = (
-                    await access_control.create_user_scoped_thread_id(
-                        user_id, conversation_id
-                    )
+                user_scoped_conversation_id = create_user_scoped_conversation_id(
+                    user_id, conversation_id
                 )
 
                 # Get the checkpoint state to extract preview
@@ -796,7 +788,7 @@ def create_conversation_routes(
 
                 # Create conversation summary
                 conversation_summary = ConversationSummary(
-                    conversation_id=user_scoped_conversation_id,
+                    conversation_id=conversation_id,
                     created_at=(
                         thread_ownership.created_at.isoformat()
                         if thread_ownership.created_at
@@ -836,18 +828,21 @@ def create_conversation_routes(
         Internal handler for conversation operations.
         """
 
-        # Set up runtime configuration
+        user_id, _ = await get_user_context_safe(req)
+
         if conversation_id:
-            # For continue conversation: use provided conversation_id
-            config = {"configurable": {"thread_id": conversation_id}}
-            agent_config, conversation_id = await setup_runtime_config(
-                config, req, is_initial_request=False
-            )
+            # For existing conversations: validate access
+            await validate_conversation_access(conversation_id, user_id)
         else:
-            # For create conversation: auto-create conversation_id
-            agent_config, conversation_id = await setup_runtime_config(
-                request.to_internal_config(), req, is_initial_request=True
-            )
+            # For new conversations: create new UUID and thread ownership record
+            conversation_id = str(uuid.uuid4())
+            from ..services.thread_access_control import get_thread_access_control
+
+            access_control = get_thread_access_control()
+            await access_control.create_thread(user_id, conversation_id)
+
+        # Create agent configuration
+        agent_config = await create_agent_config(req, conversation_id)
 
         # Convert structured input to dict for agent (using LangGraph format)
         agent_input = request.to_internal_messages()
@@ -864,25 +859,20 @@ def create_conversation_routes(
                 ):
                     yield event
 
-            # Get user context for headers
-            user_id, _ = await get_user_context_safe(req)
-
             return SSEStreamingResponse(
                 generate(),
-                headers=get_conversation_headers(conversation_id, user_id),
+                headers=get_conversation_headers(conversation_id),
             )
         else:
             # Return JSON response
             try:
                 result = await agent.ainvoke(agent_input, config=agent_config)
                 serialized_result = serialize_event(result)
-                # Get user context for headers
-                user_id, _ = await get_user_context_safe(req)
 
                 return Response(
                     content=json.dumps({"output": serialized_result}),
                     media_type="application/json",
-                    headers=get_conversation_headers(conversation_id, user_id),
+                    headers=get_conversation_headers(conversation_id),
                 )
             except Exception as e:
                 logger.error(f"Agent invocation failed: {e}")
@@ -895,7 +885,7 @@ def create_conversation_routes(
         f"{settings.api_prefix}/conversations/{{conversation_id}}",
         tags=["Conversation API v1"],
         summary="Delete Conversation",
-        description="Delete a conversation by ID. This will permanently remove the conversation and all its data.",
+        description="Delete a conversation by ID. This will permanently remove the conversation and all its data. The conversation_id must be a valid UUID4.",
         responses={
             204: {
                 "description": "Conversation deleted successfully",
@@ -921,7 +911,14 @@ def create_conversation_routes(
     async def delete_conversation(conversation_id: str, req: Request) -> Response:
         """
         Delete conversation endpoint that removes conversation data and access control records.
+        The conversation_id must be a valid UUID4.
         """
+        # Validate conversation_id using schema
+        try:
+            ConversationIdPathParam(conversation_id=conversation_id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+
         return await _handle_delete_conversation_internal(conversation_id, req)
 
     async def _handle_delete_conversation_internal(
@@ -930,14 +927,11 @@ def create_conversation_routes(
         """
         Internal handler for deleting conversation.
         """
-        # Validate conversation_id format
-        try:
-            validate_thread_id_format(conversation_id)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-
         # Get user context for access control
         user_id, _ = await get_user_context_safe(req)
+
+        # Validate conversation access
+        await validate_conversation_access(conversation_id, user_id)
 
         # Get access control service
         from ..services.thread_access_control import get_thread_access_control
@@ -950,19 +944,14 @@ def create_conversation_routes(
         checkpointer = get_checkpointer()
 
         try:
-            # Validate conversation access and get user-scoped ID
-            (
-                user_scoped_conversation_id,
-                base_conversation_id,
-            ) = await validate_conversation_access(conversation_id, user_id)
+            # Create agent configuration using factory function
+            agent_config = await create_agent_config(req, conversation_id)
 
             # Delete the checkpoint state from LangGraph
             try:
                 # LangGraph MemorySaver doesn't have a delete method, but we can try to clear it
                 # by setting it to None or an empty state
-                await checkpointer.aput(
-                    {"configurable": {"thread_id": user_scoped_conversation_id}}, None
-                )
+                await checkpointer.aput(agent_config, None)
                 logger.debug(
                     f"Cleared checkpoint state for conversation {conversation_id}"
                 )
@@ -971,7 +960,7 @@ def create_conversation_routes(
                 # Continue with deletion even if checkpoint clearing fails
 
             # Delete the thread ownership record
-            deleted = await access_control.delete_thread(user_id, base_conversation_id)
+            deleted = await access_control.delete_thread(user_id, conversation_id)
             if not deleted:
                 raise HTTPException(status_code=404, detail="Conversation not found")
 

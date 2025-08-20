@@ -5,52 +5,18 @@
 
 import { Logger } from './logger.js';
 
-export function normalizeThreadId(threadId) {
-    if (!threadId) return null;
-    
-    // If it's already in user:dev-user:uuid format, return as is
-    if (threadId.includes(':')) {
-        const parts = threadId.split(':');
-        if (parts.length === 3 && parts[0] === 'user' && parts[1] === 'dev-user') {
-            return threadId;
-        }
-    }
-    
-    // If it's a plain UUID, convert to user:dev-user:uuid format
-    try {
-        // Validate it's a UUID
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId)) {
-            return `user:dev-user:${threadId}`;
-        }
-    } catch (error) {
-        Logger.warn('Invalid thread ID format', { threadId, error: error.message });
-    }
-    
-    return null;
-}
-
 export function extractValidationErrorDetails(errorBody) {
     try {
-        // FastAPI validation errors typically have this structure:
-        // { "detail": [{ "loc": ["body", "input", "messages", 0, "content"], "msg": "field required", "type": "missing" }] }
-        if (errorBody.detail && Array.isArray(errorBody.detail)) {
-            const errors = errorBody.detail.map(error => {
-                const field = error.loc ? error.loc.join('.') : 'unknown';
-                const message = error.msg || 'validation error';
-                return `${field}: ${message}`;
-            });
-            return errors.join('; ');
+        if (typeof errorBody === 'string') {
+            const parsed = JSON.parse(errorBody);
+            return parsed.detail || parsed.message || errorBody;
+        } else if (typeof errorBody === 'object') {
+            return errorBody.detail || errorBody.message || JSON.stringify(errorBody);
         }
-        
-        // Fallback for other error formats
-        if (errorBody.detail && typeof errorBody.detail === 'string') {
-            return errorBody.detail;
-        }
-        
-        return 'Unknown validation error';
+        return errorBody;
     } catch (error) {
-        Logger.warn('Failed to extract validation error details', { error, errorBody });
-        return 'Failed to parse validation error details';
+        Logger.warn('Failed to extract validation error details', { error: error.message });
+        return errorBody;
     }
 }
 
@@ -79,6 +45,11 @@ export class Validator {
 
         if (threadId && threadId.length > 200) {
             throw new Error('Thread ID is too long');
+        }
+
+        // Validate UUID format if provided
+        if (threadId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId)) {
+            throw new Error('Thread ID must be a valid UUID4');
         }
 
         return threadId;

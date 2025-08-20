@@ -5,12 +5,12 @@ A simple FastAPI service that implements the ecommerce API specification
 """
 
 import uuid
-from datetime import datetime, timezone
-from typing import List, Optional
-from fastapi import FastAPI, HTTPException, Depends, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
+from datetime import UTC, datetime
+
 import uvicorn
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, Field
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -105,19 +105,19 @@ users_db[SAMPLE_USER["id"]] = SAMPLE_USER
 # Pydantic models
 class CreateProductRequest(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     price: float = Field(..., ge=0)
     category: str
     stock: int = Field(..., ge=0)
-    imageUrl: Optional[str] = None
+    imageUrl: str | None = None
 
 class UpdateProductRequest(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    price: Optional[float] = Field(None, ge=0)
-    category: Optional[str] = None
-    stock: Optional[int] = Field(None, ge=0)
-    imageUrl: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
+    price: float | None = Field(None, ge=0)
+    category: str | None = None
+    stock: int | None = Field(None, ge=0)
+    imageUrl: str | None = None
 
 class Address(BaseModel):
     street: str
@@ -133,13 +133,13 @@ class OrderItem(BaseModel):
     totalPrice: float = Field(..., ge=0)
 
 class CreateOrderRequest(BaseModel):
-    items: List[dict]  # Simplified for mock
+    items: list[dict]  # Simplified for mock
     shippingAddress: Address
 
 class UpdateUserRequest(BaseModel):
-    firstName: Optional[str] = None
-    lastName: Optional[str] = None
-    phone: Optional[str] = None
+    firstName: str | None = None
+    lastName: str | None = None
+    phone: str | None = None
 
 class Pagination(BaseModel):
     page: int
@@ -149,8 +149,8 @@ class Pagination(BaseModel):
 
 class Error(BaseModel):
     error: str
-    code: Optional[str] = None
-    details: Optional[dict] = None
+    code: str | None = None
+    details: dict | None = None
 
 # Helper functions
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -159,7 +159,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         raise HTTPException(status_code=401, detail="Invalid authentication")
     return SAMPLE_USER
 
-def calculate_pagination(items: List, page: int, limit: int) -> dict:
+def calculate_pagination(items: list, page: int, limit: int) -> dict:
     """Calculate pagination info"""
     total = len(items)
     pages = (total + limit - 1) // limit
@@ -174,7 +174,7 @@ def calculate_pagination(items: List, page: int, limit: int) -> dict:
 
 def get_now() -> str:
     """Get current timestamp in ISO format"""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 # API Endpoints
 
@@ -182,21 +182,21 @@ def get_now() -> str:
 async def list_products(
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
-    category: Optional[str] = None
+    category: str | None = None
 ):
     """List all products with optional filtering and pagination"""
     products = list(products_db.values())
-    
+
     # Filter by category if provided
     if category:
         products = [p for p in products if p["category"].lower() == category.lower()]
-    
+
     # Calculate pagination
     pagination_info = calculate_pagination(products, page, limit)
     start = (page - 1) * limit
     end = start + limit
     paginated_products = products[start:end]
-    
+
     return {
         "products": paginated_products,
         "pagination": pagination_info
@@ -210,7 +210,7 @@ async def create_product(
     """Create a new product"""
     product_id = str(uuid.uuid4())
     now = get_now()
-    
+
     new_product = {
         "id": product_id,
         "name": product_data.name,
@@ -222,7 +222,7 @@ async def create_product(
         "createdAt": now,
         "updatedAt": now
     }
-    
+
     products_db[product_id] = new_product
     return new_product
 
@@ -242,9 +242,9 @@ async def update_product(
     """Update an existing product"""
     if product_id not in products_db:
         raise HTTPException(status_code=404, detail="Product not found")
-    
+
     product = products_db[product_id].copy()
-    
+
     # Update only provided fields
     if product_data.name is not None:
         product["name"] = product_data.name
@@ -258,10 +258,10 @@ async def update_product(
         product["stock"] = product_data.stock
     if product_data.imageUrl is not None:
         product["imageUrl"] = product_data.imageUrl
-    
+
     product["updatedAt"] = get_now()
     products_db[product_id] = product
-    
+
     return product
 
 @app.delete("/products/{product_id}", tags=["Products"], status_code=204)
@@ -272,29 +272,29 @@ async def delete_product(
     """Delete a product"""
     if product_id not in products_db:
         raise HTTPException(status_code=404, detail="Product not found")
-    
+
     del products_db[product_id]
 
 @app.get("/orders", tags=["Orders"])
 async def list_orders(
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
-    status: Optional[str] = None,
+    status: str | None = None,
     current_user: dict = Depends(get_current_user)
 ):
     """List user orders with optional filtering and pagination"""
     user_orders = [order for order in orders_db.values() if order["userId"] == current_user["id"]]
-    
+
     # Filter by status if provided
     if status:
         user_orders = [order for order in user_orders if order["status"] == status]
-    
+
     # Calculate pagination
     pagination_info = calculate_pagination(user_orders, page, limit)
     start = (page - 1) * limit
     end = start + limit
     paginated_orders = user_orders[start:end]
-    
+
     return {
         "orders": paginated_orders,
         "pagination": pagination_info
@@ -308,37 +308,37 @@ async def create_order(
     """Create a new order"""
     order_id = str(uuid.uuid4())
     now = get_now()
-    
+
     # Process order items
     order_items = []
     total_amount = 0
-    
+
     for item in order_data.items:
         product_id = item["productId"]
         quantity = item["quantity"]
-        
+
         if product_id not in products_db:
             raise HTTPException(status_code=400, detail=f"Product {product_id} not found")
-        
+
         product = products_db[product_id]
         if product["stock"] < quantity:
             raise HTTPException(status_code=400, detail=f"Insufficient stock for product {product['name']}")
-        
+
         unit_price = product["price"]
         total_price = unit_price * quantity
         total_amount += total_price
-        
+
         order_items.append({
             "productId": product_id,
             "quantity": quantity,
             "unitPrice": unit_price,
             "totalPrice": total_price
         })
-        
+
         # Update stock
         products_db[product_id]["stock"] -= quantity
         products_db[product_id]["updatedAt"] = now
-    
+
     new_order = {
         "id": order_id,
         "userId": current_user["id"],
@@ -349,7 +349,7 @@ async def create_order(
         "createdAt": now,
         "updatedAt": now
     }
-    
+
     orders_db[order_id] = new_order
     return new_order
 
@@ -361,11 +361,11 @@ async def get_order(
     """Get order by ID"""
     if order_id not in orders_db:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     order = orders_db[order_id]
     if order["userId"] != current_user["id"]:
         raise HTTPException(status_code=401, detail="Not authorized to view this order")
-    
+
     return order
 
 @app.get("/users/profile", tags=["Users"])
@@ -380,7 +380,7 @@ async def update_user_profile(
 ):
     """Update user profile"""
     updated_user = current_user.copy()
-    
+
     # Update only provided fields
     if user_data.firstName is not None:
         updated_user["firstName"] = user_data.firstName
@@ -388,10 +388,10 @@ async def update_user_profile(
         updated_user["lastName"] = user_data.lastName
     if user_data.phone is not None:
         updated_user["phone"] = user_data.phone
-    
+
     updated_user["updatedAt"] = get_now()
     users_db[current_user["id"]] = updated_user
-    
+
     return updated_user
 
 @app.get("/health", tags=["Health"])
@@ -411,5 +411,5 @@ if __name__ == "__main__":
     print("  POST /orders")
     print("  GET  /users/profile")
     print("\nNote: All endpoints require Bearer token authentication (any token will work)")
-    
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

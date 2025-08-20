@@ -38,11 +38,11 @@ export async function initializeApp() {
         // Initialize settings
         initializeSettings();
         
-        // Setup event listeners
-        setupEventListeners();
-        
-        // Set the sendMessage function in the events module
+        // Set the sendMessage function in the events module BEFORE setting up event listeners
         setSendMessageFunction(sendMessage);
+        
+        // Setup event listeners (now with the real sendMessage function)
+        setupEventListeners();
         
         // Setup network status monitoring
         NetworkManager.addOnlineStatusListener(handleConnectionStatusChange);

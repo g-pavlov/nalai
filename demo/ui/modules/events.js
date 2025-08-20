@@ -8,7 +8,7 @@ import { Logger } from './logger.js';
 import { ErrorHandler } from './errorHandler.js';
 import { setConnectionStatus, getProcessingStatus } from './state.js';
 import { saveSettings } from './state.js';
-import { toggleSettings, handleClickOutside } from './settings.js';
+import { handleClickOutside } from './settings.js';
 
 // Placeholder functions that will be implemented in other modules
 let sendMessage = () => console.log('sendMessage not implemented yet');

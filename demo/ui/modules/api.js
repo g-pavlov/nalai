@@ -7,14 +7,13 @@ import { buildApiUrl, API_CONFIG } from './config.js';
 import { NetworkManager } from './network.js';
 import { Logger } from './logger.js';
 import { ErrorHandler } from './errorHandler.js';
-import { getCurrentThreadId, setCurrentThreadId } from './state.js';
+import { getCurrentThreadId, setCurrentThreadId, getProcessingStatus, setProcessing, getFullMessageContent, setFullMessageContent } from './state.js';
 import { getRequestHeaders, buildRequestPayload, getMessageConfig } from './settings.js';
-import { normalizeThreadId } from './validator.js';
 import { Validator } from './validator.js';
 import { setupMessageProcessing, cleanupMessageProcessing, handleMessageError } from './messages.js';
 import { createAssistantMessageElement } from './messages.js';
-import { setFullMessageContent, getFullMessageContent } from './state.js';
 import { DOM } from './dom.js';
+import { handleStreamingResponse, handleNonStreamingResponse } from './streaming.js';
 
 export async function sendMessage() {
     if (getProcessingStatus()) {
@@ -164,33 +163,26 @@ function handleThreadIdResponse(response) {
         willUpdate: conversationId && conversationId !== getCurrentThreadId()
     });
     
-            if (conversationId && conversationId !== getCurrentThreadId()) {
-            const normalizedThreadId = normalizeThreadId(conversationId);
-            if (normalizedThreadId) {
-                setCurrentThreadId(normalizedThreadId);
-                Logger.info('New conversation thread started', { 
-                    originalConversationId: conversationId, 
-                    normalizedThreadId 
-                });
-                
-                // Auto-refresh conversations list when a new conversation is created
-                // Import the refresh function dynamically to avoid circular imports
-                import('./conversationsManager.js').then(module => {
-                    if (module.refreshConversationsList) {
-                        Logger.info('Auto-refreshing conversations list after new conversation creation');
-                        module.refreshConversationsList();
-                    }
-                }).catch(error => {
-                    Logger.warn('Failed to auto-refresh conversations list', { error });
-                });
-            } else {
-                Logger.warn('Failed to normalize conversation ID', { conversationId });
-            }
+    if (conversationId && conversationId !== getCurrentThreadId()) {
+        // Validate that it's a proper UUID
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId)) {
+            setCurrentThreadId(conversationId);
+            Logger.info('New conversation thread started', { 
+                conversationId
+            });
+            
+            // Auto-refresh conversations list when a new conversation is created
+            // Import the refresh function dynamically to avoid circular imports
+            import('./conversationsManager.js').then(module => {
+                if (module.refreshConversationsList) {
+                    Logger.info('Auto-refreshing conversations list after new conversation creation');
+                    module.refreshConversationsList();
+                }
+            }).catch(error => {
+                Logger.warn('Failed to auto-refresh conversations list', { error });
+            });
+        } else {
+            Logger.warn('Invalid conversation ID format received', { conversationId });
         }
+    }
 }
-
-// Import streaming functions
-import { handleStreamingResponse, handleNonStreamingResponse } from './streaming.js';
-
-// Import the processing status function
-import { getProcessingStatus } from './state.js';

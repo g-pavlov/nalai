@@ -54,7 +54,7 @@
                 <div class="setting-group">
                     <label for="modelSelector">Model:</label>
                     <select id="modelSelector">
-                        <option value='{"name":"gpt-4.1o","platform":"openai"}'>OpenAI (gpt-4.1)</option>
+                        <option value='{"name":"gpt-4.1","platform":"openai"}'>OpenAI (gpt-4.1)</option>
                         <!--option value='{"name":"claude-3-5-sonnet-20241022","platform":"aws_bedrock"}'>Bedrock (Claude 3.5 Sonnet)</option-->
                         <option value='{"name":"llama3.1:8b","platform":"ollama"}'>Ollama (llama3.1:8b)</option>
                     </select>
@@ -146,7 +146,7 @@
         
         <div class="input-container">
             <input type="text" class="message-input" id="messageInput" placeholder="Type your message here..." />
-            <button class="send-button" id="sendButton" onclick="sendMessage()" title="Send message">
+            <button class="send-button" id="sendButton" title="Send message">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="22" y1="2" x2="11" y2="13"></line>
                     <polygon points="22,2 15,22 11,13 2,9"></polygon>
@@ -157,11 +157,10 @@
     </div>
 
     <script type="module">
-        import { initializeApp, sendMessage, startNewConversation, toggleSettings, loadConversation, showConversationsList, hideConversationsList, refreshConversationsList } from './modules/app.js';
+        import { initializeApp, startNewConversation, toggleSettings, loadConversation, showConversationsList, hideConversationsList, refreshConversationsList } from './modules/app.js';
         import { handleInterrupt, showEditInterruptUI, cancelEditInterrupt, submitEditedInterrupt } from './modules/interrupts.js';
         
         // Make functions available globally for onclick handlers
-        window.sendMessage = sendMessage;
         window.startNewConversation = startNewConversation;
         window.toggleSettings = toggleSettings;
         window.loadConversation = loadConversation;

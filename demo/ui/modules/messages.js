@@ -136,7 +136,8 @@ export function cleanupMessageProcessing() {
     DOM.messageInput.disabled = false;
     DOM.messageInput.placeholder = 'Type your message here...';
     
-    handleInputChange(); // Re-enable send button if there's content
+    // Trigger input change event to re-enable send button if there's content
+    DOM.messageInput.dispatchEvent(new Event('input'));
 }
 
 export function handleMessageError(error) {
@@ -158,10 +159,4 @@ export function handleMessageError(error) {
     
     DOM.chatContainer.appendChild(errorDiv);
     DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
-}
-
-// This function will be moved to the events module, but we need it here for now
-function handleInputChange() {
-    const hasContent = DOM.messageInput.value.trim().length > 0;
-    DOM.sendButton.disabled = !hasContent || getProcessingStatus();
 }

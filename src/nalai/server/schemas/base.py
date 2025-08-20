@@ -1,9 +1,28 @@
 """Base schemas for the server."""
 
+import uuid
 from typing import Literal
 
 from langchain_core.runnables import RunnableConfig
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class ConversationIdPathParam(BaseModel):
+    """Path parameter for conversation ID with UUID validation."""
+
+    conversation_id: str = Field(
+        ..., description="Conversation ID (must be valid UUID4)"
+    )
+
+    @field_validator("conversation_id")
+    @classmethod
+    def validate_uuid(cls, v):
+        """Validate that conversation_id is a valid UUID4."""
+        try:
+            uuid.UUID(v, version=4)
+            return v
+        except ValueError:
+            raise ValueError("conversation_id must be a valid UUID4") from None
 
 
 class ModelConfig(BaseModel):
