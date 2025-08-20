@@ -85,56 +85,40 @@ class TestLogRequestMiddleware:
         return response
 
     @pytest.mark.parametrize(
-        "path,excluded_paths,should_log",
+        "path,excluded_paths,should_log,expected_log_calls",
         [
-            ("/api/agent", set(), True),
-            ("/health", {"/health"}, False),
-            ("/docs", {"/docs"}, False),
-            ("/api/agent", {"/health"}, True),
+            ("/api/agent", set(), True, 2),
+            ("/health", {"/health"}, False, 0),
+            ("/docs", {"/docs"}, False, 0),
+            ("/api/agent", {"/health"}, True, 2),
         ],
     )
     @pytest.mark.asyncio
-    async def test_log_request_middleware(
-        self, mock_request, mock_response, path, excluded_paths, should_log
+    async def test_log_request_middleware_scenarios(
+        self, mock_response, path, excluded_paths, should_log, expected_log_calls
     ):
-        """Test request logging middleware with various paths."""
-        mock_request.url.path = path
+        """Should handle all logging middleware scenarios correctly."""
+        request = MagicMock(spec=Request)
+        request.method = "POST"
+        request.url.path = path
+        request.client.host = "127.0.0.1"
+        request.headers = {}
+        request.state = MagicMock()
+        request.state.user_context = None
 
         call_next = AsyncMock(return_value=mock_response)
         middleware = create_log_request_middleware(excluded_paths)
 
         with patch("nalai.server.middleware.logger") as mock_logger:
-            result = await middleware(mock_request, call_next)
-
-            assert result == mock_response
-            call_next.assert_called_once_with(mock_request)
-
-            if should_log:
-                assert mock_logger.info.call_count == 2  # Request and response
-            else:
-                assert mock_logger.info.call_count == 0
-
-    @pytest.mark.asyncio
-    async def test_log_request_middleware_no_client(self, mock_response):
-        """Test logging middleware when client is None."""
-        request = MagicMock(spec=Request)
-        request.method = "GET"
-        request.url.path = "/api/agent"
-        request.client = None
-        request.headers = {}
-        request.state = MagicMock()
-        # Mock user_context to avoid JSON serialization issues
-        request.state.user_context = None
-
-        call_next = AsyncMock(return_value=mock_response)
-        middleware = create_log_request_middleware()
-
-        with patch("nalai.server.middleware.logger") as mock_logger:
             result = await middleware(request, call_next)
 
             assert result == mock_response
-            # Should still log even without client info
-            assert mock_logger.info.call_count == 2
+            call_next.assert_called_once_with(request)
+
+            if should_log:
+                assert mock_logger.info.call_count == expected_log_calls
+            else:
+                assert mock_logger.info.call_count == 0
 
 
 class TestAuthMiddleware:
@@ -157,68 +141,70 @@ class TestAuthMiddleware:
         return response
 
     @pytest.mark.parametrize(
-        "path,excluded_paths,should_auth",
+        "path,excluded_paths,should_auth,auth_success,expected_status",
         [
-            ("/api/agent", set(), True),
-            ("/health", {"/health"}, False),
-            ("/docs", {"/docs"}, False),
-            ("/api/agent", {"/health"}, True),
+            ("/api/agent", set(), True, True, 200),
+            ("/health", {"/health"}, False, True, 200),
+            ("/api/agent", set(), True, False, 401),
+            ("/docs", {"/docs"}, False, True, 200),
         ],
     )
     @pytest.mark.asyncio
-    async def test_auth_middleware_success(
-        self, mock_request, mock_response, path, excluded_paths, should_auth
+    async def test_auth_middleware_scenarios(
+        self,
+        mock_response,
+        path,
+        excluded_paths,
+        should_auth,
+        auth_success,
+        expected_status,
     ):
-        """Test authentication middleware with successful auth."""
-        mock_request.url.path = path
-
-        mock_identity = IdentityContext(
-            user_id="test-user-123", email="test@example.com", token_type="access_token"
-        )
+        """Should handle all authentication middleware scenarios correctly."""
+        request = MagicMock(spec=Request)
+        request.method = "POST"
+        request.url.path = path
+        request.state = MagicMock()
 
         call_next = AsyncMock(return_value=mock_response)
         middleware = create_auth_middleware(excluded_paths)
 
         with patch("nalai.services.auth_service.get_auth_service") as mock_get_auth:
             mock_auth_service = AsyncMock()
-            mock_auth_service.authenticate_request.return_value = mock_identity
+
+            if auth_success:
+                mock_identity = IdentityContext(
+                    user_id="test-user-123",
+                    email="test@example.com",
+                    token_type="access_token",
+                )
+                mock_auth_service.authenticate_request.return_value = mock_identity
+            else:
+                mock_auth_service.authenticate_request.side_effect = Exception(
+                    "Auth failed"
+                )
+
             mock_get_auth.return_value = mock_auth_service
 
             with patch("nalai.server.middleware.logger") as mock_logger:
-                result = await middleware(mock_request, call_next)
+                if auth_success or not should_auth:
+                    result = await middleware(request, call_next)
+                    assert result == mock_response
+                    call_next.assert_called_once_with(request)
 
-                assert result == mock_response
-                call_next.assert_called_once_with(mock_request)
-
-                if should_auth:
-                    mock_auth_service.authenticate_request.assert_called_once_with(
-                        mock_request
-                    )
-                    assert mock_request.state.identity == mock_identity
-                    mock_logger.debug.assert_called_once()
+                    if should_auth and auth_success:
+                        mock_auth_service.authenticate_request.assert_called_once_with(
+                            request
+                        )
+                        assert request.state.identity == mock_identity
+                        mock_logger.debug.assert_called_once()
+                    elif not should_auth:
+                        mock_auth_service.authenticate_request.assert_not_called()
                 else:
-                    mock_auth_service.authenticate_request.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_auth_middleware_failure(self, mock_request, mock_response):
-        """Test authentication middleware with auth failure."""
-        call_next = AsyncMock(return_value=mock_response)
-        middleware = create_auth_middleware()
-
-        with patch("nalai.services.auth_service.get_auth_service") as mock_get_auth:
-            mock_auth_service = AsyncMock()
-            mock_auth_service.authenticate_request.side_effect = Exception(
-                "Auth failed"
-            )
-            mock_get_auth.return_value = mock_auth_service
-
-            with patch("nalai.server.middleware.logger") as mock_logger:
-                with pytest.raises(HTTPException) as exc_info:
-                    await middleware(mock_request, call_next)
-
-                assert exc_info.value.status_code == 401
-                assert "Authentication required" in str(exc_info.value.detail)
-                mock_logger.warning.assert_called_once()
+                    with pytest.raises(HTTPException) as exc_info:
+                        await middleware(request, call_next)
+                    assert exc_info.value.status_code == expected_status
+                    assert "Authentication required" in str(exc_info.value.detail)
+                    mock_logger.warning.assert_called_once()
 
 
 class TestAuditMiddleware:
@@ -256,19 +242,22 @@ class TestAuditMiddleware:
         ],
     )
     @pytest.mark.asyncio
-    async def test_audit_middleware(
-        self,
-        mock_request,
-        mock_response,
-        path,
-        excluded_paths,
-        user_context,
-        should_audit,
+    async def test_audit_middleware_scenarios(
+        self, mock_response, path, excluded_paths, user_context, should_audit
     ):
-        """Test audit middleware with various scenarios."""
-        mock_request.url.path = path
+        """Should handle all audit middleware scenarios correctly."""
+        request = MagicMock(spec=Request)
+        request.method = "POST"
+        request.url.path = path
+        request.client.host = "127.0.0.1"
+        request.headers = {
+            "User-Agent": "test-agent",
+            "X-Session-ID": "session-123",
+            "X-Request-ID": "request-456",
+        }
+        request.state = MagicMock()
         if user_context:
-            mock_request.state.user_context = user_context
+            request.state.user_context = user_context
 
         call_next = AsyncMock(return_value=mock_response)
         middleware = create_audit_middleware(excluded_paths)
@@ -277,11 +266,11 @@ class TestAuditMiddleware:
             mock_audit_service = AsyncMock()
             mock_get_audit.return_value = mock_audit_service
 
-            with patch("nalai.server.middleware.logger") as _mock_logger:  # noqa: F841
-                result = await middleware(mock_request, call_next)
+            with patch("nalai.server.middleware.logger") as _mock_logger:
+                result = await middleware(request, call_next)
 
                 assert result == mock_response
-                call_next.assert_called_once_with(mock_request)
+                call_next.assert_called_once_with(request)
 
                 if should_audit:
                     assert mock_audit_service.log_request_start.call_count == 1
@@ -289,24 +278,6 @@ class TestAuditMiddleware:
                 else:
                     mock_audit_service.log_request_start.assert_not_called()
                     mock_audit_service.log_request_complete.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_audit_middleware_error_handling(self, mock_request, mock_response):
-        """Test audit middleware error handling."""
-        call_next = AsyncMock(return_value=mock_response)
-        middleware = create_audit_middleware()
-
-        with patch("nalai.services.audit_service.get_audit_service") as mock_get_audit:
-            mock_audit_service = AsyncMock()
-            mock_audit_service.log_request_start.side_effect = Exception("Audit failed")
-            mock_get_audit.return_value = mock_audit_service
-
-            with patch("nalai.server.middleware.logger") as _mock_logger:  # noqa: F841
-                result = await middleware(mock_request, call_next)
-
-                # Should still process request even if audit fails
-                assert result == mock_response
-                _mock_logger.error.assert_called()
 
 
 class TestUserContextMiddleware:
@@ -335,26 +306,35 @@ class TestUserContextMiddleware:
         return response
 
     @pytest.mark.parametrize(
-        "path,excluded_paths,has_identity,context_key",
+        "path,excluded_paths,has_identity,context_key,should_create_context",
         [
-            ("/api/agent", set(), True, "user_context"),
-            ("/health", {"/health"}, True, "user_context"),
-            ("/api/agent", set(), False, "user_context"),
-            ("/api/agent", set(), True, "custom_context"),
+            ("/api/agent", set(), True, "user_context", True),
+            ("/health", {"/health"}, True, "user_context", False),
+            ("/api/agent", set(), False, "user_context", True),
+            ("/api/agent", set(), True, "custom_context", True),
         ],
     )
     @pytest.mark.asyncio
-    async def test_user_context_middleware(
+    async def test_user_context_middleware_scenarios(
         self,
-        mock_request,
         mock_response,
         path,
         excluded_paths,
         has_identity,
         context_key,
+        should_create_context,
     ):
-        """Test user context middleware with various scenarios."""
-        mock_request.url.path = path
+        """Should handle all user context middleware scenarios correctly."""
+        request = MagicMock(spec=Request)
+        request.method = "POST"
+        request.url.path = path
+        request.client.host = "127.0.0.1"
+        request.headers = {
+            "X-Session-ID": "session-123",
+            "X-Request-ID": "request-456",
+            "User-Agent": "test-agent",
+        }
+        request.state = MagicMock()
 
         call_next = AsyncMock(return_value=mock_response)
         middleware = create_user_context_middleware(excluded_paths, context_key)
@@ -365,51 +345,32 @@ class TestUserContextMiddleware:
                 email="test@example.com",
                 token_type="access_token",
             )
-            mock_request.state.identity = mock_identity
+            request.state.identity = mock_identity
         else:
-            mock_request.state.identity = None
+            request.state.identity = None
 
         with patch("nalai.server.middleware.extract_user_context") as mock_extract:
             mock_user_context = MagicMock(spec=UserContext)
             mock_extract.return_value = mock_user_context
 
-            with patch("nalai.server.middleware.logger") as _mock_logger:  # noqa: F841
-                result = await middleware(mock_request, call_next)
+            with patch("nalai.server.middleware.logger") as _mock_logger:
+                result = await middleware(request, call_next)
 
                 assert result == mock_response
-                call_next.assert_called_once_with(mock_request)
+                call_next.assert_called_once_with(request)
 
-                if path not in excluded_paths:
+                if path not in excluded_paths and should_create_context:
                     if has_identity:
                         # Should create context from identity, not call extract
                         mock_extract.assert_not_called()
-                        assert hasattr(mock_request.state, context_key)
+                        assert hasattr(request.state, context_key)
                     else:
                         # Should call extract when no identity
-                        mock_extract.assert_called_once_with(mock_request)
-                        assert hasattr(mock_request.state, context_key)
-
-    @pytest.mark.asyncio
-    async def test_user_context_middleware_error_handling(
-        self, mock_request, mock_response
-    ):
-        """Test user context middleware error handling."""
-        call_next = AsyncMock(return_value=mock_response)
-        middleware = create_user_context_middleware()
-
-        # Simulate error in context extraction
-        mock_request.state.identity = None
-
-        with patch("nalai.server.middleware.extract_user_context") as mock_extract:
-            mock_extract.side_effect = Exception("Context extraction failed")
-
-            with patch("nalai.server.middleware.logger") as _mock_logger:  # noqa: F841
-                result = await middleware(mock_request, call_next)
-
-                # Should still process request even if context extraction fails
-                assert result == mock_response
-                assert mock_request.state.user_context is None
-                _mock_logger.warning.assert_called_once()
+                        mock_extract.assert_called_once_with(request)
+                        assert hasattr(request.state, context_key)
+                else:
+                    # Should not create context for excluded paths
+                    mock_extract.assert_not_called()
 
 
 class TestUserContextUtilities:

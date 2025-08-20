@@ -11,8 +11,8 @@ import asyncio
 from dotenv import load_dotenv
 from langgraph.checkpoint.memory import MemorySaver
 
-from nalai.core.agent import APIAgent
 from nalai.core.workflow import create_and_compile_workflow
+from nalai.core.workflow_nodes import WorkflowNodes
 from nalai.utils.cli_print import stream_events_with_interruptions
 
 CLI_PROMPT = "\nPrompt: "
@@ -27,8 +27,8 @@ def main():
     conversation interface with streaming responses and human review.
     """
     memory_store = MemorySaver()
-    agent = APIAgent()
-    agent_workflow = create_and_compile_workflow(agent, memory_store)
+    workflow_nodes = WorkflowNodes()
+    agent_workflow = create_and_compile_workflow(workflow_nodes, memory_store)
 
     agent_config = {
         "configurable": {

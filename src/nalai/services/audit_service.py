@@ -114,7 +114,6 @@ class InMemoryAuditBackend(AuditBackend):
         logger.debug(
             f"Creating AccessEvent with user_id={user_id}, resource={resource}, action={action}, success={success}, metadata={metadata}"
         )
-        logger.debug(f"Metadata type: {type(metadata)}, value: {metadata}")
         if metadata is not None and not isinstance(metadata, dict):
             logger.error(
                 f"Metadata is not a dict! Type: {type(metadata)}, Value: {metadata}"

@@ -1,0 +1,219 @@
+# Test cases for conversation handler operations
+# Following the existing pattern of data-driven tests in the codebase
+
+create_conversation_cases:
+  - name: "create_new_conversation_success"
+    description: "Successfully create a new conversation"
+    input:
+      request:
+        messages: [{"content": "Hello", "type": "human"}]
+        model_config:
+          platform: "ollama"
+          model: "llama3.2"
+      user_id: "user123"
+      user_context: "mock_context"
+    expected:
+      success: true
+      conversation_id: "uuid_pattern"
+      output:
+        messages: [{"content": "Hello", "type": "ai"}]
+        selected_apis: []
+        cache_miss: null
+      streaming: false
+
+  - name: "create_conversation_with_empty_messages"
+    description: "Create conversation with empty message list"
+    input:
+      request:
+        messages: []
+        model_config:
+          platform: "ollama"
+          model: "llama3.2"
+      user_id: "user123"
+      user_context: "mock_context"
+    expected:
+      success: true
+      conversation_id: "uuid_pattern"
+      output:
+        messages: []
+        selected_apis: []
+        cache_miss: null
+      streaming: false
+
+continue_conversation_cases:
+  - name: "continue_existing_conversation_success"
+    description: "Successfully continue an existing conversation"
+    input:
+      request:
+        messages: [{"content": "Continue please", "type": "human"}]
+        model_config:
+          platform: "ollama"
+          model: "llama3.2"
+      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      user_id: "user123"
+      user_context: "mock_context"
+    expected:
+      success: true
+      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      output:
+        messages: [{"content": "I'll continue", "type": "ai"}]
+        selected_apis: []
+        cache_miss: null
+      streaming: false
+
+  - name: "continue_conversation_access_denied"
+    description: "Access denied when continuing conversation owned by different user"
+    input:
+      request:
+        messages: [{"content": "Continue please", "type": "human"}]
+        model_config:
+          platform: "ollama"
+          model: "llama3.2"
+      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      user_id: "user456"
+      user_context: "mock_context"
+    expected:
+      success: false
+      error_type: "AccessDeniedError"
+      error_message: "Access denied to conversation"
+
+  - name: "continue_conversation_invalid_uuid"
+    description: "Validation error for invalid conversation ID format"
+    input:
+      request:
+        messages: [{"content": "Continue please", "type": "human"}]
+        model_config:
+          platform: "ollama"
+          model: "llama3.2"
+      conversation_id: "invalid-uuid"
+      user_id: "user123"
+      user_context: "mock_context"
+    expected:
+      success: false
+      error_type: "ValidationError"
+      error_message: "Invalid conversation ID format"
+
+load_conversation_cases:
+  - name: "load_conversation_success"
+    description: "Successfully load existing conversation"
+    input:
+      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      user_id: "user123"
+      user_context: "mock_context"
+    expected:
+      success: true
+      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      messages:
+        - {"content": "Hello", "type": "human"}
+        - {"content": "Hi there!", "type": "ai"}
+      metadata: {"title": "Test conversation"}
+      status: "active"
+
+  - name: "load_conversation_not_found"
+    description: "Conversation not found"
+    input:
+      conversation_id: "550e8400-e29b-41d4-a716-446655440001"
+      user_id: "user123"
+      user_context: "mock_context"
+    expected:
+      success: false
+      error_type: "ConversationNotFoundError"
+      error_message: "Conversation not found"
+
+  - name: "load_conversation_interrupted_status"
+    description: "Load conversation with interrupted status"
+    input:
+      conversation_id: "550e8400-e29b-41d4-a716-446655440002"
+      user_id: "user123"
+      user_context: "mock_context"
+    expected:
+      success: true
+      conversation_id: "550e8400-e29b-41d4-a716-446655440002"
+      status: "interrupted"
+
+delete_conversation_cases:
+  - name: "delete_conversation_success"
+    description: "Successfully delete conversation"
+    input:
+      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      user_id: "user123"
+      user_context: "mock_context"
+    expected:
+      success: true
+      deleted: true
+
+  - name: "delete_conversation_not_found"
+    description: "Delete non-existent conversation"
+    input:
+      conversation_id: "550e8400-e29b-41d4-a716-446655440001"
+      user_id: "user123"
+      user_context: "mock_context"
+    expected:
+      success: false
+      error_type: "ConversationNotFoundError"
+      error_message: "Conversation not found"
+
+list_conversations_cases:
+  - name: "list_conversations_success"
+    description: "Successfully list user conversations"
+    input:
+      user_id: "user123"
+      user_context: "mock_context"
+    expected:
+      success: true
+      conversations:
+        - conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+          created_at: "2024-01-01T10:00:00"
+          last_updated: "2024-01-01T10:30:00"
+          preview: "Hello there!"
+          metadata: {"title": "Test conversation"}
+      total_count: 1
+
+  - name: "list_conversations_empty"
+    description: "List conversations for user with no conversations"
+    input:
+      user_id: "user456"
+      user_context: "mock_context"
+    expected:
+      success: true
+      conversations: []
+      total_count: 0
+
+resume_decision_cases:
+  - name: "resume_decision_approve"
+    description: "Successfully resume conversation with approve decision"
+    input:
+      request:
+        input:
+          decision: "approve"
+          tool_calls: [{"name": "http_request", "args": {"url": "https://api.example.com"}}]
+      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      user_id: "user123"
+      user_context: "mock_context"
+    expected:
+      success: true
+      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      output:
+        messages: [{"content": "Tool executed successfully", "type": "ai"}]
+        selected_apis: []
+        cache_miss: null
+      streaming: false
+
+  - name: "resume_decision_reject"
+    description: "Successfully resume conversation with reject decision"
+    input:
+      request:
+        input:
+          decision: "reject"
+          tool_calls: [{"name": "http_request", "args": {"url": "https://api.example.com"}}]
+      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      user_id: "user123"
+      user_context: "mock_context"
+    expected:
+      success: true
+      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      output:
+        messages: [{"content": "Tool execution cancelled", "type": "ai"}]
+        selected_apis: []
+        cache_miss: null
+      streaming: false

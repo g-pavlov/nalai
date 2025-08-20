@@ -21,7 +21,6 @@ sys.path.insert(
 )
 
 from nalai.config import BaseRuntimeConfiguration
-from nalai.core.agent import APIAgent
 from nalai.core.constants import (
     NODE_CALL_API,
     NODE_CALL_MODEL,
@@ -32,13 +31,14 @@ from nalai.core.constants import (
 )
 from nalai.core.schemas import AgentState, InputSchema, OutputSchema
 from nalai.core.workflow import create_and_compile_workflow
+from nalai.core.workflow_nodes import WorkflowNodes
 from nalai.services.api_docs_service import APIService
 
 
 @pytest.fixture
 def mock_agent():
-    """Create a mock APIAgent instance."""
-    agent = MagicMock(spec=APIAgent)
+    """Create a mock WorkflowNodes instance."""
+    agent = MagicMock(spec=WorkflowNodes)
     agent.http_toolkit = MagicMock()
     agent.http_toolkit.get_tools.return_value = [MagicMock(), MagicMock()]
     return agent

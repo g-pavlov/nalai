@@ -14,9 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from ..config import settings
-from ..core.agent import APIAgent
-from ..core.workflow import create_and_compile_workflow
-from ..services.checkpointing_service import get_checkpointer
+from ..core import create_agent
 from ..utils.logging import setup_logging
 from .middleware import (
     create_audit_middleware,
@@ -25,6 +23,10 @@ from .middleware import (
     create_user_context_middleware,
 )
 from .routes import (
+    APP_DESCRIPTION,
+    APP_TITLE,
+    APP_VERSION,
+    OPENAPI_TAGS,
     create_basic_routes,
     create_conversation_routes,
 )
@@ -52,19 +54,10 @@ audit_middleware = create_audit_middleware(excluded_paths=PUBLIC_ENDPOINTS)
 
 # Create FastAPI application
 app = FastAPI(
-    title="AI Agent Server",
-    version="1.0",
-    description="An AI Agent Server implementing chat and tool calling capabilities",
-    openapi_tags=[
-        {
-            "name": "Conversation API v1",
-            "description": "Conversation interaction endpoints for API v1",
-        },
-        {
-            "name": "System",
-            "description": "System health and utility endpoints",
-        },
-    ],
+    title=APP_TITLE,
+    version=APP_VERSION,
+    description=APP_DESCRIPTION,
+    openapi_tags=OPENAPI_TAGS,
 )
 
 # Configure CORS from environment variable
@@ -80,7 +73,7 @@ app.add_middleware(
 )
 
 
-# Register middleware
+# Register middleware - explicit and readable
 @app.middleware("http")
 async def log_request_middleware(request: Request, call_next):
     """Log incoming requests for monitoring and debugging."""
@@ -154,10 +147,8 @@ def initialize_app():
     create_basic_routes(app)
 
     # Initialize agent and create conversation routes
-    memory_store = get_checkpointer()
-    agent = APIAgent()
-    agent_workflow = create_and_compile_workflow(agent, memory_store)
-    create_conversation_routes(app, agent_workflow)
+    agent = create_agent()
+    create_conversation_routes(app, agent)
 
     logger.info("Application routes initialized")
     _initialized = True

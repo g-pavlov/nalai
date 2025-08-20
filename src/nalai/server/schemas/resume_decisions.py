@@ -7,6 +7,7 @@ This module contains all schemas for the resume decision resource:
 
 from typing import Any, Literal
 
+from langchain_core.messages import BaseMessage, HumanMessage
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -85,6 +86,21 @@ class ResumeDecisionRequest(BaseModel):
             # For accept and reject, no args needed
             args = None
         return {"action": action, "args": args}
+
+    def to_langchain_messages(self) -> list[BaseMessage]:
+        """Convert to LangChain message format for resume decisions."""
+        # For resume decisions, we create a human message with the decision
+        decision_input = self.input
+        content = f"Decision: {decision_input.decision}"
+
+        if decision_input.decision == "feedback" and hasattr(decision_input, "message"):
+            content += f" - {decision_input.message}"
+        elif decision_input.decision == "edit" and hasattr(decision_input, "args"):
+            content += f" - {decision_input.args}"
+        elif decision_input.decision == "reject" and hasattr(decision_input, "message"):
+            content += f" - {decision_input.message}"
+
+        return [HumanMessage(content=content)]
 
 
 class ResumeDecisionResponse(BaseModel):

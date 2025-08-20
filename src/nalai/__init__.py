@@ -1,42 +1,24 @@
 """
-nalAI - Conversational AI agent for API integration and testing.
+API Assistant - AI Agent with API Integration
 
-A comprehensive toolkit for building AI-powered API assistants that can:
-- Analyze API specifications and select relevant endpoints
-- Execute HTTP requests with proper error handling
-- Maintain conversation context with intelligent history management
-- Support human-in-the-loop review workflows
-- Provide structured responses with examples and guidelines
+A Python package for building AI agents that can interact with APIs
+and provide intelligent conversation capabilities.
 
-Key components:
-- APIAgent: Main agent class for orchestrating API interactions
-- AgentState: Typed state management for conversation flow
-- ConfigSchema: Configuration models for model and runtime settings
-- HTTP tools: Complete HTTP client toolkit with safety features
-- Rate limiting: Cross-process rate limiting for API calls
-- Server: FastAPI server with streaming and authentication support
+Main components:
+- WorkflowNodes: Workflow nodes for orchestrating API interactions
+- Agent: Main agent interface for business operations
+- create_agent: Factory function to create agent instances
 """
 
-from .core.agent import APIAgent
-from .core.schemas import (
-    AgentState,
-    ConfigSchema,
-    InputSchema,
-    ModelConfig,
-    OutputSchema,
-    SelectApi,
-    SelectedApis,
-)
+from .core import Agent, create_agent
+from .core.workflow_nodes import WorkflowNodes
+
+__version__ = "1.0.0"
 
 __all__ = [
-    "APIAgent",
-    "AgentState",
-    "ConfigSchema",
-    "InputSchema",
-    "ModelConfig",
-    "OutputSchema",
-    "SelectApi",
-    "SelectedApis",
+    "WorkflowNodes",
+    "Agent",
+    "create_agent",
 ]
 
 # CLI entry point

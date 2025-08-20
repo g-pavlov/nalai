@@ -162,7 +162,7 @@ class ConversationRequest(BaseModel):
         return input_messages
 
     def to_internal_messages(self) -> dict[Literal["messages"], list[BaseMessage]]:
-        """Convert to agent input format for backward compatibility."""
+        """Convert to internal LangGraph message format."""
         # Convert to LangGraph message format: [("human", content), ("ai", content), etc.]
         messages = []
         for msg in self.input:
@@ -182,6 +182,13 @@ class ConversationRequest(BaseModel):
                     )
                 )
         return {"messages": messages}
+
+    def to_langchain_messages(self) -> list[BaseMessage]:
+        """Convert to LangChain message format."""
+        messages = []
+        for msg in self.input:
+            messages.append(msg.to_langchain_message())
+        return messages
 
     def to_internal_config(self) -> dict[Literal["config"], RunnableConfig]:
         """Convert to internal RunnableConfig for LangChain/LangGraph."""

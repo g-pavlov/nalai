@@ -162,7 +162,7 @@ function createConversationElement(conversation) {
     
     // Format dates
     const createdDate = conversation.created_at ? formatDate(conversation.created_at) : 'Unknown';
-    const updatedDate = conversation.last_updated ? formatDate(conversation.last_updated) : createdDate;
+    const lastAccessedDate = conversation.last_updated ? formatDate(conversation.last_updated) : createdDate;
     
     // Get title from metadata or use conversation ID
     const title = conversation.metadata?.title || `Conversation ${conversation.conversation_id.slice(0, 8)}`;
@@ -174,7 +174,7 @@ function createConversationElement(conversation) {
         <div class="conversation-item-content" onclick="window.selectConversationFromElement('${conversation.conversation_id}')">
             <div class="conversation-item-header">
                 <h4 class="conversation-item-title">${escapeHtml(title)}</h4>
-                <span class="conversation-item-date">${updatedDate}</span>
+                <span class="conversation-item-date" title="Last accessed">${lastAccessedDate}</span>
             </div>
             <p class="conversation-item-preview">${escapeHtml(preview)}</p>
             ${createMetadataTags(conversation.metadata)}

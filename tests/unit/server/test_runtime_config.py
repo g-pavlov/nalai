@@ -22,8 +22,7 @@ from nalai.server.runtime_config import (
     _ensure_configurable,
     add_auth_token_to_config,
     add_user_context_to_config,
-    default_modify_runtime_config,
-    default_modify_runtime_config_with_access_control,
+    create_runtime_config,
 )
 from nalai.services.auth_service import IdentityContext, UserContext
 from nalai.services.thread_access_control import (
@@ -145,11 +144,11 @@ class TestAddUserContextToConfig:
             (
                 False,
                 {
-                    "user_id": "unknown",
-                    "user_email": "unknown@example.com",
-                    "org_unit_id": "unknown",
-                    "user_roles": [],
-                    "user_permissions": [],
+                    "user_id": "dev-user",
+                    "user_email": "dev@example.com",
+                    "org_unit_id": "dev-org",
+                    "user_roles": ["developer"],
+                    "user_permissions": ["read", "write"],
                 },
             ),
         ],
@@ -322,41 +321,31 @@ class TestDefaultFunctions:
 
     @patch("nalai.server.runtime_config.add_auth_token_to_config")
     @patch("nalai.server.runtime_config.add_user_context_to_config")
-    def test_default_modify_runtime_config(
-        self, mock_add_user_context, mock_add_auth_token, mock_request
+    @patch("nalai.server.runtime_config.add_no_cache_header_to_config")
+    @patch("nalai.server.runtime_config.validate_runtime_config")
+    def test_create_runtime_config(
+        self,
+        mock_validate,
+        mock_add_no_cache,
+        mock_add_user_context,
+        mock_add_auth_token,
+        mock_request,
     ):
-        """Test default runtime configuration modification."""
+        """Test runtime configuration creation."""
         mock_add_auth_token.return_value = {
             "configurable": {"auth_token": "test-token"}
         }
         mock_add_user_context.return_value = {"configurable": {"user_id": "test-user"}}
+        mock_add_no_cache.return_value = {"configurable": {"cache_disabled": False}}
+        mock_validate.return_value = None
 
-        default_modify_runtime_config({}, mock_request)
+        result = create_runtime_config(mock_request)
 
-        mock_add_auth_token.assert_called_once_with({}, mock_request)
+        mock_add_auth_token.assert_called_once()
         mock_add_user_context.assert_called_once()
-
-    @patch("nalai.server.runtime_config.default_modify_runtime_config")
-    @patch("nalai.server.runtime_config.validate_conversation_access_and_scope")
-    @pytest.mark.asyncio
-    async def test_default_modify_runtime_config_with_access_control(
-        self, mock_validate_access, mock_modify_config, mock_request
-    ):
-        """Test default runtime configuration with access control."""
-        mock_modify_config.return_value = {"configurable": {"key": "value"}}
-        mock_validate_access.return_value = (
-            {"configurable": {"thread_id": "scoped-id"}},
-            "scoped-id",
-        )
-
-        (
-            result_config,
-            thread_id,
-        ) = await default_modify_runtime_config_with_access_control({}, mock_request)
-
-        mock_modify_config.assert_called_once_with({}, mock_request)
-        mock_validate_access.assert_called_once()
-        assert thread_id == "scoped-id"
+        mock_add_no_cache.assert_called_once()
+        mock_validate.assert_called_once()
+        assert "configurable" in result
 
 
 class TestThreadIdValidation:

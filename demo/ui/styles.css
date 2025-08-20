@@ -1219,6 +1219,7 @@ input:checked + .slider:before {
     color: var(--text-secondary);
     white-space: nowrap;
     margin-left: 12px;
+    font-weight: 500;
 }
 
 .conversation-item-preview {
