@@ -320,9 +320,9 @@ class TestResumeDecision:
     """Test resume decision functionality - critical for human-in-the-loop."""
 
     @patch("nalai.server.runtime_config.get_user_context")
-    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    @patch("nalai.core.checkpoints.get_checkpoints")
     def test_resume_decision_stream_success_cases(
-        self, mock_get_access_control, mock_get_user_context, client, app_and_agent
+        self, mock_get_checkpoints, mock_get_user_context, client, app_and_agent
     ):
         """Critical: Should handle resume decisions correctly."""
         _, mock_agent = app_and_agent
@@ -332,10 +332,10 @@ class TestResumeDecision:
         mock_user_context.user_id = "test-user"
         mock_get_user_context.return_value = mock_user_context
 
-        # Mock access control
-        mock_access_control = AsyncMock()
-        mock_access_control.validate_thread_access.return_value = True
-        mock_get_access_control.return_value = mock_access_control
+        # Mock checkpoints
+        mock_checkpoints = AsyncMock()
+        mock_checkpoints.validate_user_access.return_value = True
+        mock_get_checkpoints.return_value = mock_checkpoints
 
         conversation_id = str(uuid.uuid4())
         print(f"Generated thread_id: user:test-user:{conversation_id}")
@@ -380,10 +380,10 @@ class TestResumeDecision:
         ],
     )
     @patch("nalai.server.runtime_config.get_user_context")
-    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    @patch("nalai.core.checkpoints.get_checkpoints")
     def test_resume_decision_batch_success_cases(
         self,
-        mock_get_access_control,
+        mock_get_checkpoints,
         mock_get_user_context,
         decision,
         args,
@@ -409,10 +409,10 @@ class TestResumeDecision:
         mock_user_context.user_id = "test-user"
         mock_get_user_context.return_value = mock_user_context
 
-        # Mock access control
-        mock_access_control = AsyncMock()
-        mock_access_control.validate_thread_access.return_value = True
-        mock_get_access_control.return_value = mock_access_control
+        # Mock checkpoints
+        mock_checkpoints = AsyncMock()
+        mock_checkpoints.validate_user_access.return_value = True
+        mock_get_checkpoints.return_value = mock_checkpoints
 
         conversation_id = str(uuid.uuid4())
 
@@ -475,14 +475,14 @@ class TestLoadConversation:
         ],
     )
     @patch("nalai.server.runtime_config.get_user_context")
-    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    @patch("nalai.core.checkpoints.get_checkpoints")
     @patch("nalai.services.checkpointing_service.get_checkpointer")
     @patch("nalai.server.runtime_config.create_runtime_config")
     def test_load_conversation_scenarios(
         self,
         mock_create_runtime_config,
         mock_get_checkpointer,
-        mock_get_access_control,
+        mock_get_checkpoints,
         mock_get_user_context,
         conversation_id,
         agent_behavior,
@@ -499,18 +499,18 @@ class TestLoadConversation:
 
         _, mock_agent = app_and_agent
 
-        # Mock access control for all scenarios
-        mock_access_control = AsyncMock()
-        mock_access_control.validate_thread_access.return_value = True
-        mock_access_control.create_user_scoped_thread_id.return_value = (
-            "user:test-user:550e8400-e29b-41d4-a716-446655440000"
-        )
-        mock_access_control.get_thread_ownership.return_value = MagicMock(
-            metadata={"title": "Test Conversation"},
-            created_at=MagicMock(isoformat=lambda: "2024-01-01T00:00:00"),
-            last_accessed=MagicMock(isoformat=lambda: "2024-01-01T12:00:00"),
-        )
-        mock_get_access_control.return_value = mock_access_control
+        # Mock checkpoints for all scenarios
+        mock_checkpoints = AsyncMock()
+        mock_checkpoints.validate_user_access.return_value = True
+        mock_checkpoints.get_conversation_metadata.return_value = {
+            "conversation_id": conversation_id,
+            "user_id": "test-user",
+            "created_at": "2024-01-01T00:00:00",
+            "last_accessed": "2024-01-01T12:00:00",
+            "message_count": 3,
+            "checkpoint_count": 1,
+        }
+        mock_get_checkpoints.return_value = mock_checkpoints
 
         # Mock create_runtime_config
         mock_create_runtime_config.return_value = {
@@ -592,12 +592,12 @@ class TestListConversations:
         ],
     )
     @patch("nalai.server.runtime_config.get_user_context")
-    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    @patch("nalai.core.checkpoints.get_checkpoints")
     @patch("nalai.services.checkpointing_service.get_checkpointer")
     def test_list_conversations_scenarios(
         self,
         mock_get_checkpointer,
-        mock_get_access_control,
+        mock_get_checkpoints,
         mock_get_user_context,
         agent_behavior,
         expected_status,
@@ -707,12 +707,12 @@ class TestDeleteConversation:
         ],
     )
     @patch("nalai.server.runtime_config.get_user_context")
-    @patch("nalai.services.thread_access_control.get_thread_access_control")
+    @patch("nalai.core.checkpoints.get_checkpoints")
     @patch("nalai.services.checkpointing_service.get_checkpointer")
     def test_delete_conversation_scenarios(
         self,
         mock_get_checkpointer,
-        mock_get_access_control,
+        mock_get_checkpoints,
         mock_get_user_context,
         conversation_id,
         agent_behavior,

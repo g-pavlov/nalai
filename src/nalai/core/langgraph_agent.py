@@ -14,8 +14,6 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from ..server.streaming import serialize_event
-from ..services.checkpointing_service import get_checkpointer
-from ..services.thread_access_control import get_thread_access_control
 from .agent import (
     # Exceptions
     AccessDeniedError,
@@ -27,6 +25,7 @@ from .agent import (
     ResumeDecision,
     ValidationError,
 )
+from .checkpoints import get_checkpoints
 
 logger = logging.getLogger("nalai")
 
@@ -45,6 +44,7 @@ class LangGraphAgent(Agent):
     ):
         """Initialize the agent API."""
         self.agent = workflow_graph
+        self.checkpoints = get_checkpoints()
 
     def _extract_user_id_from_config(self, config: dict) -> str:
         """Extract user_id from LangGraph config."""
@@ -62,6 +62,13 @@ class LangGraphAgent(Agent):
                 return parts[2]
         return thread_id
 
+    def _create_conversation_config(self, user_id: str, conversation_id: str) -> dict:
+        """Create a standardized config for a conversation."""
+        user_scoped_conversation_id = create_user_scoped_conversation_id(
+            user_id, conversation_id
+        )
+        return {"configurable": {"thread_id": user_scoped_conversation_id}}
+
     def _update_config_with_conversation_id(
         self, config: dict, conversation_id: str
     ) -> dict:
@@ -77,87 +84,169 @@ class LangGraphAgent(Agent):
         updated_config["configurable"]["thread_id"] = user_scoped_conversation_id
         return updated_config
 
-    def _create_config_for_conversation(
-        self, user_id: str, conversation_id: str
-    ) -> dict:
-        """Create a new config for a specific conversation."""
-        user_scoped_conversation_id = create_user_scoped_conversation_id(
-            user_id, conversation_id
-        )
-        return {"configurable": {"thread_id": user_scoped_conversation_id}}
+    def _ensure_config_structure(self, config: dict, conversation_id: str) -> dict:
+        """Ensure config has proper structure for LangGraph operations."""
+        if "configurable" not in config:
+            config["configurable"] = {}
 
-    async def _validate_conversation_access(
-        self, conversation_id: str, config: dict
-    ) -> None:
-        """Validate conversation access for a user."""
-        user_id = self._extract_user_id_from_config(config)
+        # Ensure thread_id is set
+        if "thread_id" not in config["configurable"]:
+            user_id = self._extract_user_id_from_config(config)
+            user_scoped_conversation_id = create_user_scoped_conversation_id(
+                user_id, conversation_id
+            )
+            config["configurable"]["thread_id"] = user_scoped_conversation_id
 
-        # Validate that conversation_id is a UUID
+        return config
+
+    def _validate_conversation_id_format(self, conversation_id: str) -> None:
+        """Validate conversation_id is a valid UUID."""
         try:
             uuid.UUID(conversation_id)
         except ValueError as e:
             raise ValidationError(f"Invalid conversation ID format: {e}") from e
 
+    def _extract_audit_context(self, config: dict) -> dict:
+        """Extract audit context from config."""
+        configurable = config.get("configurable", {})
+        return {
+            "ip_address": configurable.get("ip_address"),
+            "user_agent": configurable.get("user_agent"),
+            "session_id": configurable.get("session_id"),
+            "request_id": configurable.get("request_id"),
+        }
+
+    async def _audit_event(
+        self,
+        user_id: str,
+        conversation_id: str,
+        action: str,
+        success: bool,
+        config: dict,
+        metadata: dict | None = None,
+        checkpoint_id: str | None = None,
+    ):
+        """Lean audit event logging with configurable failure handling."""
+        try:
+            audit_context = self._extract_audit_context(config)
+
+            # Use generic audit utility for easy future refactoring
+            from ..services.audit_utils import log_conversation_access_event
+
+            await log_conversation_access_event(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                action=action,
+                success=success,
+                metadata=metadata,
+                ip_address=audit_context.get("ip_address"),
+                user_agent=audit_context.get("user_agent"),
+                session_id=audit_context.get("session_id"),
+                request_id=audit_context.get("request_id"),
+            )
+        except Exception as e:
+            # Configurable behavior: log failure and continue operation
+            logger.warning(f"Audit logging failed for {action}: {e}")
+            # TODO: Make this configurable via settings
+
+    async def _validate_and_audit_access(
+        self, user_id: str, conversation_id: str, action: str, config: dict
+    ) -> None:
+        """Validate user access and audit the attempt."""
+        # Validate conversation_id format if provided
+        if conversation_id:
+            self._validate_conversation_id_format(conversation_id)
+
         # Validate access
-        has_access = await get_thread_access_control().validate_thread_access(
+        has_access = await self.checkpoints.validate_user_access(
             user_id, conversation_id
         )
+
+        # Audit access attempt
+        await self._audit_event(user_id, conversation_id, action, has_access, config)
+
         if not has_access:
             raise AccessDeniedError()
 
-    def _create_conversation_info_from_thread_ownership(
+    async def _create_new_conversation(
+        self, user_id: str, config: dict
+    ) -> tuple[str, dict]:
+        """Create a new conversation and return conversation_id and updated config."""
+        conversation_id = str(uuid.uuid4())
+        await self.checkpoints.create_conversation(user_id, conversation_id)
+
+        # Audit conversation creation
+        await self._audit_event(user_id, conversation_id, "created", True, config)
+
+        # Update config with new conversation_id
+        updated_config = self._update_config_with_conversation_id(
+            config, conversation_id
+        )
+        return conversation_id, updated_config
+
+    def _create_conversation_info_from_metadata(
         self,
         conversation_id: str,
-        thread_ownership,
+        metadata: dict,
         status: str = "active",
         preview: str | None = None,
     ) -> ConversationInfo:
-        """Create ConversationInfo from thread ownership data."""
-        created_at = None
-        last_accessed = None
-
-        if thread_ownership:
-            created_at = (
-                thread_ownership.created_at.isoformat()
-                if thread_ownership.created_at
-                else None
-            )
-            last_accessed = (
-                thread_ownership.last_accessed.isoformat()
-                if thread_ownership.last_accessed
-                else None
-            )
-
+        """Create ConversationInfo from metadata."""
         return ConversationInfo(
             conversation_id=conversation_id,
-            created_at=created_at,
-            last_accessed=last_accessed,
+            created_at=metadata.get("created_at"),
+            last_accessed=metadata.get("last_accessed"),
             status=status,
             preview=preview,
         )
 
-    async def _get_conversation_status(self, config: dict) -> str:
-        """Get conversation status from checkpoint state."""
+    def _extract_preview_from_messages(self, messages: list[BaseMessage]) -> str | None:
+        """Extract preview text from messages."""
+        if not messages:
+            return None
+
+        # Get the first message with content
+        for msg in messages:
+            if hasattr(msg, "content") and msg.content:
+                content = str(msg.content)
+                return content[:256] + "..." if len(content) > 256 else content
+
+        return None
+
+    async def _get_conversation_info(
+        self, conversation_id: str, config: dict
+    ) -> ConversationInfo:
+        """Get conversation info for a conversation."""
         try:
-            # Ensure config has proper structure for checkpointer
-            checkpointer_config = config.copy()
-            if "configurable" not in checkpointer_config:
-                checkpointer_config["configurable"] = {}
-            if "user_id" not in checkpointer_config["configurable"]:
-                checkpointer_config["configurable"]["user_id"] = (
-                    self._extract_user_id_from_config(config)
-                )
+            user_id = self._extract_user_id_from_config(config)
 
-            checkpoint_state = await get_checkpointer().aget(checkpointer_config)
-            if checkpoint_state:
-                if "interrupts" in checkpoint_state and checkpoint_state["interrupts"]:
-                    return "interrupted"
-                elif checkpoint_state.get("completed", False):
-                    return "completed"
+            # Get conversation metadata using checkpoint operations
+            metadata = await self.checkpoints.get_conversation_metadata(
+                user_id, conversation_id
+            )
+
+            # Get conversation preview and status
+            user_scoped_id = create_user_scoped_conversation_id(
+                user_id, conversation_id
+            )
+            checkpoint_config = {"configurable": {"thread_id": user_scoped_id}}
+            preview, status, _ = await self.checkpoints.get_metadata(checkpoint_config)
+
+            # Create conversation info using shared method
+            return self._create_conversation_info_from_metadata(
+                conversation_id, metadata, status=status, preview=preview
+            )
+
         except Exception as e:
-            logger.warning(f"Failed to get conversation status: {e}")
-
-        return "active"
+            logger.error(f"Failed to get conversation info {conversation_id}: {e}")
+            # Return basic info even if metadata retrieval fails
+            return ConversationInfo(
+                conversation_id=conversation_id,
+                created_at=None,
+                last_accessed=None,
+                status="active",
+                preview=None,
+            )
 
     async def chat(
         self,
@@ -166,20 +255,18 @@ class LangGraphAgent(Agent):
         config: dict,
     ) -> tuple[list[BaseMessage], ConversationInfo]:
         """Start a new conversation or continue an existing one based on conversation_id."""
+        user_id = self._extract_user_id_from_config(config)
+
         if conversation_id:
             # For existing conversations: validate access
-            await self._validate_conversation_access(conversation_id, config)
+            await self._validate_and_audit_access(
+                user_id, conversation_id, "access_validation", config
+            )
             updated_config = config
         else:
-            # For new conversations: create new UUID and thread ownership record
-            conversation_id = str(uuid.uuid4())
-            user_id = self._extract_user_id_from_config(config)
-
-            await get_thread_access_control().create_thread(user_id, conversation_id)
-
-            # Update config with new conversation_id
-            updated_config = self._update_config_with_conversation_id(
-                config, conversation_id
+            # For new conversations: create new UUID and conversation
+            conversation_id, updated_config = await self._create_new_conversation(
+                user_id, config
             )
 
         # Invoke agent
@@ -209,30 +296,21 @@ class LangGraphAgent(Agent):
         config: dict,
     ) -> tuple[AsyncGenerator[str, None], ConversationInfo]:
         """Stream conversation events."""
+        user_id = self._extract_user_id_from_config(config)
+
         if conversation_id:
             # For existing conversations: validate access
-            await self._validate_conversation_access(conversation_id, config)
+            await self._validate_and_audit_access(
+                user_id, conversation_id, "access_validation", config
+            )
         else:
-            # For new conversations: create new UUID and thread ownership record
-            conversation_id = str(uuid.uuid4())
-            user_id = self._extract_user_id_from_config(config)
-
-            await get_thread_access_control().create_thread(user_id, conversation_id)
-
-            # Update config with new conversation_id
-            config = self._update_config_with_conversation_id(config, conversation_id)
+            # For new conversations: create new UUID and conversation
+            conversation_id, config = await self._create_new_conversation(
+                user_id, config
+            )
 
         # Ensure config has proper structure for LangGraph
-        if "configurable" not in config:
-            config["configurable"] = {}
-
-        # Ensure thread_id is set
-        if "thread_id" not in config["configurable"]:
-            user_id = self._extract_user_id_from_config(config)
-            user_scoped_conversation_id = create_user_scoped_conversation_id(
-                user_id, conversation_id
-            )
-            config["configurable"]["thread_id"] = user_scoped_conversation_id
+        config = self._ensure_config_structure(config, conversation_id)
 
         # Get conversation info
         conversation_info = await self._get_conversation_info(conversation_id, config)
@@ -249,32 +327,100 @@ class LangGraphAgent(Agent):
 
         return stream_generator(), conversation_info
 
+    async def list_conversations(
+        self,
+        config: dict,
+    ) -> list[ConversationInfo]:
+        """List user's conversations using checkpoint operations."""
+        user_id = self._extract_user_id_from_config(config)
+
+        # Audit conversation list access
+        await self._audit_event(
+            user_id, "conversation_list", "list_conversations", True, config
+        )
+
+        try:
+            # Get all conversations for the user
+            conversation_ids = await self.checkpoints.list_user_conversations(user_id)
+            conversations = []
+
+            for conversation_id in conversation_ids:
+                # Get conversation metadata
+                metadata = await self.checkpoints.get_conversation_metadata(
+                    user_id, conversation_id
+                )
+
+                # Extract preview from messages if available
+                preview = None
+                if metadata.get("message_count", 0) > 0:
+                    # Get conversation state to extract preview
+                    user_scoped_id = create_user_scoped_conversation_id(
+                        user_id, conversation_id
+                    )
+                    checkpoint_config = {"configurable": {"thread_id": user_scoped_id}}
+                    checkpoint_state = await self.checkpoints.get(checkpoint_config)
+                    if checkpoint_state:
+                        messages = self.checkpoints.extract_messages(checkpoint_state)
+                        preview = self._extract_preview_from_messages(messages)
+
+                # Create conversation info
+                conversation_info = self._create_conversation_info_from_metadata(
+                    conversation_id,
+                    metadata,
+                    status="active",
+                    preview=preview,
+                )
+
+                conversations.append(conversation_info)
+
+            # Audit successful conversation list retrieval
+            await self._audit_event(
+                user_id, "conversation_list", "list_conversations_success", True, config
+            )
+
+            return conversations
+
+        except Exception as e:
+            # Audit failed conversation list retrieval
+            await self._audit_event(
+                user_id, "conversation_list", "list_conversations_failed", False, config
+            )
+            logger.error(f"Failed to list conversations: {e}")
+            raise InvocationError("Failed to list conversations") from e
+
     async def load_conversation(
         self,
         conversation_id: str,
         config: dict,
     ) -> tuple[list[BaseMessage], ConversationInfo]:
-        """Load conversation state."""
+        """Load conversation state using checkpoint operations."""
+        user_id = self._extract_user_id_from_config(config)
+
         # Validate access
-        await self._validate_conversation_access(conversation_id, config)
+        await self._validate_and_audit_access(
+            user_id, conversation_id, "access_validation", config
+        )
 
         try:
-            # Get the checkpoint state
-            # Ensure config has proper structure for checkpointer
-            checkpointer_config = config.copy()
-            if "configurable" not in checkpointer_config:
-                checkpointer_config["configurable"] = {}
-            if "user_id" not in checkpointer_config["configurable"]:
-                checkpointer_config["configurable"]["user_id"] = (
-                    self._extract_user_id_from_config(config)
-                )
-            checkpoint_state = await get_checkpointer().aget(checkpointer_config)
+            # Get conversation state using checkpoint operations
+            user_scoped_id = create_user_scoped_conversation_id(
+                user_id, conversation_id
+            )
+            checkpoint_config = {"configurable": {"thread_id": user_scoped_id}}
+            checkpoint_state = await self.checkpoints.get(checkpoint_config)
 
             if not checkpoint_state:
+                await self._audit_event(
+                    user_id,
+                    conversation_id,
+                    "access_denied",
+                    False,
+                    config,
+                )
                 raise ConversationNotFoundError()
 
-            # Extract messages (simplified - would need the full implementation)
-            messages = self._extract_messages_from_checkpoint(checkpoint_state)
+            # Extract messages using checkpoint operations
+            messages = self.checkpoints.extract_messages(checkpoint_state)
 
             # Get conversation info
             conversation_info = await self._get_conversation_info(
@@ -283,7 +429,7 @@ class LangGraphAgent(Agent):
 
             return messages, conversation_info
 
-        except (AccessDeniedError, ConversationNotFoundError):
+        except (AccessDeniedError, ConversationNotFoundError, ValidationError):
             raise
         except Exception as e:
             logger.error(f"Failed to load conversation {conversation_id}: {e}")
@@ -292,128 +438,43 @@ class LangGraphAgent(Agent):
                 context={"conversation_id": conversation_id},
             ) from e
 
-    def _extract_messages_from_checkpoint(
-        self, checkpoint_state: dict
-    ) -> list[BaseMessage]:
-        """Extract messages from checkpoint state."""
-        messages = []
-
-        if checkpoint_state and "channel_values" in checkpoint_state:
-            channel_values = checkpoint_state["channel_values"]
-            if "messages" in channel_values:
-                messages = channel_values["messages"]
-
-        return messages
-
-    async def list_conversations(
-        self,
-        config: dict,
-    ) -> list[ConversationInfo]:
-        """List user's conversations."""
-        user_id = self._extract_user_id_from_config(config)
-
-        try:
-            # Get all threads owned by the user
-            user_threads = await get_thread_access_control().list_user_threads(user_id)
-
-            conversations = []
-
-            for thread_ownership in user_threads:
-                # The thread_id in ThreadOwnership is actually the conversation_id
-                conversation_id = thread_ownership.thread_id
-
-                # Create config for this conversation using the same structure as runtime config
-                conversation_config = {
-                    "configurable": {
-                        "user_id": user_id,
-                        "thread_id": create_user_scoped_conversation_id(
-                            user_id, conversation_id
-                        ),
-                        "auth_token": "dev-token",  # Add auth token to match runtime config
-                        "cache_disabled": False,  # Add cache setting to match runtime config
-                    }
-                }
-
-                # Get the checkpoint state to extract preview
-                checkpoint_state = await get_checkpointer().aget(conversation_config)
-
-                if checkpoint_state is None:
-                    # Still include the conversation even if no checkpoint state
-                    # This allows conversations to be listed even if they don't have messages yet
-                    pass
-
-                # Extract preview from messages (simplified)
-                preview = None
-                if checkpoint_state and "channel_values" in checkpoint_state:
-                    channel_values = checkpoint_state["channel_values"]
-                    if "messages" in channel_values:
-                        messages = channel_values["messages"]
-                        if messages:
-                            # Get the first message with content
-                            for msg in messages:
-                                if hasattr(msg, "content") and msg.content:
-                                    preview = msg.content[:256]
-                                    break
-
-                # Create conversation summary using shared method
-                conversation_info = (
-                    self._create_conversation_info_from_thread_ownership(
-                        conversation_id,
-                        thread_ownership,
-                        status="active",
-                        preview=preview,
-                    )
-                )
-
-                conversations.append(conversation_info)
-
-            return conversations
-
-        except Exception as e:
-            logger.error(f"Failed to list conversations: {e}")
-            raise InvocationError("Failed to list conversations") from e
-
     async def delete_conversation(
         self,
         conversation_id: str,
         config: dict,
     ) -> bool:
-        """Delete a conversation."""
-        # Validate access
-        await self._validate_conversation_access(conversation_id, config)
+        """Delete a conversation using checkpoint operations."""
         user_id = self._extract_user_id_from_config(config)
 
-        try:
-            # Delete the checkpoint state from LangGraph
-            try:
-                # Ensure config has proper structure for checkpointer
-                checkpointer_config = config.copy()
-                if "configurable" not in checkpointer_config:
-                    checkpointer_config["configurable"] = {}
-                if "user_id" not in checkpointer_config["configurable"]:
-                    checkpointer_config["configurable"]["user_id"] = (
-                        self._extract_user_id_from_config(config)
-                    )
-                await get_checkpointer().aput(checkpointer_config, None)
-                logger.debug(
-                    f"Cleared checkpoint state for conversation {conversation_id}"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to clear checkpoint state: {e}")
+        # Validate access
+        await self._validate_and_audit_access(
+            user_id, conversation_id, "access_validation", config
+        )
 
-            # Delete the thread ownership record
-            deleted = await get_thread_access_control().delete_thread(
+        try:
+            # Delete conversation using checkpoint operations
+            deleted = await self.checkpoints.delete_conversation(
                 user_id, conversation_id
             )
-            if not deleted:
+
+            if deleted:
+                # Audit successful deletion
+                await self._audit_event(
+                    user_id, conversation_id, "deleted", True, config
+                )
+                logger.info(
+                    f"Successfully deleted conversation {conversation_id} for user {user_id}"
+                )
+            else:
+                # Audit failed deletion
+                await self._audit_event(
+                    user_id, conversation_id, "deletion_failed", False, config
+                )
                 raise ConversationNotFoundError()
 
-            logger.info(
-                f"Successfully deleted conversation {conversation_id} for user {user_id}"
-            )
             return True
 
-        except (AccessDeniedError, ConversationNotFoundError):
+        except (AccessDeniedError, ConversationNotFoundError, ValidationError):
             raise
         except Exception as e:
             logger.error(f"Failed to delete conversation {conversation_id}: {e}")
@@ -429,8 +490,12 @@ class LangGraphAgent(Agent):
         config: dict,
     ) -> tuple[list[BaseMessage], ConversationInfo]:
         """Resume an interrupted conversation."""
+        user_id = self._extract_user_id_from_config(config)
+
         # Validate access
-        await self._validate_conversation_access(conversation_id, config)
+        await self._validate_and_audit_access(
+            user_id, conversation_id, "access_validation", config
+        )
 
         # Invoke agent with resume command using ResumeDecision directly
         try:
@@ -459,8 +524,12 @@ class LangGraphAgent(Agent):
         config: dict,
     ) -> tuple[AsyncGenerator[str, None], ConversationInfo]:
         """Stream resume conversation events."""
+        user_id = self._extract_user_id_from_config(config)
+
         # Validate access
-        await self._validate_conversation_access(conversation_id, config)
+        await self._validate_and_audit_access(
+            user_id, conversation_id, "access_validation", config
+        )
 
         # Get conversation info
         conversation_info = await self._get_conversation_info(conversation_id, config)
@@ -479,55 +548,169 @@ class LangGraphAgent(Agent):
 
         return stream_generator(), conversation_info
 
-    async def _get_conversation_info(
-        self, conversation_id: str, config: dict
-    ) -> ConversationInfo:
-        """Get conversation info for a conversation."""
+    async def resume_from_checkpoint(
+        self,
+        conversation_id: str,
+        checkpoint_id: str,
+        config: dict,
+    ) -> tuple[list[BaseMessage], ConversationInfo]:
+        """
+        Resume conversation from a specific checkpoint.
+
+        This allows restarting from any point in the conversation history,
+        potentially after editing messages.
+        """
+        user_id = self._extract_user_id_from_config(config)
+
+        # Validate access
+        await self._validate_and_audit_access(
+            user_id, conversation_id, "access_validation", config
+        )
+
         try:
-            # Get thread ownership information
-            thread_ownership = await get_thread_access_control().get_thread_ownership(
-                conversation_id
+            # Get checkpoint state using checkpoint operations
+            user_scoped_id = create_user_scoped_conversation_id(
+                user_id, conversation_id
+            )
+            checkpoint_config = {"configurable": {"thread_id": user_scoped_id}}
+            checkpoint_state = await self.checkpoints.get_by_id(
+                checkpoint_config, checkpoint_id
             )
 
-            # Get conversation status
-            status = await self._get_conversation_status(config)
-
-            # Get the checkpoint state to extract preview
-            # Ensure config has proper structure for checkpointer
-            checkpointer_config = config.copy()
-            if "configurable" not in checkpointer_config:
-                checkpointer_config["configurable"] = {}
-            if "user_id" not in checkpointer_config["configurable"]:
-                checkpointer_config["configurable"]["user_id"] = (
-                    self._extract_user_id_from_config(config)
+            if not checkpoint_state:
+                await self._audit_event(
+                    user_id,
+                    conversation_id,
+                    "access_denied",
+                    False,
+                    config,
                 )
-            checkpoint_state = await get_checkpointer().aget(checkpointer_config)
+                raise ConversationNotFoundError(f"Checkpoint {checkpoint_id} not found")
 
-            # Extract preview from messages (same logic as list_conversations)
-            preview = None
-            if checkpoint_state and "channel_values" in checkpoint_state:
-                channel_values = checkpoint_state["channel_values"]
-                if "messages" in channel_values:
-                    messages = channel_values["messages"]
-                    if messages:
-                        # Get the first message with content
-                        for msg in messages:
-                            if hasattr(msg, "content") and msg.content:
-                                preview = msg.content[:256]
-                                break
+            # Extract messages using checkpoint operations
+            messages = self.checkpoints.extract_messages(checkpoint_state)
 
-            # Create conversation info using shared method
-            return self._create_conversation_info_from_thread_ownership(
-                conversation_id, thread_ownership, status=status, preview=preview
+            # Get conversation info
+            conversation_info = await self._get_conversation_info(
+                conversation_id, config
             )
+
+            return messages, conversation_info
+
+        except (AccessDeniedError, ConversationNotFoundError):
+            raise
+        except Exception as e:
+            logger.error(f"Failed to resume from checkpoint {checkpoint_id}: {e}")
+            raise InvocationError(
+                "Failed to resume from checkpoint",
+                context={
+                    "conversation_id": conversation_id,
+                    "checkpoint_id": checkpoint_id,
+                },
+            ) from e
+
+    async def list_conversation_checkpoints(
+        self,
+        conversation_id: str,
+        config: dict,
+    ) -> list[dict]:
+        """
+        List all checkpoints for a conversation.
+
+        This enables users to see the conversation history and choose
+        which checkpoint to resume from.
+        """
+        user_id = self._extract_user_id_from_config(config)
+
+        # Validate access
+        await self._validate_and_audit_access(
+            user_id, conversation_id, "access_validation", config
+        )
+
+        try:
+            # List checkpoints using checkpoint operations
+            user_scoped_id = create_user_scoped_conversation_id(
+                user_id, conversation_id
+            )
+            checkpoint_config = {"configurable": {"thread_id": user_scoped_id}}
+            checkpoints = await self.checkpoints.list(checkpoint_config)
+
+            # Convert to list and add conversation context
+            checkpoint_list = []
+            for checkpoint in checkpoints:
+                checkpoint_info = {
+                    "checkpoint_id": checkpoint["id"],
+                    "timestamp": checkpoint.get("ts"),
+                    "version": checkpoint.get("v"),
+                    "conversation_id": conversation_id,
+                }
+                checkpoint_list.append(checkpoint_info)
+
+            return checkpoint_list
 
         except Exception as e:
-            logger.error(f"Failed to get conversation info {conversation_id}: {e}")
-            # Return basic info even if metadata retrieval fails
-            return ConversationInfo(
-                conversation_id=conversation_id,
-                created_at=None,
-                last_accessed=None,
-                status="active",
-                preview=None,
+            logger.error(
+                f"Failed to list checkpoints for conversation {conversation_id}: {e}"
             )
+            raise InvocationError(
+                "Failed to list checkpoints",
+                context={"conversation_id": conversation_id},
+            ) from e
+
+    async def edit_conversation_checkpoint(
+        self,
+        conversation_id: str,
+        checkpoint_id: str,
+        edited_messages: list[BaseMessage],
+        config: dict,
+    ) -> bool:
+        """
+        Edit a specific checkpoint with new messages.
+
+        This allows users to modify conversation history and resume
+        from the edited state.
+        """
+        user_id = self._extract_user_id_from_config(config)
+
+        # Validate access
+        await self._validate_and_audit_access(
+            user_id, conversation_id, "access_validation", config
+        )
+
+        try:
+            # Edit checkpoint using checkpoint operations
+            user_scoped_id = create_user_scoped_conversation_id(
+                user_id, conversation_id
+            )
+            checkpoint_config = {"configurable": {"thread_id": user_scoped_id}}
+            success = await self.checkpoints.edit_messages(
+                checkpoint_config, checkpoint_id, edited_messages
+            )
+
+            if success:
+                # Audit successful edit
+                await self._audit_event(
+                    user_id,
+                    conversation_id,
+                    "checkpoint_edited",
+                    True,
+                    config,
+                    metadata={"checkpoint_id": checkpoint_id},
+                )
+                logger.info(
+                    f"Successfully edited checkpoint {checkpoint_id} for conversation {conversation_id}"
+                )
+
+            return success
+
+        except (AccessDeniedError, ConversationNotFoundError):
+            raise
+        except Exception as e:
+            logger.error(f"Failed to edit checkpoint {checkpoint_id}: {e}")
+            raise InvocationError(
+                "Failed to edit checkpoint",
+                context={
+                    "conversation_id": conversation_id,
+                    "checkpoint_id": checkpoint_id,
+                },
+            ) from e

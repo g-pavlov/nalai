@@ -11,9 +11,9 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-async def log_thread_access_event(
+async def log_conversation_access_event(
     user_id: str,
-    thread_id: str,
+    conversation_id: str,
     action: str,
     success: bool = True,
     metadata: dict[str, Any] | None = None,
@@ -22,11 +22,12 @@ async def log_thread_access_event(
     session_id: str | None = None,
     request_id: str | None = None,
 ) -> None:
-    """Log a thread access event using the global audit service."""
+    """Log a conversation access event using the global audit service."""
     logger.debug(
-        f"log_thread_access_event called with: user_id={user_id}, thread_id={thread_id}, action={action}, success={success}, metadata={metadata}, ip_address={ip_address}, user_agent={user_agent}, session_id={session_id}, request_id={request_id}"
+        f"log_conversation_access_event called with: user_id={user_id}, conversation_id={conversation_id}, action={action}, success={success}"
     )
-    logger.debug(f"Metadata type: {type(metadata)}, value: {metadata}")
+
+    # Validate metadata
     if metadata is not None and not isinstance(metadata, dict):
         logger.error(
             f"Metadata is not a dict! Type: {type(metadata)}, Value: {metadata}"
@@ -37,9 +38,11 @@ async def log_thread_access_event(
     from .audit_service import get_audit_service
 
     audit_service = get_audit_service()
+
+    # Use thread access as the underlying mechanism (conversations are threads)
     await audit_service.log_thread_access(
         user_id=user_id,
-        thread_id=thread_id,
+        thread_id=conversation_id,
         action=action,
         success=success,
         metadata=metadata,

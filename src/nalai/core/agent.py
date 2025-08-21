@@ -259,16 +259,16 @@ class Agent(Protocol):
         config: dict,
     ) -> tuple[AsyncGenerator[str, None], ConversationInfo]:
         """
-        Stream resume interrupted conversation events.
+        Stream resume conversation events.
 
         Args:
-            resume_decision: Resume decision dict with "action" and optional "args"
+            resume_decision: Resume decision with action and optional args
             conversation_id: The conversation ID to resume
             config: Agent configuration
 
         Returns:
             tuple: (stream_generator, conversation_info)
-                - stream_generator: AsyncGenerator yielding serialized SSE event strings
+                - stream_generator: Async generator yielding serialized events
                 - conversation_info: Conversation metadata
 
         Raises:
@@ -276,5 +276,91 @@ class Agent(Protocol):
             AccessDeniedError: If access to conversation is denied
             ConversationNotFoundError: If conversation is not found
             InvocationError: If resume fails
+        """
+        ...
+
+    async def resume_from_checkpoint(
+        self,
+        conversation_id: str,
+        checkpoint_id: str,
+        config: dict,
+    ) -> tuple[list[BaseMessage], ConversationInfo]:
+        """
+        Resume conversation from a specific checkpoint.
+
+        This allows restarting from any point in the conversation history,
+        potentially after editing messages.
+
+        Args:
+            conversation_id: The conversation ID to resume
+            checkpoint_id: The specific checkpoint ID to resume from
+            config: Agent configuration
+
+        Returns:
+            tuple: (messages, conversation_info)
+                - messages: List of conversation messages from the checkpoint
+                - conversation_info: Conversation metadata
+
+        Raises:
+            ValidationError: If input validation fails
+            AccessDeniedError: If access to conversation is denied
+            ConversationNotFoundError: If conversation or checkpoint is not found
+            InvocationError: If resume fails
+        """
+        ...
+
+    async def list_conversation_checkpoints(
+        self,
+        conversation_id: str,
+        config: dict,
+    ) -> list[dict]:
+        """
+        List all checkpoints for a conversation.
+
+        This enables users to see the conversation history and choose
+        which checkpoint to resume from.
+
+        Args:
+            conversation_id: The conversation ID to list checkpoints for
+            config: Agent configuration
+
+        Returns:
+            list[dict]: List of checkpoint information with IDs, timestamps, and versions
+
+        Raises:
+            ValidationError: If input validation fails
+            AccessDeniedError: If access to conversation is denied
+            ConversationNotFoundError: If conversation is not found
+            InvocationError: If listing fails
+        """
+        ...
+
+    async def edit_conversation_checkpoint(
+        self,
+        conversation_id: str,
+        checkpoint_id: str,
+        edited_messages: list[BaseMessage],
+        config: dict,
+    ) -> bool:
+        """
+        Edit a specific checkpoint with new messages.
+
+        This allows users to modify conversation history and resume
+        from the edited state.
+
+        Args:
+            conversation_id: The conversation ID containing the checkpoint
+            checkpoint_id: The specific checkpoint ID to edit
+            edited_messages: New list of messages to replace the checkpoint content
+            config: Agent configuration
+
+        Returns:
+            bool: True if edited successfully
+
+        Raises:
+            ValidationError: If input validation fails
+            AccessDeniedError: If access to conversation is denied
+            ConversationNotFoundError: If conversation or checkpoint is not found
+            InvocationError: If editing fails
         """
         ...

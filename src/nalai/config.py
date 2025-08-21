@@ -255,11 +255,41 @@ class Settings(BaseSettings):
         description="Context window saturation percentage that triggers conversation history compression",
     )
 
-    # ===== THREAD ACCESS CONTROL CONFIGURATION =====
-    chat_thread_access_control_backend: str = Field(
-        alias="CHAT_THREAD_ACCESS_CONTROL_BACKEND",
-        default="memory",
-        description="Thread access control backend (memory, redis)",
+    # ===== CONVERSATION MANAGEMENT CONFIGURATION =====
+    conversation_cleanup_interval_hours: int = Field(
+        alias="CONVERSATION_CLEANUP_INTERVAL_HOURS",
+        default=24,
+        description="Interval in hours for automatic conversation cleanup",
+    )
+    max_conversation_age_hours: int = Field(
+        alias="MAX_CONVERSATION_AGE_HOURS",
+        default=168,  # 7 days
+        description="Maximum age in hours before conversations are automatically cleaned up",
+    )
+    max_conversations_per_user: int = Field(
+        alias="MAX_CONVERSATIONS_PER_USER",
+        default=100,
+        description="Maximum number of conversations per user",
+    )
+    enable_auto_cleanup: bool = Field(
+        alias="ENABLE_AUTO_CLEANUP",
+        default=True,
+        description="Enable automatic conversation cleanup",
+    )
+    enable_monitoring: bool = Field(
+        alias="ENABLE_MONITORING",
+        default=True,
+        description="Enable conversation monitoring and metrics",
+    )
+    checkpointing_retry_attempts: int = Field(
+        alias="CHECKPOINTING_RETRY_ATTEMPTS",
+        default=3,
+        description="Number of retry attempts for checkpointing operations",
+    )
+    checkpointing_retry_delay: float = Field(
+        alias="CHECKPOINTING_RETRY_DELAY",
+        default=1.0,
+        description="Base delay in seconds for checkpointing retry backoff",
     )
 
     # ===== API DOCS CONFIGURATION =====

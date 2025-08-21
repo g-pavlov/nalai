@@ -7,7 +7,7 @@ access control integration, and validation functions.
 
 import os
 import sys
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException, Request
@@ -25,9 +25,6 @@ from nalai.server.runtime_config import (
     create_runtime_config,
 )
 from nalai.services.auth_service import IdentityContext, UserContext
-from nalai.services.thread_access_control import (
-    validate_conversation_access_and_scope,
-)
 from nalai.utils.validation import validate_thread_id_format
 
 
@@ -182,131 +179,6 @@ class TestAddUserContextToConfig:
 
         for key, expected_value in expected_values.items():
             assert result["configurable"][key] == expected_value
-
-
-class TestValidateThreadAccessAndScope:
-    """Test thread access validation and scoping."""
-
-    @pytest.fixture
-    def mock_request(self):
-        """Create a mock request object."""
-        request = MagicMock(spec=Request)
-        return request
-
-    @pytest.fixture
-    def mock_user_context(self):
-        """Create a mock user context."""
-        mock_identity = IdentityContext(
-            user_id="test-user-123",
-            email="test@example.com",
-            org_unit_id="test-org",
-            roles=["user"],
-            permissions=["read"],
-            token_type="access_token",
-        )
-        return UserContext(
-            identity=mock_identity,
-            session_id="session-123",
-            request_id="request-456",
-            ip_address="127.0.0.1",
-            user_agent="test-agent",
-        )
-
-    @pytest.mark.parametrize(
-        "has_thread_id,access_granted,expected_scoped_id,should_raise",
-        [
-            (
-                True,
-                True,
-                "user:test-user-123:550e8400-e29b-41d4-a716-446655440000",
-                False,
-            ),
-            (True, False, None, True),
-            (
-                False,
-                True,
-                None,  # Will be generated dynamically
-                False,
-            ),
-        ],
-    )
-    @patch("nalai.services.thread_access_control.get_user_context")
-    @patch("nalai.services.thread_access_control.get_thread_access_control")
-    @patch("nalai.services.audit_utils.log_thread_access_event")
-    @pytest.mark.asyncio
-    async def test_validate_thread_access_and_scope(
-        self,
-        mock_log_event,
-        mock_get_access_control,
-        mock_get_user_context,
-        mock_request,
-        mock_user_context,
-        has_thread_id,
-        access_granted,
-        expected_scoped_id,
-        should_raise,
-    ):
-        """Test thread access validation with various scenarios."""
-        mock_get_user_context.return_value = mock_user_context
-        mock_access_control = AsyncMock()
-        mock_access_control.validate_thread_access.return_value = access_granted
-
-        # Mock create_thread to raise ValueError when access is denied
-        if has_thread_id and not access_granted:
-            mock_access_control.create_thread.side_effect = ValueError(
-                "Thread belongs to different user"
-            )
-        else:
-            mock_access_control.create_thread.return_value = None
-
-        mock_get_access_control.return_value = mock_access_control
-
-        config = (
-            {"configurable": {"thread_id": "550e8400-e29b-41d4-a716-446655440000"}}
-            if has_thread_id
-            else {}
-        )
-
-        if should_raise:
-            with pytest.raises(HTTPException) as exc_info:
-                await validate_conversation_access_and_scope(config, mock_request)
-            assert exc_info.value.status_code == 403
-            assert "Access denied to conversation" in str(exc_info.value.detail)
-        else:
-            (
-                result_config,
-                user_scoped_thread_id,
-            ) = await validate_conversation_access_and_scope(config, mock_request)
-
-            if expected_scoped_id is not None:
-                # For cases with specific expected UUID
-                assert user_scoped_thread_id == expected_scoped_id
-                assert result_config["configurable"]["thread_id"] == expected_scoped_id
-            else:
-                # For cases where UUID is generated dynamically
-                assert user_scoped_thread_id.startswith("user:test-user-123:")
-                assert (
-                    result_config["configurable"]["thread_id"] == user_scoped_thread_id
-                )
-                # Verify it's a valid UUID format
-                import uuid
-
-                uuid_part = user_scoped_thread_id.split(":", 2)[2]
-                uuid.UUID(uuid_part, version=4)  # Should not raise
-
-    @patch("nalai.services.thread_access_control.get_user_context")
-    @pytest.mark.asyncio
-    async def test_validate_thread_access_no_user_context(
-        self, mock_get_user_context, mock_request
-    ):
-        """Test validation without user context."""
-        mock_get_user_context.side_effect = Exception("User context not found")
-
-        with pytest.raises(HTTPException) as exc_info:
-            await validate_conversation_access_and_scope({}, mock_request)
-
-        assert exc_info.value.status_code == 401
-        assert "Authentication required" in str(exc_info.value.detail)
 
 
 class TestDefaultFunctions:

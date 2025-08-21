@@ -20,6 +20,7 @@ from .agent import (
     ResumeDecision,
     ValidationError,
 )
+from .checkpoints import get_checkpoints
 from .langgraph_agent import LangGraphAgent
 from .schemas import (
     AgentState,
@@ -69,6 +70,8 @@ __all__ = [
     # Agent interface
     "Agent",
     "LangGraphAgent",
+    # Checkpoints interface
+    "get_checkpoints",
     # LangChain message types
     "BaseMessage",
     # Internal types
