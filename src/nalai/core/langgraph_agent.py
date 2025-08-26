@@ -253,11 +253,21 @@ class LangGraphAgent(Agent):
         messages: list[BaseMessage],
         conversation_id: str | None,
         config: dict,
+        previous_response_id: str | None = None,
     ) -> tuple[list[BaseMessage], ConversationInfo]:
         """Start a new conversation or continue an existing one based on conversation_id."""
         user_id = self._extract_user_id_from_config(config)
 
-        if conversation_id:
+        if previous_response_id:
+            # For response-level branching: load the previous response and continue from there
+            # This is different from conversation-level continuation
+            # TODO: Implement response-level branching logic
+            # For now, we'll treat it like a new conversation but with the previous response context
+            conversation_id, updated_config = await self._create_new_conversation(
+                user_id, config
+            )
+            # TODO: Load previous response and merge context
+        elif conversation_id:
             # For existing conversations: validate access
             await self._validate_and_audit_access(
                 user_id, conversation_id, "access_validation", config
@@ -275,17 +285,87 @@ class LangGraphAgent(Agent):
             result = await self.agent.ainvoke(agent_input, config=updated_config)
         except Exception as e:
             logger.error(f"Agent invocation failed: {e}")
-            raise InvocationError(context={"conversation_id": conversation_id}) from e
+
+            # Check if this is a client error (4xx) that should be bubbled up
+            if self._is_client_error(e):
+                from .agent import ClientError
+
+                # Extract status code and message from the original error
+                status_code, error_message = self._extract_client_error_info(e)
+                raise ClientError(
+                    message=error_message,
+                    http_status=status_code,
+                    context={"conversation_id": conversation_id},
+                ) from e
+
+            # For server errors (5xx) or unknown errors, use InvocationError
+            from .agent import InvocationError
+
+            raise InvocationError(
+                context={"conversation_id": conversation_id}, original_exception=e
+            ) from e
 
         # Extract conversation data from the result
         result_messages = (
             result.get("messages", messages) if isinstance(result, dict) else messages
         )
 
+        # Check for interrupts in the result
+        interrupt_info = None
+        if isinstance(result, dict) and "__interrupt__" in result:
+            interrupt_data = result["__interrupt__"]
+            if interrupt_data:
+                # Handle multiple interrupts - convert list to list of interrupt info
+                interrupts_list = (
+                    interrupt_data
+                    if isinstance(interrupt_data, list)
+                    else [interrupt_data]
+                )
+
+                # Extract tool call IDs from the last assistant message
+                tool_call_ids = []
+                for message in reversed(result_messages):
+                    if hasattr(message, "tool_calls") and message.tool_calls:
+                        # Handle both object and dict formats
+                        for tc in message.tool_calls:
+                            if hasattr(tc, "id"):
+                                tool_call_ids.append(tc.id)
+                            elif isinstance(tc, dict) and "id" in tc:
+                                tool_call_ids.append(tc["id"])
+                        break
+
+                interrupt_infos = []
+                for i, interrupt_obj in enumerate(interrupts_list):
+                    # Use the corresponding tool call ID, or "unknown" if not available
+                    tool_call_id = (
+                        tool_call_ids[i] if i < len(tool_call_ids) else "unknown"
+                    )
+
+                    single_interrupt_info = {
+                        "type": "tool_call",
+                        "tool_call_id": tool_call_id,
+                        "action": "pending",
+                        "args": {
+                            "value": getattr(
+                                interrupt_obj, "value", "Interrupt occurred"
+                            )
+                        },
+                    }
+                    interrupt_infos.append(single_interrupt_info)
+
+                interrupt_info = {"interrupts": interrupt_infos}
+                logger.info(
+                    f"Interrupts detected: {len(interrupt_infos)} interrupts with tool call IDs: {[info['tool_call_id'] for info in interrupt_infos]}"
+                )
+
         # Get conversation info
         conversation_info = await self._get_conversation_info(
             conversation_id, updated_config
         )
+
+        # Set interrupt info if present
+        if interrupt_info:
+            conversation_info.interrupt_info = interrupt_info
 
         return result_messages, conversation_info
 
@@ -294,11 +374,20 @@ class LangGraphAgent(Agent):
         messages: list[BaseMessage],
         conversation_id: str | None,
         config: dict,
+        previous_response_id: str | None = None,
     ) -> tuple[AsyncGenerator[str, None], ConversationInfo]:
         """Stream conversation events."""
         user_id = self._extract_user_id_from_config(config)
 
-        if conversation_id:
+        if previous_response_id:
+            # For response-level branching: load the previous response and continue from there
+            # TODO: Implement response-level branching logic
+            # For now, we'll treat it like a new conversation but with the previous response context
+            conversation_id, config = await self._create_new_conversation(
+                user_id, config
+            )
+            # TODO: Load previous response and merge context
+        elif conversation_id:
             # For existing conversations: validate access
             await self._validate_and_audit_access(
                 user_id, conversation_id, "access_validation", config
@@ -315,17 +404,251 @@ class LangGraphAgent(Agent):
         # Get conversation info
         conversation_info = await self._get_conversation_info(conversation_id, config)
 
-        # Create streaming generator
+        # Create streaming generator with filtering
         async def stream_generator():
             agent_input = {"messages": messages}
             async for chunk in self.agent.astream(
                 agent_input, config, stream_mode=["updates", "messages"]
             ):
-                serialized_chunk = serialize_event(chunk)
-                if serialized_chunk:
-                    yield serialized_chunk
+                # Filter out sensitive LangGraph details and add conversation context
+                filtered_chunk = self._filter_streaming_chunk(chunk, conversation_id)
+                if filtered_chunk:
+                    serialized_chunk = serialize_event(filtered_chunk)
+                    if serialized_chunk:
+                        yield serialized_chunk
 
         return stream_generator(), conversation_info
+
+    def _filter_streaming_chunk(self, chunk, conversation_id: str):
+        """
+        Filter out sensitive LangGraph details from streaming chunks.
+
+        Args:
+            chunk: The raw LangGraph chunk
+            conversation_id: The conversation ID to add to filtered chunks
+
+        Returns:
+            Filtered chunk with conversation context, or None if should be skipped
+        """
+        # LangGraph events come in the format ["messages", [...]] or ["updates", {...}]
+        # We need to preserve this format but filter the content within
+
+        # For message chunks with content, always preserve them and filter sensitive fields
+        if hasattr(chunk, "content") and hasattr(chunk, "type"):
+            # Create a clean message object with conversation context
+            filtered_message = {
+                "content": chunk.content,
+                "type": chunk.type,
+                "id": getattr(chunk, "id", None),
+                "conversation": conversation_id,
+            }
+
+            # Add tool calls if present
+            if hasattr(chunk, "tool_calls") and chunk.tool_calls:
+                filtered_message["tool_calls"] = chunk.tool_calls
+
+            # Add tool call chunks if present
+            if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
+                filtered_message["tool_call_chunks"] = chunk.tool_call_chunks
+
+            # Add invalid tool calls if present
+            if hasattr(chunk, "invalid_tool_calls") and chunk.invalid_tool_calls:
+                filtered_message["invalid_tool_calls"] = chunk.invalid_tool_calls
+
+            # Add response metadata if present
+            if hasattr(chunk, "response_metadata") and chunk.response_metadata:
+                filtered_message["response_metadata"] = chunk.response_metadata
+
+            return filtered_message
+
+        # For update chunks with meaningful data, preserve them and filter sensitive fields
+        if hasattr(chunk, "__dict__"):
+            # Check if this chunk has meaningful content (not just internal state)
+            meaningful_fields = ["messages", "selected_apis", "cache_miss", "updates"]
+            has_meaningful_content = any(
+                hasattr(chunk, field) and getattr(chunk, field) is not None
+                for field in meaningful_fields
+            )
+
+            if has_meaningful_content:
+                filtered_dict = {}
+                for key, value in chunk.__dict__.items():
+                    # Skip sensitive fields but preserve meaningful content
+                    if key in [
+                        "auth_token",
+                        "user_id",
+                        "user_email",
+                        "org_unit_id",
+                        "langgraph_step",
+                        "langgraph_node",
+                        "langgraph_triggers",
+                        "langgraph_path",
+                        "langgraph_checkpoint_ns",
+                        "checkpoint_ns",
+                        "ls_provider",
+                        "ls_model_name",
+                        "ls_model_type",
+                        "ls_temperature",
+                        "thread_id",
+                        "cache_disabled",
+                        "disable_cache",
+                    ]:
+                        continue
+
+                    # Add conversation context
+                    if key == "conversation":
+                        filtered_dict[key] = conversation_id
+                    else:
+                        filtered_dict[key] = value
+
+                if filtered_dict:
+                    filtered_dict["conversation"] = conversation_id
+                    return filtered_dict
+            else:
+                # Skip chunks that are purely internal state
+                if (
+                    hasattr(chunk, "auth_token")
+                    or hasattr(chunk, "user_id")
+                    or hasattr(chunk, "user_email")
+                    or hasattr(chunk, "org_unit_id")
+                    or hasattr(chunk, "langgraph_step")
+                    or hasattr(chunk, "langgraph_node")
+                    or hasattr(chunk, "langgraph_triggers")
+                    or hasattr(chunk, "langgraph_path")
+                    or hasattr(chunk, "langgraph_checkpoint_ns")
+                    or hasattr(chunk, "checkpoint_ns")
+                    or hasattr(chunk, "ls_provider")
+                    or hasattr(chunk, "ls_model_name")
+                    or hasattr(chunk, "ls_model_type")
+                    or hasattr(chunk, "ls_temperature")
+                    or hasattr(chunk, "thread_id")
+                ):
+                    return None
+
+        # For dictionary chunks, preserve meaningful content and filter sensitive fields
+        if isinstance(chunk, dict):
+            # Check if this dict has meaningful content
+            meaningful_keys = ["messages", "selected_apis", "cache_miss", "updates"]
+            has_meaningful_content = any(key in chunk for key in meaningful_keys)
+
+            if has_meaningful_content:
+                filtered_dict = {}
+                for key, value in chunk.items():
+                    # Skip sensitive fields but preserve meaningful content
+                    if key in [
+                        "auth_token",
+                        "user_id",
+                        "user_email",
+                        "org_unit_id",
+                        "langgraph_step",
+                        "langgraph_node",
+                        "langgraph_triggers",
+                        "langgraph_path",
+                        "langgraph_checkpoint_ns",
+                        "checkpoint_ns",
+                        "ls_provider",
+                        "ls_model_name",
+                        "ls_model_type",
+                        "ls_temperature",
+                        "thread_id",
+                        "cache_disabled",
+                        "disable_cache",
+                    ]:
+                        continue
+
+                    filtered_dict[key] = value
+
+                if filtered_dict:
+                    filtered_dict["conversation"] = conversation_id
+                    return filtered_dict
+            else:
+                # Skip dicts that are purely internal state
+                sensitive_keys = [
+                    "auth_token",
+                    "user_id",
+                    "user_email",
+                    "org_unit_id",
+                    "langgraph_step",
+                    "langgraph_node",
+                    "langgraph_triggers",
+                    "langgraph_path",
+                    "langgraph_checkpoint_ns",
+                    "checkpoint_ns",
+                    "ls_provider",
+                    "ls_model_name",
+                    "ls_model_type",
+                    "ls_temperature",
+                    "thread_id",
+                ]
+                if any(key in chunk for key in sensitive_keys):
+                    return None
+
+        # For other objects, try to add conversation context if they have meaningful content
+        if hasattr(chunk, "__dict__"):
+            # Check if this object has meaningful content
+            meaningful_fields = [
+                "messages",
+                "selected_apis",
+                "cache_miss",
+                "updates",
+                "content",
+            ]
+            has_meaningful_content = any(
+                hasattr(chunk, field) and getattr(chunk, field) is not None
+                for field in meaningful_fields
+            )
+
+            if has_meaningful_content:
+                # Create a copy with conversation context
+                filtered_chunk = type(chunk)()
+                for key, value in chunk.__dict__.items():
+                    if key in [
+                        "auth_token",
+                        "user_id",
+                        "user_email",
+                        "org_unit_id",
+                        "langgraph_step",
+                        "langgraph_node",
+                        "langgraph_triggers",
+                        "langgraph_path",
+                        "langgraph_checkpoint_ns",
+                        "checkpoint_ns",
+                        "ls_provider",
+                        "ls_model_name",
+                        "ls_model_type",
+                        "ls_temperature",
+                        "thread_id",
+                        "cache_disabled",
+                        "disable_cache",
+                    ]:
+                        continue
+                    setattr(filtered_chunk, key, value)
+
+                # Add conversation context
+                filtered_chunk.conversation = conversation_id
+                return filtered_chunk
+            else:
+                # Skip objects that are purely internal state
+                if (
+                    hasattr(chunk, "auth_token")
+                    or hasattr(chunk, "user_id")
+                    or hasattr(chunk, "user_email")
+                    or hasattr(chunk, "org_unit_id")
+                    or hasattr(chunk, "langgraph_step")
+                    or hasattr(chunk, "langgraph_node")
+                    or hasattr(chunk, "langgraph_triggers")
+                    or hasattr(chunk, "langgraph_path")
+                    or hasattr(chunk, "langgraph_checkpoint_ns")
+                    or hasattr(chunk, "checkpoint_ns")
+                    or hasattr(chunk, "ls_provider")
+                    or hasattr(chunk, "ls_model_name")
+                    or hasattr(chunk, "ls_model_type")
+                    or hasattr(chunk, "ls_temperature")
+                    or hasattr(chunk, "thread_id")
+                ):
+                    return None
+
+        return None
 
     async def list_conversations(
         self,
@@ -410,6 +733,17 @@ class LangGraphAgent(Agent):
             checkpoint_state = await self.checkpoints.get(checkpoint_config)
 
             if not checkpoint_state:
+                await self._audit_event(
+                    user_id,
+                    conversation_id,
+                    "access_denied",
+                    False,
+                    config,
+                )
+                raise ConversationNotFoundError()
+
+            # Check if conversation has been deleted (empty state indicates deletion)
+            if not checkpoint_state or checkpoint_state == {}:
                 await self._audit_event(
                     user_id,
                     conversation_id,
@@ -542,9 +876,12 @@ class LangGraphAgent(Agent):
                 config,
                 stream_mode=["updates", "messages"],
             ):
-                serialized_chunk = serialize_event(chunk)
-                if serialized_chunk:
-                    yield serialized_chunk
+                # Filter out sensitive LangGraph details and add conversation context
+                filtered_chunk = self._filter_streaming_chunk(chunk, conversation_id)
+                if filtered_chunk:
+                    serialized_chunk = serialize_event(filtered_chunk)
+                    if serialized_chunk:
+                        yield serialized_chunk
 
         return stream_generator(), conversation_info
 
@@ -714,3 +1051,60 @@ class LangGraphAgent(Agent):
                     "checkpoint_id": checkpoint_id,
                 },
             ) from e
+
+    def _is_client_error(self, exception: Exception) -> bool:
+        """Check if the exception represents a client error (4xx)."""
+        # Check for OpenAI BadRequestError (status code 400)
+        if hasattr(exception, "status_code"):
+            return 400 <= exception.status_code < 500
+
+        # Check for OpenAI API errors by checking the error message patterns
+        error_str = str(exception).lower()
+
+        # Common OpenAI 400 error patterns
+        client_error_patterns = [
+            "error code: 400",
+            "badrequest",
+            "invalid_request_error",
+            "must be followed by tool messages",
+            "tool_call_ids did not have response messages",
+            "maximum context length",
+            "invalid input",
+        ]
+
+        return any(pattern in error_str for pattern in client_error_patterns)
+
+    def _extract_client_error_info(self, exception: Exception) -> tuple[int, str]:
+        """Extract HTTP status code and error message from client error."""
+        # Default to 400 Bad Request
+        status_code = 400
+        error_message = str(exception)
+
+        # Try to extract status code if available
+        if hasattr(exception, "status_code"):
+            status_code = exception.status_code
+        elif "error code: 400" in error_message.lower():
+            status_code = 400
+        elif "error code: 401" in error_message.lower():
+            status_code = 401
+        elif "error code: 403" in error_message.lower():
+            status_code = 403
+        elif "error code: 404" in error_message.lower():
+            status_code = 404
+        elif "error code: 429" in error_message.lower():
+            status_code = 429
+
+        # Try to extract the actual error message from OpenAI format
+        try:
+            # OpenAI errors often have the format: "Error code: 400 - {'error': {'message': '...'}}"
+            import re
+
+            pattern = r"Error code: \d+ - \{'error': \{'message': '([^']+)'"
+            match = re.search(pattern, error_message)
+            if match:
+                error_message = match.group(1)
+        except Exception:
+            # If extraction fails, use the original message
+            pass
+
+        return status_code, error_message

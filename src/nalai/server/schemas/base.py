@@ -11,7 +11,7 @@ class ConversationIdPathParam(BaseModel):
     """Path parameter for conversation ID with UUID validation."""
 
     conversation_id: str = Field(
-        ..., description="Conversation ID (must be valid UUID4)"
+        ..., description="Conversation ID (must be valid UUID4 format)"
     )
 
     @field_validator("conversation_id")
@@ -37,7 +37,7 @@ class ModelConfig(BaseModel):
         max_length=100,
     )
     platform: Literal["ollama", "aws_bedrock", "openai"] = Field(
-        ..., description="Model platform"
+        ..., description="Model platform. Must be one of the supported platforms."
     )
 
     def to_internal_config(self) -> RunnableConfig:

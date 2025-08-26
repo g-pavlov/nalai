@@ -10,18 +10,22 @@ This package contains all API input/output schemas organized by HTTP resources:
 
 from .base import ConversationIdPathParam, ModelConfig
 from .conversations import (
-    AIMessageInput,
-    ConversationRequest,
     ConversationResponse,
     ConversationSummary,
-    HumanMessageInput,
     ListConversationsResponse,
     LoadConversationResponse,
-    MessageInput,
-    MessageInputUnion,
-    ToolMessageInput,
 )
 from .health import HealthzResponse
+from .messages import (
+    BaseOutputMessage,
+    ContentBlock,
+    HumanInputMessage,
+    InputMessage,
+    MessageRequest,
+    MessageResponse,
+    TextContent,
+    ToolDecisionInputMessage,
+)
 from .resume_decisions import ResumeDecisionRequest, ResumeDecisionResponse
 
 __all__ = [
@@ -29,16 +33,19 @@ __all__ = [
     "ConversationIdPathParam",
     "ModelConfig",
     # Conversation resource schemas
-    "ConversationRequest",
     "ConversationResponse",
     "ConversationSummary",
     "LoadConversationResponse",
     "ListConversationsResponse",
-    "MessageInput",
-    "HumanMessageInput",
-    "AIMessageInput",
-    "ToolMessageInput",
-    "MessageInputUnion",
+    "ToolDecisionInputMessage",
+    "InputMessage",
+    "HumanInputMessage",
+    "BaseOutputMessage",
+    "MessageRequest",
+    "MessageResponse",
+    # Content block schemas
+    "ContentBlock",
+    "TextContent",
     # Resume decision resource schemas
     "ResumeDecisionRequest",
     "ResumeDecisionResponse",

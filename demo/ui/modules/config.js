@@ -10,6 +10,7 @@ export const API_CONFIG = {
         // Base templates for actual API endpoints
         CONVERSATIONS: '/api/v1/conversations',
         CONVERSATION: '/api/v1/conversations/{conversation_id}',
+        MESSAGES: '/api/v1/messages',
         RESUME_DECISION: '/api/v1/conversations/{conversation_id}/resume-decision'
     },
     HEADERS: {

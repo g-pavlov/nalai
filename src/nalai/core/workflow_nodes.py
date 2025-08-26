@@ -406,6 +406,9 @@ class WorkflowNodes:
 
         if settings.api_calls_enabled is True:
             model = model.bind_tools(self.http_toolkit.get_tools())
+
+        if settings.api_calls_enabled is True:
+            model = model.bind_tools(self.http_toolkit.get_tools())
         response = cast(AIMessage, model.invoke(prompt_value, config))
 
         # Cache the final response for future use

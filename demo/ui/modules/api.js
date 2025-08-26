@@ -57,15 +57,8 @@ export async function sendMessage() {
 }
 
 async function sendApiRequest(message, config) {
-    let url;
-    
-    if (getCurrentThreadId()) {
-        // Continue existing conversation
-        url = buildApiUrl(API_CONFIG.URL_TEMPLATES.CONVERSATION, { conversation_id: getCurrentThreadId() });
-    } else {
-        // Create new conversation
-        url = buildApiUrl(API_CONFIG.URL_TEMPLATES.CONVERSATIONS);
-    }
+    // Always use the messages endpoint for sending messages
+    const url = buildApiUrl(API_CONFIG.URL_TEMPLATES.MESSAGES);
     
     const requestPayload = buildRequestPayload(message, config);
     const headers = getRequestHeaders(config.isStreamingEnabled, config.isNoCacheEnabled);

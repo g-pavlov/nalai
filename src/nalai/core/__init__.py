@@ -10,6 +10,7 @@ from langchain_core.messages import BaseMessage
 from .agent import (
     AccessDeniedError,
     Agent,
+    ClientError,
     Conversation,
     ConversationInfo,
     ConversationNotFoundError,
@@ -81,6 +82,7 @@ __all__ = [
     # Exceptions
     "Error",
     "AccessDeniedError",
+    "ClientError",
     "ConversationNotFoundError",
     "ValidationError",
     "InvocationError",

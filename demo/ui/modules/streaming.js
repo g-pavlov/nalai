@@ -8,7 +8,7 @@ import { Logger } from './logger.js';
 import { ErrorHandler } from './errorHandler.js';
 import { DOM } from './dom.js';
 import { updateMessageContent, cleanupMessageProcessing } from './messages.js';
-import { setFullMessageContent, getFullMessageContent } from './state.js';
+import { setFullMessageContent, getFullMessageContent, getCurrentThreadId, setCurrentThreadId } from './state.js';
 import { Validator } from './validator.js';
 import { createInterruptUI } from './interrupts.js';
 import { addToolCallsIndicatorToMessage } from './toolCalls.js';
@@ -84,19 +84,19 @@ export async function handleStreamingResponse(response, assistantMessageDiv) {
                     if (!data || data.trim() === '') continue;
                     
                     try {
-                        const event = JSON.parse(data);
+                        const eventData = JSON.parse(data);
                         hasReceivedEvents = true;
                         
-                        Validator.validateEventData(event);
-                        processStreamEvent(event, assistantMessageDiv);
+                        // Process the event data directly
+                        processStreamEvent(eventData, assistantMessageDiv);
                         
-                                            } catch (error) {
-                            ErrorHandler.handleParsingError(error, data, 'Stream event parsing');
-                        }
+                    } catch (error) {
+                        ErrorHandler.handleParsingError(error, data, 'Stream event parsing');
                     }
                 }
             }
-            
+        }
+        
         handleStreamingCompletion(hasReceivedEvents, assistantMessageDiv);
         
     } catch (error) {
@@ -106,45 +106,130 @@ export async function handleStreamingResponse(response, assistantMessageDiv) {
     }
 }
 
-export function processStreamEvent(event, assistantMessageDiv) {
-    if (Array.isArray(event) && event.length === 2) {
-        const [eventType, eventData] = event;
+export function processStreamEvent(eventData, assistantMessageDiv) {
+    Logger.info('Processing stream event', { eventData });
+    
+    // Handle double-wrapped events (eventType/eventData format from resume streams)
+    if (eventData && eventData.eventType && eventData.eventData) {
+        Logger.info('Processing double-wrapped event', { 
+            eventType: eventData.eventType, 
+            eventData: eventData.eventData 
+        });
+        // Recursively process the extracted event
+        processStreamEvent(eventData.eventData, assistantMessageDiv);
+        return;
+    }
+    
+    // Handle custom API events (response.created, response.completed, etc.)
+    if (eventData.event) {
+        const eventType = eventData.event;
         
         switch (eventType) {
-            case EVENT_TYPES.MESSAGES:
-                if (Array.isArray(eventData)) {
-                    handleMessageEvent(eventData, assistantMessageDiv);
-                }
+            case 'response.created':
+                handleResponseCreated(eventData, assistantMessageDiv);
                 break;
-            case EVENT_TYPES.UPDATES:
-                if (typeof eventData === 'object') {
-                    handleUpdateEvent(eventData, assistantMessageDiv);
-                }
+            case 'response.output_text.delta':
+                handleOutputTextDelta(eventData, assistantMessageDiv);
                 break;
-            case EVENT_TYPES.ERROR:
+            case 'response.output_text.complete':
+                handleOutputTextComplete(eventData, assistantMessageDiv);
+                break;
+            case 'response.tool_calls.delta':
+                handleToolCallsDelta(eventData, assistantMessageDiv);
+                break;
+            case 'response.tool_calls.complete':
+                handleToolCallsComplete(eventData, assistantMessageDiv);
+                break;
+            case 'response.interrupt':
+                handleInterruptEvent(eventData, assistantMessageDiv);
+                break;
+            case 'response.resumed':
+                Logger.info('Response resumed event received', { eventData });
+                // No special handling needed for resume events
+                break;
+            case 'response.completed':
+                handleResponseCompleted(eventData, assistantMessageDiv);
+                break;
+            case 'response.error':
                 handleErrorEvent(eventData, assistantMessageDiv);
                 break;
             default:
-                Logger.warn('Unknown event type', { eventType, eventData });
+                Logger.warn('Unknown custom event type', { eventType, eventData });
         }
-    } else if (event.error) {
-        // Handle error events that come as objects with error property
-        handleErrorEvent(event.error, assistantMessageDiv);
-    } else {
-        Logger.warn('Unexpected event format', { event });
+        return;
     }
+    
+    // Handle LangGraph events (array format: ["updates", {...}] or ["messages", {...}])
+    if (Array.isArray(eventData) && eventData.length === 2) {
+        const [eventType, eventPayload] = eventData;
+        
+        switch (eventType) {
+            case 'updates':
+                handleUpdateEvent(eventPayload, assistantMessageDiv);
+                break;
+            case 'messages':
+                handleMessageEvent(eventPayload, assistantMessageDiv);
+                break;
+            default:
+                Logger.warn('Unknown LangGraph event type', { eventType, eventPayload });
+        }
+        return;
+    }
+    
+    // Handle error events
+    if (eventData.error) {
+        handleErrorEvent(eventData.error, assistantMessageDiv);
+        return;
+    }
+    
+    // Check if this is internal LangGraph state information that we should filter out
+    if (Array.isArray(eventData) && eventData.length === 2 && eventData[0] === 'messages') {
+        const messages = eventData[1];
+        if (Array.isArray(messages) && messages.some(msg => msg.auth_token || msg.user_id || msg.user_email || msg.org_unit_id)) {
+            Logger.info('Filtering internal LangGraph state information', { 
+                messageCount: messages.length,
+                hasInternalState: messages.some(msg => msg.auth_token || msg.user_id || msg.user_email || msg.org_unit_id)
+            });
+            // Process the messages but filter out internal state
+            handleMessageEvent(messages, assistantMessageDiv);
+            return;
+        }
+    }
+    
+    Logger.warn('Unexpected event format', { eventData });
 }
 
 function handleMessageEvent(eventData, assistantMessageDiv) {
     Logger.info('Processing message events', { messageCount: eventData.length });
     
-    for (const message of eventData) {
+    // Filter out internal LangGraph state information
+    const filteredMessages = eventData.filter(message => {
+        // Skip purely internal state messages (auth tokens, user info, etc.)
+        // But allow messages with debugging info that might be useful
+        if (message.auth_token || message.user_id || message.user_email || message.org_unit_id) {
+            Logger.info('Filtering out internal state message', { 
+                type: message.type, 
+                hasAuthToken: !!message.auth_token,
+                hasUserId: !!message.user_id,
+                hasUserEmail: !!message.user_email,
+                hasOrgUnitId: !!message.org_unit_id
+            });
+            return false;
+        }
+        return true;
+    });
+    
+    Logger.info('Filtered messages', { 
+        originalCount: eventData.length, 
+        filteredCount: filteredMessages.length 
+    });
+    
+    for (const message of filteredMessages) {
         Logger.info('Processing message', {
             type: message.type,
             hasContent: !!message.content,
             contentLength: message.content?.length || 0,
-            id: message.id,
-            langgraphNode: message.langgraph_node
+            id: message.id
         });
         
         // Handle AIMessageChunk for real-time streaming
@@ -892,6 +977,97 @@ export function handleStreamingCompletion(hasReceivedEvents, assistantMessageDiv
     }
 }
 
+function handleResponseCreated(eventData, assistantMessageDiv) {
+    Logger.info('Response created event received', { eventData });
+    
+    // Handle conversation ID from event data if present
+    if (eventData.conversation && eventData.conversation !== getCurrentThreadId()) {
+        // Validate that it's a proper UUID
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(eventData.conversation)) {
+            setCurrentThreadId(eventData.conversation);
+            Logger.info('New conversation thread started from response.created event', { 
+                conversationId: eventData.conversation
+            });
+        } else {
+            Logger.warn('Invalid conversation ID format in response.created event', { conversationId: eventData.conversation });
+        }
+    }
+    
+    // Response created - initialize streaming state
+    resetStreamingProgressState();
+}
+
+function handleOutputTextDelta(eventData, assistantMessageDiv) {
+    Logger.info('Output text delta received', { eventData });
+    
+    if (eventData.content) {
+        const currentContent = getFullMessageContent();
+        const newContent = currentContent + eventData.content;
+        setFullMessageContent(newContent);
+        
+        // Update streaming content in real-time
+        updateStreamingContent(assistantMessageDiv, newContent);
+    }
+}
+
+function handleOutputTextComplete(eventData, assistantMessageDiv) {
+    Logger.info('Output text complete received', { eventData });
+    
+    if (eventData.content) {
+        setFullMessageContent(eventData.content);
+        updateStreamingContent(assistantMessageDiv, eventData.content);
+    }
+}
+
+function handleToolCallsDelta(eventData, assistantMessageDiv) {
+    Logger.info('Tool calls delta received', { eventData });
+    
+    if (eventData.tool_calls && Array.isArray(eventData.tool_calls)) {
+        eventData.tool_calls.forEach(toolCall => {
+            captureToolCall(
+                toolCall.name || 'Unknown tool',
+                toolCall.args || {},
+                'tool_calls_delta'
+            );
+        });
+    }
+}
+
+function handleToolCallsComplete(eventData, assistantMessageDiv) {
+    Logger.info('Tool calls complete received', { eventData });
+    
+    if (eventData.tool_calls && Array.isArray(eventData.tool_calls)) {
+        eventData.tool_calls.forEach(toolCall => {
+            captureToolCall(
+                toolCall.name || 'Unknown tool',
+                toolCall.args || {},
+                'tool_calls_complete'
+            );
+        });
+    }
+}
+
+function handleResponseCompleted(eventData, assistantMessageDiv) {
+    Logger.info('Response completed event received', { eventData });
+    
+    streamingProgressState.isComplete = true;
+    
+    // Add tool calls indicator if there are tool calls
+    if (streamingProgressState.toolCalls && streamingProgressState.toolCalls.length > 0) {
+        addToolCallsIndicatorToMessage(
+            assistantMessageDiv, 
+            streamingProgressState.toolCalls.length, 
+            streamingProgressState.toolCalls
+        );
+    }
+    
+    // Clean up streaming UI
+    const progressContainer = assistantMessageDiv.querySelector('.streaming-progress');
+    if (progressContainer) {
+        progressContainer.remove();
+    }
+}
+
 function handleErrorEvent(errorData, assistantMessageDiv) {
     Logger.error('Error event received from server', { errorData });
     
@@ -947,8 +1123,8 @@ function handleErrorEvent(errorData, assistantMessageDiv) {
     }
 }
 
-function handleInterruptEvent(updateValue, assistantMessageDiv) {
-    Logger.info('Interrupt detected', { updateValue });
+function handleInterruptEvent(eventData, assistantMessageDiv) {
+    Logger.info('Interrupt detected', { eventData });
     
     // Clear content state when interrupt occurs
     setFullMessageContent('');
@@ -958,28 +1134,34 @@ function handleInterruptEvent(updateValue, assistantMessageDiv) {
     // The processing state should remain true until the entire workflow is complete
     Logger.info('Maintaining processing state during interrupt');
     
-    // Parse interrupt data first
-    const interruptObject = updateValue[0];
-    const interruptInfo = interruptObject.value[0]; // Get the first interrupt from the value array
-    const actionRequest = interruptInfo?.action_request || {};
-    
-    // Update input field placeholder to indicate tool call decision is needed
-    const config = interruptInfo?.config || {};
-    const allowAccept = config.allow_accept !== false;
-    const allowEdit = config.allow_edit === true;
-    const allowRespond = config.allow_respond === true;
-    
-    let placeholderText = 'Waiting for tool call decision...';
-    if (allowAccept && allowEdit && allowRespond) {
-        placeholderText = 'Please accept, edit, or reject the tool call above...';
-    } else if (allowAccept && allowEdit) {
-        placeholderText = 'Please accept or edit the tool call above...';
-    } else if (allowAccept && allowRespond) {
-        placeholderText = 'Please accept or reject the tool call above...';
-    } else if (allowAccept) {
-        placeholderText = 'Please accept the tool call above...';
+    // Handle interrupt data - it can come as an array or single object
+    let interruptInfo = null;
+    if (Array.isArray(eventData) && eventData.length > 0) {
+        interruptInfo = eventData[0]; // Get the first interrupt from array
+    } else if (eventData.interrupts && Array.isArray(eventData.interrupts) && eventData.interrupts.length > 0) {
+        interruptInfo = eventData.interrupts[0]; // Get the first interrupt from interrupts array
+    } else if (eventData.type || eventData.interrupt_id) {
+        // Single interrupt object
+        interruptInfo = eventData;
     }
     
+    if (!interruptInfo) {
+        Logger.error('No interrupt information found in event data', { eventData });
+        return;
+    }
+    
+    // Extract tool call information from the new interrupt format
+    const toolCallId = interruptInfo.interrupt_id || interruptInfo.tool_call_id;
+    const actionRequest = interruptInfo.value && interruptInfo.value[0] ? interruptInfo.value[0].action_request : null;
+    const action = actionRequest ? actionRequest.action : interruptInfo.action;
+    const args = actionRequest ? actionRequest.args : interruptInfo.args || {};
+    
+    // Extract configuration from the interrupt value
+    const config = interruptInfo.value && interruptInfo.value[0] ? interruptInfo.value[0].config : {};
+    const description = interruptInfo.value && interruptInfo.value[0] ? interruptInfo.value[0].description : '';
+    
+    // Update input field placeholder to indicate tool call decision is needed
+    let placeholderText = 'Waiting for tool call decision...';
     DOM.messageInput.placeholder = placeholderText;
     
     // Update streaming progress to show "Tool calling..." status during interrupt
@@ -992,20 +1174,29 @@ function handleInterruptEvent(updateValue, assistantMessageDiv) {
     }
     
     // Capture tool call arguments from interrupt data
-    if (actionRequest && actionRequest.action) {
-        captureToolCall(
-            actionRequest.action,
-            actionRequest.args || {},
-            'interrupt'
-        );
+    if (action) {
+        captureToolCall(action, args, 'interrupt');
     }
     
-    createInterruptUI(assistantMessageDiv, actionRequest, interruptInfo);
+    // Create interrupt UI with the new format
+    const actionRequestObj = { action, args };
+    const interruptInfoWithConfig = {
+        config: config,
+        description: description
+    };
+    createInterruptUI(assistantMessageDiv, actionRequestObj, interruptInfoWithConfig);
     
     window.currentInterrupt = {
-        value: interruptInfo,
-        resumable: interruptObject.resumable,
-        ns: interruptObject.ns
+        value: {
+            tool_call_id: toolCallId,
+            action: action,
+            args: args,
+            action_request: actionRequest,
+            config: config,
+            description: description
+        },
+        resumable: interruptInfo.resumable !== false,
+        ns: interruptInfo.ns ? interruptInfo.ns[0] : 'interrupt'
     };
 }
 
@@ -1031,14 +1222,33 @@ export async function handleNonStreamingResponse(response, assistantMessageDiv) 
             return;
         }
         
-        if (result.output?.messages?.length > 0) {
-            const lastAIMessage = findLastAIMessage(result.output.messages);
+        // Handle new response format with output array
+        if (result.output && Array.isArray(result.output)) {
+            const assistantMessages = result.output.filter(msg => msg.role === 'assistant');
             
-            if (lastAIMessage) {
-                setFullMessageContent(lastAIMessage.content);
-                updateMessageContent(assistantMessageDiv, lastAIMessage.content);
+            if (assistantMessages.length > 0) {
+                const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
+                
+                if (lastAssistantMessage.content && lastAssistantMessage.content.length > 0) {
+                    // Extract text content from content blocks
+                    let textContent = '';
+                    for (const contentBlock of lastAssistantMessage.content) {
+                        if (contentBlock.type === 'text') {
+                            textContent += contentBlock.text;
+                        }
+                    }
+                    
+                    if (textContent) {
+                        setFullMessageContent(textContent);
+                        updateMessageContent(assistantMessageDiv, textContent);
+                    } else {
+                        assistantMessageDiv.textContent = 'No text content found in assistant message';
+                    }
+                } else {
+                    assistantMessageDiv.textContent = 'No content found in assistant message';
+                }
             } else {
-                assistantMessageDiv.textContent = 'No AI response found';
+                assistantMessageDiv.textContent = 'No assistant messages found';
             }
         } else {
             assistantMessageDiv.textContent = 'No response content received';
@@ -1046,14 +1256,5 @@ export async function handleNonStreamingResponse(response, assistantMessageDiv) 
     } catch (error) {
         ErrorHandler.handleParsingError(error, null, 'Non-streaming response parsing');
     }
-}
-
-function findLastAIMessage(messages) {
-    for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].type === MESSAGE_TYPES.AI && messages[i].content) {
-            return messages[i];
-        }
-    }
-    return null;
 }
 

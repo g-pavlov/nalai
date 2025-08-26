@@ -16,19 +16,20 @@ from fastapi.staticfiles import StaticFiles
 from ..config import settings
 from ..core import create_agent
 from ..utils.logging import setup_logging
+from .api_agent import create_agent_api
+from .api_conversations import (
+    APP_DESCRIPTION,
+    APP_TITLE,
+    APP_VERSION,
+    OPENAPI_TAGS,
+    create_conversations_api,
+)
+from .api_system import create_server_api
 from .middleware import (
     create_audit_middleware,
     create_auth_middleware,
     create_log_request_middleware,
     create_user_context_middleware,
-)
-from .routes import (
-    APP_DESCRIPTION,
-    APP_TITLE,
-    APP_VERSION,
-    OPENAPI_TAGS,
-    create_basic_routes,
-    create_conversation_routes,
 )
 
 # Load environment variables
@@ -144,11 +145,14 @@ def initialize_app():
                 break
 
     # Create basic routes
-    create_basic_routes(app)
+    create_server_api(app)
 
     # Initialize agent and create conversation routes
     agent = create_agent()
-    create_conversation_routes(app, agent)
+    create_conversations_api(app, agent)
+
+    # Create agent message exchange routes
+    create_agent_api(app, agent)
 
     logger.info("Application routes initialized")
     _initialized = True

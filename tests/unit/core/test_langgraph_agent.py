@@ -17,9 +17,7 @@ from nalai.core.agent import (
     ValidationError,
 )
 from nalai.core.langgraph_agent import LangGraphAgent
-from nalai.server.schemas import (
-    ConversationRequest,
-)
+from nalai.server.schemas.messages import MessageRequest
 
 
 def load_test_cases():
@@ -105,17 +103,8 @@ class TestLangGraphAgent:
 
         user_id = input_data["user_id"]
 
-        # Convert test data to match current ConversationRequest format
+        # Convert test data to match current MessageRequest format
         request_data = input_data["request"]
-        model_config = request_data.get("model_config")
-        if model_config:
-            # Convert model_config format to ModelConfig format
-            model = {
-                "name": model_config["model"],  # model -> name
-                "platform": model_config["platform"],
-            }
-        else:
-            model = None
 
         # Handle empty messages case
         messages = request_data["messages"]
@@ -123,9 +112,17 @@ class TestLangGraphAgent:
             # Add a dummy human message to satisfy validation
             messages = [{"content": "Hello", "type": "human"}]
 
-        request = ConversationRequest(
-            input=messages,  # messages -> input
-            model=model,
+        # Convert to new MessageRequest format
+        from nalai.server.schemas.messages import HumanInputMessage
+
+        # Convert messages to proper InputMessage format
+        input_messages = []
+        for msg in messages:
+            if msg["type"] == "human":
+                input_messages.append(HumanInputMessage(content=msg["content"]))
+
+        request = MessageRequest(
+            input=input_messages,
         )
 
         # Convert to new interface format
@@ -181,17 +178,8 @@ class TestLangGraphAgent:
         conversation_id = input_data["conversation_id"]
         user_id = input_data["user_id"]
 
-        # Convert test data to match current ConversationRequest format
+        # Convert test data to match current MessageRequest format
         request_data = input_data["request"]
-        model_config = request_data.get("model_config")
-        if model_config:
-            # Convert model_config format to ModelConfig format
-            model = {
-                "name": model_config["model"],  # model -> name
-                "platform": model_config["platform"],
-            }
-        else:
-            model = None
 
         # Handle empty messages case
         messages = request_data["messages"]
@@ -199,9 +187,17 @@ class TestLangGraphAgent:
             # Add a dummy human message to satisfy validation
             messages = [{"content": "Hello", "type": "human"}]
 
-        request = ConversationRequest(
-            input=messages,  # messages -> input
-            model=model,
+        # Convert to new MessageRequest format
+        from nalai.server.schemas.messages import HumanInputMessage
+
+        # Convert messages to proper InputMessage format
+        input_messages = []
+        for msg in messages:
+            if msg["type"] == "human":
+                input_messages.append(HumanInputMessage(content=msg["content"]))
+
+        request = MessageRequest(
+            input=input_messages,
         )
 
         # Convert to new interface format
@@ -493,9 +489,10 @@ class TestLangGraphAgent:
     ):
         """Test streaming conversation functionality."""
         # Arrange
-        request = ConversationRequest(
-            input=[{"content": "Hello", "type": "human"}],
-            model={"platform": "ollama", "name": "llama3.2"},
+        from nalai.server.schemas.messages import HumanInputMessage
+
+        request = MessageRequest(
+            input=[HumanInputMessage(content="Hello")],
         )
         user_id = "user123"
 
@@ -561,9 +558,10 @@ class TestLangGraphAgent:
     ):
         """Test handling of agent invocation errors."""
         # Arrange
-        request = ConversationRequest(
-            input=[{"content": "Hello", "type": "human"}],
-            model={"platform": "ollama", "name": "llama3.2"},
+        from nalai.server.schemas.messages import HumanInputMessage
+
+        request = MessageRequest(
+            input=[HumanInputMessage(content="Hello")],
         )
         user_id = "user123"
 

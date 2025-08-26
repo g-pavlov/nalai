@@ -20,7 +20,7 @@ class SimpleResumeDecisionRequest(BaseModel):
         ..., description="Type of tool call decision. One of 'accept' or 'reject'"
     )
     message: str | None = Field(
-        None, description="Optional message for reject decisions"
+        None, description="Optional message for reject decisions", max_length=1000
     )
 
 
@@ -32,7 +32,10 @@ class EditResumeDecisionRequest(BaseModel):
     decision: Literal["edit"] = Field(
         "edit", description="Type of tool call decision - 'edit'"
     )
-    args: dict = Field(..., description="Edited tool call args")
+    args: dict = Field(
+        ...,
+        description="Edited tool call args. Must be valid tool arguments matching the original tool call structure.",
+    )
 
 
 class FeedbackResumeDecisionRequest(BaseModel):
@@ -43,7 +46,9 @@ class FeedbackResumeDecisionRequest(BaseModel):
     decision: Literal["feedback"] = Field(
         "feedback", description="Type of tool call decision - 'feedback'"
     )
-    message: str = Field(..., description="The feedback message to send back to LLM")
+    message: str = Field(
+        ..., description="The feedback message to send back to LLM", max_length=1000
+    )
 
 
 ToolCallDecisionUnion = (
@@ -54,7 +59,19 @@ ToolCallDecisionUnion = (
 
 
 class ResumeDecisionRequest(BaseModel):
-    """Request model for tool decision handling."""
+    """Request model for tool decision handling.
+
+    **Decision Types:**
+    - **accept**: Execute the tool call as-is
+    - **reject**: Cancel the tool call (optional message)
+    - **edit**: Modify tool call arguments (requires valid args)
+    - **feedback**: Provide feedback to the LLM (requires message)
+
+    **Validation Rules:**
+    - edit decisions require valid args matching tool structure
+    - feedback decisions require non-empty message
+    - Message length limits: 1000 characters
+    """
 
     model_config = ConfigDict(extra="forbid")
 

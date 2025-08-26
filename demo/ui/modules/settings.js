@@ -7,6 +7,7 @@ import { API_CONFIG, MESSAGE_TYPES } from './config.js';
 import { DOM } from './dom.js';
 import { Logger } from './logger.js';
 import { updateJsonFormatStatus } from './dom.js';
+import { getCurrentThreadId } from './state.js';
 
 export function toggleSettings() {
     Logger.info('toggleSettings called');
@@ -58,19 +59,27 @@ export function getRequestHeaders(isStreamingEnabled, isNoCacheEnabled) {
 
 export function buildRequestPayload(message, config) {
     const payload = {
-        input: [{
-            content: message,
-            type: MESSAGE_TYPES.HUMAN
-        }]
+        input: message
     };
 
-    // Add model configuration if available
-    if (config && config.selectedModel) {
-        payload.model = {
-            name: config.selectedModel.name,
-            platform: config.selectedModel.platform || config.selectedModel.provider || 'openai'
-        };
+    // Add conversation_id if continuing an existing conversation
+    const currentThreadId = getCurrentThreadId();
+    if (currentThreadId) {
+        payload.conversation_id = currentThreadId;
     }
+
+    // Add streaming configuration
+    if (config && config.isStreamingEnabled !== undefined) {
+        payload.stream = config.isStreamingEnabled ? "full" : "off";
+    }
+
+    // Add cache configuration
+    if (config && config.isNoCacheEnabled !== undefined) {
+        payload.cache = !config.isNoCacheEnabled;
+    }
+
+    // Note: Model configuration is not supported in the current API schema
+    // The model is configured on the server side
 
     return payload;
 }

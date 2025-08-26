@@ -62,32 +62,42 @@ export async function handleInterrupt(responseType, args = null) {
             throw new Error('No conversation ID available for resume request');
         }
         
-        // Create the input object based on the response type
-        let input;
+        // Create the tool decision input based on the response type
+        let toolDecision;
         
         if (responseType === 'edit') {
-            input = {
+            toolDecision = {
+                type: 'tool_decision',
+                tool_call_id: window.currentInterrupt.value.tool_call_id || 'unknown',
                 decision: 'edit',
                 args: args
             };
         } else if (responseType === 'accept') {
-            input = {
+            toolDecision = {
+                type: 'tool_decision',
+                tool_call_id: window.currentInterrupt.value.tool_call_id || 'unknown',
                 decision: 'accept'
             };
         } else if (responseType === 'reject') {
-            input = {
+            toolDecision = {
+                type: 'tool_decision',
+                tool_call_id: window.currentInterrupt.value.tool_call_id || 'unknown',
                 decision: 'reject'
             };
         } else {
             // Handle feedback case if needed
-            input = {
+            toolDecision = {
+                type: 'tool_decision',
+                tool_call_id: window.currentInterrupt.value.tool_call_id || 'unknown',
                 decision: 'feedback',
                 message: args || 'User feedback'
             };
         }
 
         const resumePayload = {
-            input: input
+            conversation_id: getCurrentThreadId(),
+            input: [toolDecision],
+            stream: 'full'
         };
 
         Logger.info('Sending resume payload', { resumePayload });
@@ -101,7 +111,7 @@ export async function handleInterrupt(responseType, args = null) {
             args
         });
 
-        const requestUrl = buildApiUrl(API_CONFIG.URL_TEMPLATES.RESUME_DECISION, { conversation_id: getCurrentThreadId() });
+        const requestUrl = buildApiUrl(API_CONFIG.URL_TEMPLATES.MESSAGES);
         const requestOptions = {
             method: 'POST',
             headers: {
@@ -148,6 +158,7 @@ async function handleResumeStream(response) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let currentEventType = null;
 
     try {
         while (true) {
@@ -167,7 +178,10 @@ async function handleResumeStream(response) {
             for (const line of lines) {
                 Logger.info('Processing resume line', { line: line.substring(0, 100) });
                 
-                if (line.startsWith('data: ')) {
+                if (line.startsWith('event: ')) {
+                    const eventType = line.slice(7).trim();
+                    currentEventType = eventType;
+                } else if (line.startsWith('data: ')) {
                     const data = line.slice(6);
                     Logger.info('Processing resume data', { data: data.substring(0, 100) });
                     
@@ -178,12 +192,45 @@ async function handleResumeStream(response) {
 
                     try {
                         if (!data || data.trim() === '') continue;
-                        const event = JSON.parse(data);
+                        const eventData = JSON.parse(data);
+
+                        // For resume events, we need to create the correct event structure
+                        // that processStreamEvent expects
+                        let eventToProcess = null;
+                        
+                        // Check if this is the double-wrapped format with eventType and eventData
+                        if (eventData && eventData.eventType && eventData.eventData) {
+                            // Extract the actual event from the nested eventData
+                            eventToProcess = eventData.eventData;
+                            Logger.info('Extracted event from double-wrapped format', { 
+                                original: eventData, 
+                                extracted: eventToProcess 
+                            });
+                        }
+                        // If the eventData has a direct event structure, use it
+                        else if (eventData && eventData.event && eventData.id) {
+                            // This is a custom event like response.resumed, response.completed
+                            // Use it directly as processStreamEvent expects
+                            eventToProcess = eventData;
+                            Logger.info('Using direct event structure', { eventToProcess });
+                        } else if (currentEventType) {
+                            // This is a LangGraph event, create the expected structure
+                            eventToProcess = {
+                                event: currentEventType,
+                                data: eventData
+                            };
+                            Logger.info('Created LangGraph event structure', { eventToProcess });
+                        } else {
+                            // Fallback: if we have eventData but no clear structure, 
+                            // assume it's a direct event
+                            eventToProcess = eventData;
+                            Logger.info('Using fallback event structure', { eventToProcess });
+                        }
 
                         // Use the same event processing logic as regular streaming
                         // Find the last assistant message div to update
                         const lastAssistantMessage = document.querySelector('.assistant-message:last-child');
-                        processStreamEvent(event, lastAssistantMessage);
+                        processStreamEvent(eventToProcess, lastAssistantMessage);
                     } catch (e) {
                         Logger.warn('Failed to parse resume event', { error: e.message });
                     }

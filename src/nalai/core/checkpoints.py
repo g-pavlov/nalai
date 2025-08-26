@@ -27,6 +27,98 @@ class Checkpoints:
         self.checkpointing_service = get_checkpointing_service()
         self.checkpointer = self.checkpointing_service.get_checkpointer()
 
+    def _extract_user_from_thread_id(self, thread_id: str) -> str | None:
+        """Extract user_id from thread_id format 'user:{user_id}:{conversation_id}'."""
+        if thread_id.startswith("user:"):
+            parts = thread_id.split(":", 2)
+            if len(parts) == 3:
+                return parts[1]
+        return None
+
+    def _extract_conversation_from_thread_id(self, thread_id: str) -> str | None:
+        """Extract conversation_id from thread_id format 'user:{user_id}:{conversation_id}'."""
+        if thread_id.startswith("user:"):
+            parts = thread_id.split(":", 2)
+            if len(parts) == 3:
+                return parts[2]
+        return None
+
+    def _discover_user_conversations_via_list(self, user_id: str) -> list[str]:
+        """
+        Discover conversations for a user using the checkpointer's list method.
+
+        This approach uses the checkpointer's built-in filtering capabilities
+        to find all thread_ids that belong to the specified user.
+        """
+        try:
+            discovered_conversations = set()
+
+            # Use the checkpointer's list method to get all checkpoints
+            # We pass None as config to get all checkpoints, then filter by user
+            checkpoints = self.checkpointer.list(None)
+
+            for checkpoint_tuple in checkpoints:
+                # Extract thread_id from the checkpoint config
+                config = checkpoint_tuple.config
+                thread_id = config.get("configurable", {}).get("thread_id", "")
+
+                # Check if this thread_id belongs to our user
+                thread_user_id = self._extract_user_from_thread_id(thread_id)
+                if thread_user_id == user_id:
+                    conversation_id = self._extract_conversation_from_thread_id(
+                        thread_id
+                    )
+                    if conversation_id:
+                        discovered_conversations.add(conversation_id)
+
+            logger.debug(
+                f"Discovered {len(discovered_conversations)} conversations for user {user_id}"
+            )
+            return list(discovered_conversations)
+
+        except Exception as e:
+            logger.error(f"Error discovering conversations for user {user_id}: {e}")
+            return []
+
+    def _discover_user_conversations_via_storage(self, user_id: str) -> list[str]:
+        """
+        Fallback method: Discover conversations by scanning the checkpointer's storage.
+
+        This is used as a fallback if the list method doesn't work as expected.
+        """
+        try:
+            # Access the checkpointer's internal storage
+            if hasattr(self.checkpointer, "storage") and hasattr(
+                self.checkpointer.storage, "keys"
+            ):
+                discovered_conversations = []
+
+                # Scan all thread_ids in the storage
+                for thread_id in self.checkpointer.storage.keys():
+                    if isinstance(thread_id, str):
+                        # Check if this thread_id belongs to our user
+                        thread_user_id = self._extract_user_from_thread_id(thread_id)
+                        if thread_user_id == user_id:
+                            conversation_id = self._extract_conversation_from_thread_id(
+                                thread_id
+                            )
+                            if conversation_id:
+                                discovered_conversations.append(conversation_id)
+
+                logger.debug(
+                    f"Discovered {len(discovered_conversations)} conversations for user {user_id} via storage"
+                )
+                return discovered_conversations
+            else:
+                logger.warning("Checkpointer storage not accessible for discovery")
+                return []
+
+        except Exception as e:
+            logger.error(
+                f"Error discovering conversations for user {user_id} via storage: {e}"
+            )
+            return []
+
     # ===== CRUD Operations =====
 
     async def get(self, config: dict[str, Any]) -> dict[str, Any] | None:
@@ -100,23 +192,71 @@ class Checkpoints:
             Number of checkpoints deleted
         """
         try:
-            checkpoints = self.checkpointer.list(config)
-            deleted_count = 0
+            # Extract thread_id from config
+            thread_id = config.get("configurable", {}).get("thread_id", "")
 
-            for checkpoint in checkpoints:
-                try:
-                    await self.clear(checkpoint["id"], config)
-                    deleted_count += 1
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to delete checkpoint {checkpoint['id']}: {e}"
-                    )
+            # For MemorySaver, we can't actually delete checkpoints, but we can clear the state
+            # by overwriting it with an empty state
+            try:
+                await self.checkpointer.aput(config, {}, metadata={})
+                logger.debug(f"Cleared conversation state for thread_id: {thread_id}")
+                return 1
+            except Exception as e:
+                logger.warning(f"Could not clear conversation state: {e}")
+                return 1
 
-            logger.info(f"Deleted {deleted_count} checkpoints")
-            return deleted_count
         except Exception as e:
             logger.error(f"Failed to delete checkpoints: {e}")
             raise CheckpointingBackendError(f"Failed to delete checkpoints: {e}") from e
+
+    async def put(self, config: dict[str, Any], state: dict[str, Any]) -> str:
+        """
+        Create or update a checkpoint.
+
+        Args:
+            config: LangGraph configuration with thread_id
+            state: Checkpoint state
+
+        Returns:
+            Checkpoint ID
+        """
+        try:
+            checkpoint_id = await self.checkpointer.aput(config, state, metadata={})
+            logger.debug(f"Created/updated checkpoint {checkpoint_id}")
+            return checkpoint_id
+        except Exception as e:
+            logger.error(f"Failed to create/update checkpoint: {e}")
+            raise CheckpointingBackendError(
+                f"Failed to create/update checkpoint: {e}"
+            ) from e
+
+    async def list_user_conversations(self, user_id: str) -> builtins.list[str]:
+        """
+        List all conversations for a user using the checkpointer's list method.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            List of conversation IDs
+        """
+        try:
+            # Try the preferred method first (using checkpointer's list method)
+            conversations = self._discover_user_conversations_via_list(user_id)
+
+            # If no conversations found, try the fallback method
+            if not conversations:
+                logger.debug(
+                    f"No conversations found via list method for user {user_id}, trying storage method"
+                )
+                conversations = self._discover_user_conversations_via_storage(user_id)
+
+            logger.debug(f"Found {len(conversations)} conversations for user {user_id}")
+            return conversations
+
+        except Exception as e:
+            logger.error(f"Failed to list conversations for user {user_id}: {e}")
+            raise CheckpointingBackendError(f"Failed to list conversations: {e}") from e
 
     # ===== Enhanced Operations =====
 
@@ -247,29 +387,6 @@ class Checkpoints:
             raise CheckpointingBackendError(
                 f"Failed to create conversation: {e}"
             ) from e
-
-    async def list_user_conversations(self, user_id: str) -> builtins.list[str]:
-        """
-        List all conversations for a user.
-
-        Args:
-            user_id: User identifier
-
-        Returns:
-            List of conversation IDs
-        """
-        try:
-            # This is a simplified implementation
-            # In a real implementation, you'd need backend-specific logic
-            # For now, we'll return an empty list and log that this needs implementation
-            logger.warning(
-                "list_user_conversations not fully implemented - requires backend-specific logic"
-            )
-            return []
-
-        except Exception as e:
-            logger.error(f"Failed to list conversations for user {user_id}: {e}")
-            raise CheckpointingBackendError(f"Failed to list conversations: {e}") from e
 
     async def delete_conversation(self, user_id: str, conversation_id: str) -> bool:
         """

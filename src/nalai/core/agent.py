@@ -24,6 +24,9 @@ class ConversationInfo(BaseModel):
         "active", description="Conversation status (active, completed, interrupted)"
     )
     preview: str | None = Field(None, description="Conversation preview/summary")
+    interrupt_info: dict | None = Field(
+        None, description="Interrupt information if conversation was interrupted"
+    )
 
 
 class Conversation(ConversationInfo):
@@ -42,6 +45,7 @@ class ResumeDecision(BaseModel):
         None,
         description="Optional arguments for the action (e.g., edited args for 'edit' action)",
     )
+    tool_call_id: str = Field(..., description="The tool call ID to act upon")
 
 
 class ConversationIdPathParam(BaseModel):
@@ -98,10 +102,24 @@ class ValidationError(Error):
         super().__init__(message, "VALIDATION_ERROR", context)
 
 
+class ClientError(Error):
+    """Raised when client request is invalid (4xx errors)."""
+
+    def __init__(self, message: str, http_status: int = 400, context: dict = None):
+        self.http_status = http_status
+        super().__init__(message, "CLIENT_ERROR", context)
+
+
 class InvocationError(Error):
     """Raised when agent invocation fails."""
 
-    def __init__(self, message: str = "Agent invocation failed", context: dict = None):
+    def __init__(
+        self,
+        message: str = "Agent invocation failed",
+        context: dict = None,
+        original_exception: Exception = None,
+    ):
+        self.original_exception = original_exception
         super().__init__(message, "AGENT_ERROR", context)
 
 
@@ -113,6 +131,7 @@ class Agent(Protocol):
         messages: list[BaseMessage],
         conversation_id: str | None,
         config: dict,
+        previous_response_id: str | None = None,
     ) -> tuple[list[BaseMessage], ConversationInfo]:
         """
         Start a new conversation or continue an existing one based on conversation_id.
@@ -140,6 +159,7 @@ class Agent(Protocol):
         messages: list[BaseMessage],
         conversation_id: str | None,
         config: dict,
+        previous_response_id: str | None = None,
     ) -> tuple[AsyncGenerator[str, None], ConversationInfo]:
         """
         Stream conversation events.

@@ -13,10 +13,8 @@ from .middleware import (
     get_user_context,
     is_request_processable,
 )
-from .schemas import MessageInput
 
 __all__ = [
-    "MessageInput",
     "create_log_request_middleware",
     "create_user_context_middleware",
     "create_auth_middleware",

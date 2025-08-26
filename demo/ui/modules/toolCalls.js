@@ -213,6 +213,13 @@ export function addToolCallsIndicatorToMessage(messageDiv, toolCount, toolCalls 
         return;
     }
 
+    // Check if indicator already exists to prevent duplicates
+    const existingIndicator = messageDiv.querySelector('.message-tools-indicator');
+    if (existingIndicator) {
+        Logger.info('Tool calls indicator already exists, skipping duplicate', { toolCount });
+        return;
+    }
+
     // Find a good place to insert the indicator (after message content)
     const messageContent = messageDiv.querySelector('.streaming-content, .tool-message, .message-content');
     const indicator = createToolCallsIndicator(toolCount, toolCalls);
