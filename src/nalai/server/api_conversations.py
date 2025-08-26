@@ -5,8 +5,8 @@ This module contains FastAPI route handlers for basic endpoints
 and conversation endpoints with access control integration.
 """
 
+import functools
 import logging
-from collections.abc import Callable
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
@@ -27,7 +27,6 @@ from .schemas import (
     ListConversationsResponse,
     LoadConversationResponse,
 )
-from .streaming import serialize_event
 
 logger = logging.getLogger("nalai")
 
@@ -116,17 +115,10 @@ def handle_agent_errors(func):
             raise HTTPException(status_code=500, detail="Internal server error") from e
 
     # Preserve the original function signature for FastAPI
-    import functools
-
     return functools.wraps(func)(wrapper)
 
 
-def create_conversations_api(
-    app: FastAPI,
-    agent: Agent,
-    *,
-    serialize_event: Callable[[object], object] = serialize_event,
-) -> None:
+def create_conversations_api(app: FastAPI, agent: Agent) -> None:
     """Create conversation state management endpoint routes."""
 
     # Load conversation endpoint
@@ -186,9 +178,9 @@ def create_conversations_api(
 
         # Convert BaseMessage objects to MessageInputUnion for API response
         # Convert LangChain messages to API format using the same helper as agent responses
-        from .api_agent import _convert_messages_to_output
+        from .message_serializer import convert_messages_to_output
 
-        output_messages = _convert_messages_to_output(messages)
+        output_messages = convert_messages_to_output(messages)
 
         return LoadConversationResponse(
             conversation_id=conversation_info.conversation_id,

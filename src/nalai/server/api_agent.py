@@ -8,7 +8,6 @@ that provides unified conversation operations.
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Any
 
 from fastapi import HTTPException, Request
 
@@ -22,20 +21,23 @@ from ..core import (
     ValidationError,
 )
 from .api_conversations import SSEStreamingResponse, handle_agent_errors
+from .message_serializer import convert_messages_to_output, extract_usage_from_messages
 from .runtime_config import create_runtime_config
 from .schemas.messages import (
-    AssistantOutputMessage,
-    HumanOutputMessage,
     Interrupt,
     MessageRequest,
     MessageResponse,
-    OutputMessage,
     ResponseMetadata,
-    TextContent,
-    ToolCall,
-    ToolOutputMessage,
 )
-from .streaming import serialize_to_sse
+from .sse_serializer import (
+    ResponseCompletedEvent,
+    ResponseCreatedEvent,
+    ResponseErrorEvent,
+    ResponseMessageEvent,
+    ResponseResumedEvent,
+    create_event,
+    create_streaming_event,
+)
 
 logger = logging.getLogger("nalai")
 
@@ -162,7 +164,7 @@ data: {"id": "resp_789", "conversation": "conv_123", "usage": {...}}"""
         },
     )
     @handle_agent_errors
-    async def agent_responses(
+    async def handle_messages(
         request: MessageRequest, req: Request
     ) -> MessageResponse | SSEStreamingResponse:
         """
@@ -232,7 +234,7 @@ data: {"id": "resp_789", "conversation": "conv_123", "usage": {...}}"""
                     agent, resume_decision, conversation_id, agent_config, request
                 )
             else:
-                return await _handle_resume_rest_response(
+                return await _handle_resume_json_response(
                     agent, resume_decision, conversation_id, agent_config, request
                 )
 
@@ -247,7 +249,7 @@ data: {"id": "resp_789", "conversation": "conv_123", "usage": {...}}"""
                 previous_response_id,
             )
         else:
-            return await _handle_rest_response(
+            return await _handle_json_response(
                 agent,
                 messages,
                 conversation_id,
@@ -257,7 +259,7 @@ data: {"id": "resp_789", "conversation": "conv_123", "usage": {...}}"""
             )
 
 
-async def _handle_rest_response(
+async def _handle_json_response(
     agent: Agent,
     messages: list,
     conversation_id: str | None,
@@ -311,7 +313,7 @@ async def _handle_rest_response(
             status = "interrupted"
 
         # Create response output
-        output_messages = _convert_messages_to_output(result_messages)
+        output_messages = convert_messages_to_output(result_messages)
 
         response_data = {
             "id": str(uuid.uuid4()),
@@ -322,7 +324,7 @@ async def _handle_rest_response(
             "status": status,
             "interrupts": interrupts_list if interrupts_list else None,
             "metadata": None,
-            "usage": _extract_usage(result_messages),
+            "usage": extract_usage_from_messages(result_messages),
         }
 
         return MessageResponse(**response_data)
@@ -348,13 +350,13 @@ async def _handle_rest_response(
             "status": "error",
             "interrupts": None,
             "metadata": ResponseMetadata(error=str(e)),
-            "usage": _extract_usage([]),  # Empty usage for error responses
+            "usage": extract_usage_from_messages([]),  # Empty usage for error responses
         }
 
         return MessageResponse(**response_data)
 
 
-async def _handle_resume_rest_response(
+async def _handle_resume_json_response(
     agent: Agent,
     resume_decision,
     conversation_id: str,
@@ -373,12 +375,12 @@ async def _handle_resume_rest_response(
             "id": str(uuid.uuid4()),
             "conversation_id": conversation_info.conversation_id,
             "previous_response_id": None,  # Resume responses don't branch from previous responses
-            "output": _convert_messages_to_output(result_messages),
+            "output": convert_messages_to_output(result_messages),
             "created_at": datetime.now(UTC).isoformat(),
             "status": "completed",
             "interrupts": None,
             "metadata": None,
-            "usage": _extract_usage(result_messages),
+            "usage": extract_usage_from_messages(result_messages),
         }
 
         return MessageResponse(**response_data)
@@ -404,7 +406,7 @@ async def _handle_resume_rest_response(
             "status": "error",
             "interrupts": None,
             "metadata": ResponseMetadata(error=str(e)),
-            "usage": _extract_usage([]),  # Empty usage for error responses
+            "usage": extract_usage_from_messages([]),  # Empty usage for error responses
         }
 
         return MessageResponse(**response_data)
@@ -426,14 +428,7 @@ async def _handle_resume_streaming_response(
 
         async def generate():
             # Send response resumed event
-            yield serialize_to_sse(
-                {
-                    "event": "response.resumed",
-                    "id": str(uuid.uuid4()),
-                    "conversation": conversation_info.conversation_id,  # Use conversation info
-                },
-                lambda x: x,
-            )
+            yield create_event(ResponseResumedEvent, conversation_info.conversation_id)
 
             # Handle different streaming modes
             if request.stream == "events":
@@ -445,35 +440,22 @@ async def _handle_resume_streaming_response(
                     # Still emit other events (interrupts, etc.)
                     if not hasattr(event, "content") or not event.content:
                         # Agent events are already serialized objects, format them as SSE
-                        yield serialize_to_sse(event, lambda x: x)
+                        yield create_streaming_event(event, lambda x: x)
 
                 # Emit single message event with full content
                 if full_content:
-                    yield serialize_to_sse(
-                        {
-                            "event": "response.message",
-                            "id": str(uuid.uuid4()),
-                            "conversation": conversation_id,
-                            "content": full_content,
-                            "role": "assistant",
-                        },
-                        lambda x: x,
-                    )
+                    yield create_event(ResponseMessageEvent, conversation_id, content=full_content)
             else:
                 # "full" mode - emit all events including token deltas
                 async for event in stream_gen:
                     # Agent events are already serialized objects, format them as SSE
-                    yield serialize_to_sse(event, lambda x: x)
+                    yield create_streaming_event(event, lambda x: x)
 
             # Send completion event
-            yield serialize_to_sse(
-                {
-                    "event": "response.completed",
-                    "id": str(uuid.uuid4()),
-                    "conversation": conversation_info.conversation_id,
-                    "usage": _extract_usage([]),  # TODO: Extract from stream
-                },
-                lambda x: x,
+            yield create_event(
+                ResponseCompletedEvent,
+                conversation_info.conversation_id,
+                usage=extract_usage_from_messages([]),  # TODO: Extract from stream
             )
 
         response = SSEStreamingResponse(generate())
@@ -487,14 +469,8 @@ async def _handle_resume_streaming_response(
 
         # Return error event
         async def generate_error():
-            yield serialize_to_sse(
-                {
-                    "event": "response.error",
-                    "id": str(uuid.uuid4()),
-                    "conversation": conversation_info.conversation_id,  # Use conversation info
-                    "error": error_message,
-                },
-                lambda x: x,
+            yield create_event(
+                ResponseErrorEvent, conversation_info.conversation_id, error=error_message
             )
 
         return SSEStreamingResponse(generate_error())
@@ -520,14 +496,7 @@ async def _handle_streaming_response(
 
         async def generate():
             # Send response created event
-            yield serialize_to_sse(
-                {
-                    "event": "response.created",
-                    "id": str(uuid.uuid4()),
-                    "conversation": actual_conversation_id,
-                },
-                lambda x: x,
-            )
+            yield create_event(ResponseCreatedEvent, actual_conversation_id)
 
             # Handle different streaming modes
             if request.stream == "events":
@@ -538,34 +507,23 @@ async def _handle_streaming_response(
                         full_content += str(event.content)
                     # Still emit other events (interrupts, etc.)
                     if not hasattr(event, "content") or not event.content:
-                        yield serialize_to_sse(event, lambda x: x)
+                        yield create_streaming_event(event, lambda x: x)
 
                 # Emit single message event with full content
                 if full_content:
-                    yield serialize_to_sse(
-                        {
-                            "event": "response.message",
-                            "id": str(uuid.uuid4()),
-                            "conversation": actual_conversation_id,
-                            "content": full_content,
-                            "role": "assistant",
-                        },
-                        lambda x: x,
+                    yield create_event(
+                        ResponseMessageEvent, actual_conversation_id, content=full_content
                     )
             else:
                 # "full" mode - emit all events including token deltas
                 async for event in stream_gen:
-                    yield serialize_to_sse(event, lambda x: x)
+                    yield create_streaming_event(event, lambda x: x)
 
             # Send completion event
-            yield serialize_to_sse(
-                {
-                    "event": "response.completed",
-                    "id": str(uuid.uuid4()),
-                    "conversation": actual_conversation_id,
-                    "usage": _extract_usage([]),  # TODO: Extract from stream
-                },
-                lambda x: x,
+            yield create_event(
+                ResponseCompletedEvent,
+                actual_conversation_id,
+                usage=extract_usage_from_messages([]),  # TODO: Extract from stream
             )
 
         response = SSEStreamingResponse(generate())
@@ -579,136 +537,6 @@ async def _handle_streaming_response(
 
         # Return error event
         async def generate_error():
-            yield serialize_to_sse(
-                {
-                    "event": "response.error",
-                    "id": str(uuid.uuid4()),
-                    "conversation": actual_conversation_id,
-                    "error": error_message,
-                },
-                lambda x: x,
-            )
+            yield create_event(ResponseErrorEvent, actual_conversation_id, error=error_message)
 
         return SSEStreamingResponse(generate_error())
-
-
-def _convert_messages_to_output(messages: list) -> list[OutputMessage]:
-    """Convert LangChain messages to output format."""
-
-    output_messages = []
-    for message in messages:
-        # Extract metadata fields
-        raw_tool_calls = getattr(message, "tool_calls", None)
-        invalid_tool_calls = getattr(message, "invalid_tool_calls", None)
-
-        # Extract finish_reason from various possible locations (only for assistant messages)
-        finish_reason = None
-        if hasattr(message, "finish_reason"):
-            finish_reason = message.finish_reason
-        elif hasattr(message, "response_metadata") and message.response_metadata:
-            finish_reason = message.response_metadata.get("finish_reason")
-        elif hasattr(message, "additional_kwargs") and message.additional_kwargs:
-            finish_reason = message.additional_kwargs.get("finish_reason")
-
-        # Extract usage information from message (only for assistant messages)
-        usage = None
-        if hasattr(message, "usage_metadata") and message.usage_metadata:
-            # Convert usage format to standard format
-            usage_metadata = message.usage_metadata
-            if isinstance(usage_metadata, dict):
-                usage = {
-                    "prompt_tokens": usage_metadata.get("input_tokens", 0),
-                    "completion_tokens": usage_metadata.get("output_tokens", 0),
-                    "total_tokens": usage_metadata.get("total_tokens", 0),
-                }
-        elif hasattr(message, "usage") and message.usage:
-            usage = message.usage
-        else:
-            usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-
-        # Convert raw tool calls to ToolCall objects
-        tool_calls = None
-        if raw_tool_calls:
-            tool_calls = []
-            for tc in raw_tool_calls:
-                tool_calls.append(
-                    ToolCall(
-                        id=tc.get("id"), name=tc.get("name"), args=tc.get("args", {})
-                    )
-                )
-
-        # Create content blocks
-        content_blocks = []
-        if hasattr(message, "content") and message.content:
-            content_blocks.append(TextContent(text=str(message.content)))
-
-        # Determine message type and create appropriate output
-        message_type = message.__class__.__name__.lower().replace("message", "")
-
-        if message_type == "human":
-            output_message = HumanOutputMessage(
-                id=str(uuid.uuid4()),
-                content=content_blocks,
-            )
-        elif message_type == "ai":
-            output_message = AssistantOutputMessage(
-                id=str(uuid.uuid4()),
-                content=content_blocks,
-                tool_calls=tool_calls,
-                invalid_tool_calls=invalid_tool_calls,
-                finish_reason=finish_reason,
-                usage=usage,
-            )
-        elif message_type == "tool":
-            # Extract tool_call_id for tool messages
-            tool_call_id = None
-            if hasattr(message, "tool_call_id"):
-                tool_call_id = message.tool_call_id
-
-            output_message = ToolOutputMessage(
-                id=str(uuid.uuid4()),
-                content=content_blocks,
-                tool_call_id=tool_call_id,
-            )
-        else:
-            # Fallback for unknown message types
-            output_message = HumanOutputMessage(
-                id=str(uuid.uuid4()),
-                content=content_blocks,
-            )
-
-        output_messages.append(output_message)
-
-    return output_messages
-
-
-def _extract_usage(messages: list) -> dict[str, Any]:
-    """Extract usage information from messages."""
-    total_prompt_tokens = 0
-    total_completion_tokens = 0
-    total_tokens = 0
-
-    for message in messages:
-        # Check for usage_metadata first (LangChain format)
-        usage = None
-        if hasattr(message, "usage_metadata") and message.usage_metadata:
-            usage_metadata = message.usage_metadata
-            if isinstance(usage_metadata, dict):
-                usage = {
-                    "prompt_tokens": usage_metadata.get("input_tokens", 0),
-                    "completion_tokens": usage_metadata.get("output_tokens", 0),
-                    "total_tokens": usage_metadata.get("total_tokens", 0),
-                }
-        elif hasattr(message, "usage") and message.usage:
-            usage = message.usage
-
-        if usage and isinstance(usage, dict):
-            total_prompt_tokens += usage.get("prompt_tokens", 0)
-            total_completion_tokens += usage.get("completion_tokens", 0)
-            total_tokens += usage.get("total_tokens", 0)
-
-    return {
-        "prompt_tokens": total_prompt_tokens,
-        "completion_tokens": total_completion_tokens,
-        "total_tokens": total_tokens,
-    }

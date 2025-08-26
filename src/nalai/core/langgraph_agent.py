@@ -13,7 +13,6 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from ..server.streaming import serialize_event
 from .agent import (
     # Exceptions
     AccessDeniedError,
@@ -26,6 +25,7 @@ from .agent import (
     ValidationError,
 )
 from .checkpoints import get_checkpoints
+from .serialization import serialize_langgraph_streaming_chunk
 
 logger = logging.getLogger("nalai")
 
@@ -410,245 +410,14 @@ class LangGraphAgent(Agent):
             async for chunk in self.agent.astream(
                 agent_input, config, stream_mode=["updates", "messages"]
             ):
-                # Filter out sensitive LangGraph details and add conversation context
-                filtered_chunk = self._filter_streaming_chunk(chunk, conversation_id)
-                if filtered_chunk:
-                    serialized_chunk = serialize_event(filtered_chunk)
-                    if serialized_chunk:
-                        yield serialized_chunk
+                # Use consolidated serialization function
+                serialized_chunk = serialize_langgraph_streaming_chunk(
+                    chunk, conversation_id
+                )
+                if serialized_chunk:
+                    yield serialized_chunk
 
         return stream_generator(), conversation_info
-
-    def _filter_streaming_chunk(self, chunk, conversation_id: str):
-        """
-        Filter out sensitive LangGraph details from streaming chunks.
-
-        Args:
-            chunk: The raw LangGraph chunk
-            conversation_id: The conversation ID to add to filtered chunks
-
-        Returns:
-            Filtered chunk with conversation context, or None if should be skipped
-        """
-        # LangGraph events come in the format ["messages", [...]] or ["updates", {...}]
-        # We need to preserve this format but filter the content within
-
-        # For message chunks with content, always preserve them and filter sensitive fields
-        if hasattr(chunk, "content") and hasattr(chunk, "type"):
-            # Create a clean message object with conversation context
-            filtered_message = {
-                "content": chunk.content,
-                "type": chunk.type,
-                "id": getattr(chunk, "id", None),
-                "conversation": conversation_id,
-            }
-
-            # Add tool calls if present
-            if hasattr(chunk, "tool_calls") and chunk.tool_calls:
-                filtered_message["tool_calls"] = chunk.tool_calls
-
-            # Add tool call chunks if present
-            if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
-                filtered_message["tool_call_chunks"] = chunk.tool_call_chunks
-
-            # Add invalid tool calls if present
-            if hasattr(chunk, "invalid_tool_calls") and chunk.invalid_tool_calls:
-                filtered_message["invalid_tool_calls"] = chunk.invalid_tool_calls
-
-            # Add response metadata if present
-            if hasattr(chunk, "response_metadata") and chunk.response_metadata:
-                filtered_message["response_metadata"] = chunk.response_metadata
-
-            return filtered_message
-
-        # For update chunks with meaningful data, preserve them and filter sensitive fields
-        if hasattr(chunk, "__dict__"):
-            # Check if this chunk has meaningful content (not just internal state)
-            meaningful_fields = ["messages", "selected_apis", "cache_miss", "updates"]
-            has_meaningful_content = any(
-                hasattr(chunk, field) and getattr(chunk, field) is not None
-                for field in meaningful_fields
-            )
-
-            if has_meaningful_content:
-                filtered_dict = {}
-                for key, value in chunk.__dict__.items():
-                    # Skip sensitive fields but preserve meaningful content
-                    if key in [
-                        "auth_token",
-                        "user_id",
-                        "user_email",
-                        "org_unit_id",
-                        "langgraph_step",
-                        "langgraph_node",
-                        "langgraph_triggers",
-                        "langgraph_path",
-                        "langgraph_checkpoint_ns",
-                        "checkpoint_ns",
-                        "ls_provider",
-                        "ls_model_name",
-                        "ls_model_type",
-                        "ls_temperature",
-                        "thread_id",
-                        "cache_disabled",
-                        "disable_cache",
-                    ]:
-                        continue
-
-                    # Add conversation context
-                    if key == "conversation":
-                        filtered_dict[key] = conversation_id
-                    else:
-                        filtered_dict[key] = value
-
-                if filtered_dict:
-                    filtered_dict["conversation"] = conversation_id
-                    return filtered_dict
-            else:
-                # Skip chunks that are purely internal state
-                if (
-                    hasattr(chunk, "auth_token")
-                    or hasattr(chunk, "user_id")
-                    or hasattr(chunk, "user_email")
-                    or hasattr(chunk, "org_unit_id")
-                    or hasattr(chunk, "langgraph_step")
-                    or hasattr(chunk, "langgraph_node")
-                    or hasattr(chunk, "langgraph_triggers")
-                    or hasattr(chunk, "langgraph_path")
-                    or hasattr(chunk, "langgraph_checkpoint_ns")
-                    or hasattr(chunk, "checkpoint_ns")
-                    or hasattr(chunk, "ls_provider")
-                    or hasattr(chunk, "ls_model_name")
-                    or hasattr(chunk, "ls_model_type")
-                    or hasattr(chunk, "ls_temperature")
-                    or hasattr(chunk, "thread_id")
-                ):
-                    return None
-
-        # For dictionary chunks, preserve meaningful content and filter sensitive fields
-        if isinstance(chunk, dict):
-            # Check if this dict has meaningful content
-            meaningful_keys = ["messages", "selected_apis", "cache_miss", "updates"]
-            has_meaningful_content = any(key in chunk for key in meaningful_keys)
-
-            if has_meaningful_content:
-                filtered_dict = {}
-                for key, value in chunk.items():
-                    # Skip sensitive fields but preserve meaningful content
-                    if key in [
-                        "auth_token",
-                        "user_id",
-                        "user_email",
-                        "org_unit_id",
-                        "langgraph_step",
-                        "langgraph_node",
-                        "langgraph_triggers",
-                        "langgraph_path",
-                        "langgraph_checkpoint_ns",
-                        "checkpoint_ns",
-                        "ls_provider",
-                        "ls_model_name",
-                        "ls_model_type",
-                        "ls_temperature",
-                        "thread_id",
-                        "cache_disabled",
-                        "disable_cache",
-                    ]:
-                        continue
-
-                    filtered_dict[key] = value
-
-                if filtered_dict:
-                    filtered_dict["conversation"] = conversation_id
-                    return filtered_dict
-            else:
-                # Skip dicts that are purely internal state
-                sensitive_keys = [
-                    "auth_token",
-                    "user_id",
-                    "user_email",
-                    "org_unit_id",
-                    "langgraph_step",
-                    "langgraph_node",
-                    "langgraph_triggers",
-                    "langgraph_path",
-                    "langgraph_checkpoint_ns",
-                    "checkpoint_ns",
-                    "ls_provider",
-                    "ls_model_name",
-                    "ls_model_type",
-                    "ls_temperature",
-                    "thread_id",
-                ]
-                if any(key in chunk for key in sensitive_keys):
-                    return None
-
-        # For other objects, try to add conversation context if they have meaningful content
-        if hasattr(chunk, "__dict__"):
-            # Check if this object has meaningful content
-            meaningful_fields = [
-                "messages",
-                "selected_apis",
-                "cache_miss",
-                "updates",
-                "content",
-            ]
-            has_meaningful_content = any(
-                hasattr(chunk, field) and getattr(chunk, field) is not None
-                for field in meaningful_fields
-            )
-
-            if has_meaningful_content:
-                # Create a copy with conversation context
-                filtered_chunk = type(chunk)()
-                for key, value in chunk.__dict__.items():
-                    if key in [
-                        "auth_token",
-                        "user_id",
-                        "user_email",
-                        "org_unit_id",
-                        "langgraph_step",
-                        "langgraph_node",
-                        "langgraph_triggers",
-                        "langgraph_path",
-                        "langgraph_checkpoint_ns",
-                        "checkpoint_ns",
-                        "ls_provider",
-                        "ls_model_name",
-                        "ls_model_type",
-                        "ls_temperature",
-                        "thread_id",
-                        "cache_disabled",
-                        "disable_cache",
-                    ]:
-                        continue
-                    setattr(filtered_chunk, key, value)
-
-                # Add conversation context
-                filtered_chunk.conversation = conversation_id
-                return filtered_chunk
-            else:
-                # Skip objects that are purely internal state
-                if (
-                    hasattr(chunk, "auth_token")
-                    or hasattr(chunk, "user_id")
-                    or hasattr(chunk, "user_email")
-                    or hasattr(chunk, "org_unit_id")
-                    or hasattr(chunk, "langgraph_step")
-                    or hasattr(chunk, "langgraph_node")
-                    or hasattr(chunk, "langgraph_triggers")
-                    or hasattr(chunk, "langgraph_path")
-                    or hasattr(chunk, "langgraph_checkpoint_ns")
-                    or hasattr(chunk, "checkpoint_ns")
-                    or hasattr(chunk, "ls_provider")
-                    or hasattr(chunk, "ls_model_name")
-                    or hasattr(chunk, "ls_model_type")
-                    or hasattr(chunk, "ls_temperature")
-                    or hasattr(chunk, "thread_id")
-                ):
-                    return None
-
-        return None
 
     async def list_conversations(
         self,
@@ -876,12 +645,12 @@ class LangGraphAgent(Agent):
                 config,
                 stream_mode=["updates", "messages"],
             ):
-                # Filter out sensitive LangGraph details and add conversation context
-                filtered_chunk = self._filter_streaming_chunk(chunk, conversation_id)
-                if filtered_chunk:
-                    serialized_chunk = serialize_event(filtered_chunk)
-                    if serialized_chunk:
-                        yield serialized_chunk
+                # Use consolidated serialization function
+                serialized_chunk = serialize_langgraph_streaming_chunk(
+                    chunk, conversation_id
+                )
+                if serialized_chunk:
+                    yield serialized_chunk
 
         return stream_generator(), conversation_info
 
