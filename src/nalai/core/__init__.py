@@ -11,26 +11,29 @@ from .agent import (
     AccessDeniedError,
     Agent,
     ClientError,
+    ConfigSchema,
     Conversation,
     ConversationInfo,
     ConversationNotFoundError,
     # Exceptions
     Error,
     InvocationError,
+    Message,
+    ModelConfig,
     # Internal types
     ResumeDecision,
+    SelectApi,
+    SelectedApis,
+    StreamingChunk,
+    ToolCall,
     ValidationError,
 )
 from .checkpoints import get_checkpoints
 from .langgraph_agent import LangGraphAgent
-from .schemas import (
+from .states import (
     AgentState,
-    ConfigSchema,
     InputSchema,
-    ModelConfig,
     OutputSchema,
-    SelectApi,
-    SelectedApis,
 )
 from .workflow import create_and_compile_workflow
 from .workflow_nodes import WorkflowNodes
@@ -68,6 +71,10 @@ __all__ = [
     "OutputSchema",
     "SelectApi",
     "SelectedApis",
+    # Core data models
+    "Message",
+    "StreamingChunk",
+    "ToolCall",
     # Agent interface
     "Agent",
     "LangGraphAgent",

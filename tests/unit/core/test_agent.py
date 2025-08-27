@@ -4,8 +4,6 @@ Unit tests for Agent protocol/interface.
 Tests the Agent protocol definition and interface contracts.
 """
 
-from langchain_core.messages import AIMessage, HumanMessage
-
 from nalai.core.agent import Agent, Conversation, ConversationInfo
 
 
@@ -42,7 +40,12 @@ class TestAgentModels:
 
     def test_conversation_model(self):
         """Test Conversation model creation and validation."""
-        messages = [HumanMessage(content="Hello"), AIMessage(content="Hi there!")]
+        from nalai.core.agent import Message
+
+        messages = [
+            Message(content="Hello", type="human"),
+            Message(content="Hi there!", type="ai"),
+        ]
 
         conversation = Conversation(
             conversation_id="test-conv-123",

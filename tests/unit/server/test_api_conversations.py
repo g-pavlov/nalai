@@ -204,9 +204,12 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent to return tuple (messages, conversation_info) as expected by the interface
-        from langchain_core.messages import AIMessage, HumanMessage
+        from nalai.core.agent import Message
 
-        mock_messages = [HumanMessage(content="Hello"), AIMessage(content="Hi there!")]
+        mock_messages = [
+            Message(content="Hello", type="human"),
+            Message(content="Hi there!", type="ai"),
+        ]
         mock_conversation_info = MagicMock()
         mock_conversation_info.conversation_id = "test-conversation-123"
         mock_conversation_info.interrupt_info = None
@@ -279,19 +282,20 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent with tool calls
-        from langchain_core.messages import AIMessage, HumanMessage
+        from nalai.core.agent import Message, ToolCall
 
         mock_messages = [
-            HumanMessage(content="Hello"),
-            AIMessage(
+            Message(content="Hello", type="human"),
+            Message(
                 content="I'll check the weather for you.",
+                type="ai",
                 tool_calls=[
-                    {
-                        "id": "call_123",
-                        "type": "function",
-                        "name": "get_weather",
-                        "args": {"location": "Seattle"},
-                    }
+                    ToolCall(
+                        id="call_123",
+                        name="get_weather",
+                        args={"location": "Seattle"},
+                        type="function",
+                    )
                 ],
             ),
         ]
@@ -346,11 +350,11 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent with interrupt - agent stores interrupt in conversation_info
-        from langchain_core.messages import AIMessage, HumanMessage
+        from nalai.core.agent import Message
 
         mock_messages = [
-            HumanMessage(content="Hello"),
-            AIMessage(content="I'll check the weather for you."),
+            Message(content="Hello", type="human"),
+            Message(content="I'll check the weather for you.", type="ai"),
         ]
 
         mock_conversation_info = MagicMock()
@@ -451,12 +455,13 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent with metadata
-        from langchain_core.messages import AIMessage, HumanMessage
+        from nalai.core.agent import Message
 
         mock_messages = [
-            HumanMessage(content="Hello"),
-            AIMessage(
+            Message(content="Hello", type="human"),
+            Message(
                 content="Hi there!",
+                type="ai",
                 finish_reason="stop",
                 usage={"completion_tokens": 5},
             ),
@@ -763,9 +768,12 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent to return tuple (messages, conversation_info) as expected by the interface
-        from langchain_core.messages import AIMessage, HumanMessage
+        from nalai.core.agent import Message
 
-        mock_messages = [HumanMessage(content="Hello"), AIMessage(content="Hi there!")]
+        mock_messages = [
+            Message(content="Hello", type="human"),
+            Message(content="Hi there!", type="ai"),
+        ]
         mock_conversation_info = MagicMock()
         mock_conversation_info.conversation_id = "test-conversation-123"
         mock_conversation_info.interrupt_info = None
@@ -817,10 +825,12 @@ class TestAgentAPI:
 
         mock_agent.chat.assert_called_once()
 
-        # Verify that the agent was called with a HumanMessage containing the string content
+        # Verify that the agent was called with a LangChain message containing the string content
         call_args = mock_agent.chat.call_args
         messages = call_args[0][0]  # First argument is messages
         assert len(messages) == 1
+        from langchain_core.messages import HumanMessage
+
         assert isinstance(messages[0], HumanMessage)
         assert messages[0].content == "Hello, how are you?"
 
@@ -968,15 +978,13 @@ class TestLoadConversation:
 
         if agent_behavior == "success":
             # Mock successful conversation
-            # Create proper BaseMessage objects for the test
-            from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+            # Create proper Message objects for the test
+            from nalai.core.agent import Message
 
             mock_messages = [
-                HumanMessage(content="Hello"),
-                AIMessage(content="Hi there!"),
-                ToolMessage(
-                    content="API response", name="test_api", tool_call_id="call_123"
-                ),
+                Message(content="Hello", type="human"),
+                Message(content="Hi there!", type="ai"),
+                Message(content="API response", type="tool", tool_call_id="call_123"),
             ]
 
             mock_conversation = MagicMock()

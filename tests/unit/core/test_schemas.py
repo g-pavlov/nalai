@@ -15,14 +15,14 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from nalai.core.schemas import (
+from nalai.core.agent import (
     DEFAULT_MODEL_CONFIG,
-    AgentState,
     ConfigSchema,
     ModelConfig,
     SelectApi,
     SelectedApis,
 )
+from nalai.core.states import AgentState
 
 
 class TestInputSchema:

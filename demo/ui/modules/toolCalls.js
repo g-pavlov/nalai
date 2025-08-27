@@ -220,14 +220,11 @@ export function addToolCallsIndicatorToMessage(messageDiv, toolCount, toolCalls 
         return;
     }
 
-    // Find a good place to insert the indicator (after message content)
-    const messageContent = messageDiv.querySelector('.streaming-content, .tool-message, .message-content');
+    // Create the indicator
     const indicator = createToolCallsIndicator(toolCount, toolCalls);
     
-    if (indicator && messageContent) {
-        messageContent.appendChild(indicator);
-    } else if (indicator) {
-        // Fallback: append to message div
+    if (indicator) {
+        // Append the indicator to the message div (after all content)
         messageDiv.appendChild(indicator);
     }
 }

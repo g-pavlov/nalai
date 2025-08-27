@@ -29,7 +29,7 @@ from nalai.core.constants import (
     NODE_LOAD_API_SUMMARIES,
     NODE_SELECT_RELEVANT_APIS,
 )
-from nalai.core.schemas import AgentState, InputSchema, OutputSchema
+from nalai.core.states import AgentState, InputSchema, OutputSchema
 from nalai.core.workflow import create_and_compile_workflow
 from nalai.core.workflow_nodes import WorkflowNodes
 from nalai.services.api_docs_service import APIService

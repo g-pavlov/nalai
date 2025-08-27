@@ -21,11 +21,12 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
+from nalai.core.agent import SelectApi, SelectedApis
 from nalai.core.constants import (
     NODE_CALL_MODEL,
     NODE_SELECT_RELEVANT_APIS,
 )
-from nalai.core.schemas import AgentState, SelectApi, SelectedApis
+from nalai.core.states import AgentState
 from nalai.core.workflow_nodes import WorkflowNodes
 from nalai.prompts.prompts import format_template_with_variables
 from nalai.services.model_service import ModelService

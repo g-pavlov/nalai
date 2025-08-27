@@ -8,13 +8,33 @@ import { Logger } from './logger.js';
 import { ErrorHandler } from './errorHandler.js';
 import { setCurrentThreadId, setProcessing, getProcessingStatus } from './state.js';
 import { addToolCallsIndicatorToMessage } from './toolCalls.js';
+import { resetStreamingProgressState } from './streaming.js';
 
 export function createAssistantMessageElement() {
+    // Reset streaming state to ensure clean state for new message
+    resetStreamingProgressState();
+    
+    // Clear any expanded tools panels from previous messages (but keep the indicators)
+    const existingToolsPanels = DOM.chatContainer.querySelectorAll('.tools-panel');
+    existingToolsPanels.forEach(panel => {
+        if (panel.classList.contains('expanded')) {
+            panel.classList.remove('expanded');
+            // Remove the panel after a short delay to allow for smooth transition
+            setTimeout(() => {
+                if (panel.parentNode) {
+                    panel.remove();
+                }
+            }, 150);
+        }
+    });
+    
     const assistantMessageDiv = document.createElement('div');
     assistantMessageDiv.className = 'message assistant-message fade-in';
     assistantMessageDiv.textContent = '';
     DOM.chatContainer.appendChild(assistantMessageDiv);
     DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+    
+    Logger.info('Created new assistant message element, reset streaming state, and cleared expanded tools panels');
     return assistantMessageDiv;
 }
 

@@ -20,12 +20,14 @@ from .agent import (
     ConversationInfo,
     ConversationNotFoundError,
     InvocationError,
+    Message,
     # Internal types
     ResumeDecision,
+    StreamingChunk,
     ValidationError,
 )
 from .checkpoints import get_checkpoints
-from .serialization import serialize_langgraph_streaming_chunk
+from .lc_transformers import transform_message, transform_streaming_chunk
 
 logger = logging.getLogger("nalai")
 
@@ -254,7 +256,7 @@ class LangGraphAgent(Agent):
         conversation_id: str | None,
         config: dict,
         previous_response_id: str | None = None,
-    ) -> tuple[list[BaseMessage], ConversationInfo]:
+    ) -> tuple[list[Message], ConversationInfo]:
         """Start a new conversation or continue an existing one based on conversation_id."""
         user_id = self._extract_user_id_from_config(config)
 
@@ -309,6 +311,9 @@ class LangGraphAgent(Agent):
         result_messages = (
             result.get("messages", messages) if isinstance(result, dict) else messages
         )
+
+        # Transform to core models
+        core_messages = [transform_message(msg) for msg in result_messages]
 
         # Check for interrupts in the result
         interrupt_info = None
@@ -367,7 +372,7 @@ class LangGraphAgent(Agent):
         if interrupt_info:
             conversation_info.interrupt_info = interrupt_info
 
-        return result_messages, conversation_info
+        return core_messages, conversation_info
 
     async def chat_streaming(
         self,
@@ -375,7 +380,7 @@ class LangGraphAgent(Agent):
         conversation_id: str | None,
         config: dict,
         previous_response_id: str | None = None,
-    ) -> tuple[AsyncGenerator[str, None], ConversationInfo]:
+    ) -> tuple[AsyncGenerator[StreamingChunk, None], ConversationInfo]:
         """Stream conversation events."""
         user_id = self._extract_user_id_from_config(config)
 
@@ -404,18 +409,15 @@ class LangGraphAgent(Agent):
         # Get conversation info
         conversation_info = await self._get_conversation_info(conversation_id, config)
 
-        # Create streaming generator with filtering
+        # Create streaming generator - pass through all events without filtering
         async def stream_generator():
             agent_input = {"messages": messages}
             async for chunk in self.agent.astream(
                 agent_input, config, stream_mode=["updates", "messages"]
             ):
-                # Use consolidated serialization function
-                serialized_chunk = serialize_langgraph_streaming_chunk(
-                    chunk, conversation_id
-                )
-                if serialized_chunk:
-                    yield serialized_chunk
+                # Transform chunk to core model - pass through all events
+                core_chunk = transform_streaming_chunk(chunk, conversation_id)
+                yield core_chunk
 
         return stream_generator(), conversation_info
 
@@ -484,7 +486,7 @@ class LangGraphAgent(Agent):
         self,
         conversation_id: str,
         config: dict,
-    ) -> tuple[list[BaseMessage], ConversationInfo]:
+    ) -> tuple[list[Message], ConversationInfo]:
         """Load conversation state using checkpoint operations."""
         user_id = self._extract_user_id_from_config(config)
 
@@ -523,14 +525,17 @@ class LangGraphAgent(Agent):
                 raise ConversationNotFoundError()
 
             # Extract messages using checkpoint operations
-            messages = self.checkpoints.extract_messages(checkpoint_state)
+            messages = await self.checkpoints.extract_messages(checkpoint_state)
+
+            # Transform to core models
+            core_messages = [transform_message(msg) for msg in messages]
 
             # Get conversation info
             conversation_info = await self._get_conversation_info(
                 conversation_id, config
             )
 
-            return messages, conversation_info
+            return core_messages, conversation_info
 
         except (AccessDeniedError, ConversationNotFoundError, ValidationError):
             raise
@@ -591,7 +596,7 @@ class LangGraphAgent(Agent):
         resume_decision: ResumeDecision,
         conversation_id: str,
         config: dict,
-    ) -> tuple[list[BaseMessage], ConversationInfo]:
+    ) -> tuple[list[Message], ConversationInfo]:
         """Resume an interrupted conversation."""
         user_id = self._extract_user_id_from_config(config)
 
@@ -615,17 +620,20 @@ class LangGraphAgent(Agent):
         # Extract conversation data from the result
         result_messages = result.get("messages", []) if isinstance(result, dict) else []
 
+        # Transform to core models
+        core_messages = [transform_message(msg) for msg in result_messages]
+
         # Get conversation info
         conversation_info = await self._get_conversation_info(conversation_id, config)
 
-        return result_messages, conversation_info
+        return core_messages, conversation_info
 
     async def resume_interrupted_streaming(
         self,
         resume_decision: ResumeDecision,
         conversation_id: str,
         config: dict,
-    ) -> tuple[AsyncGenerator[str, None], ConversationInfo]:
+    ) -> tuple[AsyncGenerator[StreamingChunk, None], ConversationInfo]:
         """Stream resume conversation events."""
         user_id = self._extract_user_id_from_config(config)
 
@@ -645,12 +653,9 @@ class LangGraphAgent(Agent):
                 config,
                 stream_mode=["updates", "messages"],
             ):
-                # Use consolidated serialization function
-                serialized_chunk = serialize_langgraph_streaming_chunk(
-                    chunk, conversation_id
-                )
-                if serialized_chunk:
-                    yield serialized_chunk
+                # Transform chunk to core model - pass through all events
+                core_chunk = transform_streaming_chunk(chunk, conversation_id)
+                yield core_chunk
 
         return stream_generator(), conversation_info
 
@@ -659,7 +664,7 @@ class LangGraphAgent(Agent):
         conversation_id: str,
         checkpoint_id: str,
         config: dict,
-    ) -> tuple[list[BaseMessage], ConversationInfo]:
+    ) -> tuple[list[Message], ConversationInfo]:
         """
         Resume conversation from a specific checkpoint.
 
@@ -696,12 +701,15 @@ class LangGraphAgent(Agent):
             # Extract messages using checkpoint operations
             messages = self.checkpoints.extract_messages(checkpoint_state)
 
+            # Transform to core models
+            core_messages = [transform_message(msg) for msg in messages]
+
             # Get conversation info
             conversation_info = await self._get_conversation_info(
                 conversation_id, config
             )
 
-            return messages, conversation_info
+            return core_messages, conversation_info
 
         except (AccessDeniedError, ConversationNotFoundError):
             raise

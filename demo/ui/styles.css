@@ -1611,6 +1611,26 @@ input:checked + .slider:before {
     color: #dc2626;
 }
 
+.tool-call-status.building {
+    background: #fef3c7;
+    color: var(--warning-color);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+.tool-call-status.ready {
+    background: #d1fae5;
+    color: var(--success-color);
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
 .tool-call-section {
     margin-bottom: 8px;
 }

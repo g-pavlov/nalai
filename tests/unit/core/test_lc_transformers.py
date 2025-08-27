@@ -1,0 +1,41 @@
+"""
+Tests for core lc_transformers module - critical path functionality.
+"""
+
+from unittest.mock import Mock
+
+import pytest
+
+from nalai.core.lc_transformers import transform_message, transform_streaming_chunk
+
+
+class TestLCTransformers:
+    """Test critical LangChain transformers functionality."""
+
+    @pytest.mark.parametrize(
+        "message_type,content,expected_type",
+        [
+            ("HumanMessage", "Hello", "human"),
+            ("AIMessage", "Hi there!", "ai"),
+            ("ToolMessage", "Tool result", "tool"),
+        ],
+    )
+    def test_transform_message_types(self, message_type, content, expected_type):
+        """Test message transformation for different message types."""
+        mock_message = Mock()
+        mock_message.content = content
+        mock_message.__class__.__name__ = message_type
+
+        result = transform_message(mock_message)
+        assert result.type == expected_type
+        assert result.content == content
+
+    def test_transform_streaming_chunk_function_exists(self):
+        """Test that transform_streaming_chunk function exists and is callable."""
+        assert callable(transform_streaming_chunk)
+
+        # Test with a simple mock to ensure it doesn't crash
+        mock_chunk = Mock()
+        result = transform_streaming_chunk(mock_chunk, "conv-123")
+        # Function should return None for unrecognized types, which is acceptable
+        assert result is None or isinstance(result, Mock | type(None))

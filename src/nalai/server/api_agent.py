@@ -21,7 +21,10 @@ from ..core import (
     ValidationError,
 )
 from .api_conversations import SSEStreamingResponse, handle_agent_errors
-from .message_serializer import convert_messages_to_output, extract_usage_from_messages
+from .message_serializer import (
+    convert_messages_to_output,
+    extract_usage_from_core_messages,
+)
 from .runtime_config import create_runtime_config
 from .schemas.messages import (
     Interrupt,
@@ -30,13 +33,9 @@ from .schemas.messages import (
     ResponseMetadata,
 )
 from .sse_serializer import (
-    ResponseCompletedEvent,
-    ResponseCreatedEvent,
     ResponseErrorEvent,
-    ResponseMessageEvent,
-    ResponseResumedEvent,
-    create_event,
-    create_streaming_event,
+    StreamingContext,
+    create_streaming_event_from_chunk,
 )
 
 logger = logging.getLogger("nalai")
@@ -324,7 +323,7 @@ async def _handle_json_response(
             "status": status,
             "interrupts": interrupts_list if interrupts_list else None,
             "metadata": None,
-            "usage": extract_usage_from_messages(result_messages),
+            "usage": extract_usage_from_core_messages(result_messages),
         }
 
         return MessageResponse(**response_data)
@@ -350,7 +349,9 @@ async def _handle_json_response(
             "status": "error",
             "interrupts": None,
             "metadata": ResponseMetadata(error=str(e)),
-            "usage": extract_usage_from_messages([]),  # Empty usage for error responses
+            "usage": extract_usage_from_core_messages(
+                []
+            ),  # Empty usage for error responses
         }
 
         return MessageResponse(**response_data)
@@ -380,7 +381,7 @@ async def _handle_resume_json_response(
             "status": "completed",
             "interrupts": None,
             "metadata": None,
-            "usage": extract_usage_from_messages(result_messages),
+            "usage": extract_usage_from_core_messages(result_messages),
         }
 
         return MessageResponse(**response_data)
@@ -406,7 +407,9 @@ async def _handle_resume_json_response(
             "status": "error",
             "interrupts": None,
             "metadata": ResponseMetadata(error=str(e)),
-            "usage": extract_usage_from_messages([]),  # Empty usage for error responses
+            "usage": extract_usage_from_core_messages(
+                []
+            ),  # Empty usage for error responses
         }
 
         return MessageResponse(**response_data)
@@ -427,35 +430,34 @@ async def _handle_resume_streaming_response(
         )
 
         async def generate():
+            # Create streaming context for managing event state
+            context = StreamingContext(
+                conversation_info.conversation_id, request.stream
+            )
+
             # Send response resumed event
-            yield create_event(ResponseResumedEvent, conversation_info.conversation_id)
+            yield context.create_resumed_event()
 
-            # Handle different streaming modes
-            if request.stream == "events":
-                # Collect all content for single message event
-                full_content = ""
-                async for event in stream_gen:
-                    if hasattr(event, "content") and event.content:
-                        full_content += str(event.content)
-                    # Still emit other events (interrupts, etc.)
-                    if not hasattr(event, "content") or not event.content:
-                        # Agent events are already serialized objects, format them as SSE
-                        yield create_streaming_event(event, lambda x: x)
+            # Process all events through the context
+            async for event in stream_gen:
+                sse_event = create_streaming_event_from_chunk(
+                    event, conversation_id, context
+                )
+                if sse_event:  # Only yield non-empty events
+                    yield sse_event
 
-                # Emit single message event with full content
-                if full_content:
-                    yield create_event(ResponseMessageEvent, conversation_id, content=full_content)
-            else:
-                # "full" mode - emit all events including token deltas
-                async for event in stream_gen:
-                    # Agent events are already serialized objects, format them as SSE
-                    yield create_streaming_event(event, lambda x: x)
+            # Send completion events
+            text_complete = context.create_text_complete_event()
+            if text_complete:
+                yield text_complete
+
+            tool_calls_complete = context.create_tool_calls_complete_event()
+            if tool_calls_complete:
+                yield tool_calls_complete
 
             # Send completion event
-            yield create_event(
-                ResponseCompletedEvent,
-                conversation_info.conversation_id,
-                usage=extract_usage_from_messages([]),  # TODO: Extract from stream
+            yield context.create_completed_event(
+                usage=extract_usage_from_core_messages([])  # TODO: Extract from stream
             )
 
         response = SSEStreamingResponse(generate())
@@ -469,8 +471,9 @@ async def _handle_resume_streaming_response(
 
         # Return error event
         async def generate_error():
-            yield create_event(
-                ResponseErrorEvent, conversation_info.conversation_id, error=error_message
+            yield ResponseErrorEvent.create(
+                conversation_id,
+                error=error_message,
             )
 
         return SSEStreamingResponse(generate_error())
@@ -495,35 +498,32 @@ async def _handle_streaming_response(
         actual_conversation_id = conversation_info.conversation_id
 
         async def generate():
+            # Create streaming context for managing event state
+            context = StreamingContext(actual_conversation_id, request.stream)
+
             # Send response created event
-            yield create_event(ResponseCreatedEvent, actual_conversation_id)
+            yield context.create_created_event()
 
-            # Handle different streaming modes
-            if request.stream == "events":
-                # Collect all content for single message event
-                full_content = ""
-                async for event in stream_gen:
-                    if hasattr(event, "content") and event.content:
-                        full_content += str(event.content)
-                    # Still emit other events (interrupts, etc.)
-                    if not hasattr(event, "content") or not event.content:
-                        yield create_streaming_event(event, lambda x: x)
+            # Process all events through the context
+            async for event in stream_gen:
+                sse_event = create_streaming_event_from_chunk(
+                    event, actual_conversation_id, context
+                )
+                if sse_event:  # Only yield non-empty events
+                    yield sse_event
 
-                # Emit single message event with full content
-                if full_content:
-                    yield create_event(
-                        ResponseMessageEvent, actual_conversation_id, content=full_content
-                    )
-            else:
-                # "full" mode - emit all events including token deltas
-                async for event in stream_gen:
-                    yield create_streaming_event(event, lambda x: x)
+            # Send completion events
+            text_complete = context.create_text_complete_event()
+            if text_complete:
+                yield text_complete
+
+            tool_calls_complete = context.create_tool_calls_complete_event()
+            if tool_calls_complete:
+                yield tool_calls_complete
 
             # Send completion event
-            yield create_event(
-                ResponseCompletedEvent,
-                actual_conversation_id,
-                usage=extract_usage_from_messages([]),  # TODO: Extract from stream
+            yield context.create_completed_event(
+                usage=extract_usage_from_core_messages([])  # TODO: Extract from stream
             )
 
         response = SSEStreamingResponse(generate())
@@ -537,6 +537,6 @@ async def _handle_streaming_response(
 
         # Return error event
         async def generate_error():
-            yield create_event(ResponseErrorEvent, actual_conversation_id, error=error_message)
+            yield ResponseErrorEvent.create(actual_conversation_id, error=error_message)
 
         return SSEStreamingResponse(generate_error())

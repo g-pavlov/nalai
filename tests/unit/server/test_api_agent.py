@@ -52,9 +52,9 @@ class TestAgentResponses:
         app, mock_agent = app_and_agent
 
         # Mock agent response
-        from langchain_core.messages import AIMessage
+        from nalai.core.agent import Message
 
-        mock_message = AIMessage(content="Hello!")
+        mock_message = Message(content="Hello!", type="ai")
 
         mock_conversation_info = MagicMock(conversation_id="conv_123")
         mock_conversation_info.interrupt_info = (
@@ -102,9 +102,9 @@ class TestAgentResponses:
         app, mock_agent = app_and_agent
 
         # Mock agent response
-        from langchain_core.messages import AIMessage
+        from nalai.core.agent import Message
 
-        mock_message = AIMessage(content="How can I help?")
+        mock_message = Message(content="How can I help?", type="ai")
 
         mock_conversation_info = MagicMock(conversation_id="conv_456")
         mock_conversation_info.interrupt_info = (
@@ -150,9 +150,9 @@ class TestAgentResponses:
         app, mock_agent = app_and_agent
 
         # Mock agent response
-        from langchain_core.messages import AIMessage
+        from nalai.core.agent import Message
 
-        mock_message = AIMessage(content="Continuing from previous response")
+        mock_message = Message(content="Continuing from previous response", type="ai")
 
         mock_conversation_info = MagicMock(conversation_id="conv_789")
         mock_conversation_info.interrupt_info = None
