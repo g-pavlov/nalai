@@ -55,7 +55,7 @@ setup-dev:
 	
 	# Install project dependencies
 	@echo "📦 Installing project dependencies..."
-	@poetry install --with=testing,dev
+	@poetry install --with=testing,dev,llm
 	
 	# Install git hooks (version management)
 	@echo "🔗 Installing git hooks..."
@@ -66,7 +66,7 @@ setup-dev:
 
 # Install dependencies
 install:
-	poetry install --with=testing,dev
+	poetry install --with=testing,dev,llm
 
 # Install corpus based on CACHE_SEMANTIC_CORPUS
 install-corpus:
