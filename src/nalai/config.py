@@ -34,6 +34,42 @@ class Settings(BaseSettings):
             if origin.strip()
         ]
 
+    api_version: str = Field(
+        alias="API_VERSION",
+        default="v1",
+        description="API version for endpoint prefixing",
+    )
+
+    @property
+    def api_prefix(self) -> str:
+        """Get API prefix based on version."""
+        return f"/api/{self.api_version}"
+
+    # Feature Flag
+    api_docs_endpoint_enabled: bool = Field(
+        alias="API_DOCS_ENDPOINT_ENABLED",
+        default=True,
+        description="Enable API documentation endpoint",
+    )
+    # Feature Flag
+    ui_enabled: bool = Field(
+        alias="UI_ENABLED",
+        default=True,
+        description="Enable UI route served by this server",
+    )
+    # Feature Flag
+    system_endpoint_enabled: bool = Field(
+        alias="SYSTEM_ENDPOINT_ENABLED",
+        default=True,
+        description="Enable System API endpoint",
+    )
+    # Feature Flag
+    conversations_endpoint_enabled: bool = Field(
+        alias="CONVERSATIONS_ENDPOINT_ENABLED",
+        default=True,
+        description="Enable Conversations endpoint",
+    )
+
     # ===== LOGGING CONFIGURATION =====
     logging_config_path: str = Field(
         alias="LOGGING_CONFIG_PATH",
@@ -66,6 +102,7 @@ class Settings(BaseSettings):
         alias="AUDIT_EXTERNAL_URL", default="", description="External audit service URL"
     )
     # PII Protection settings
+    # Feature Flag
     audit_mask_pii: bool = Field(
         alias="AUDIT_MASK_PII",
         default=True,
@@ -88,6 +125,7 @@ class Settings(BaseSettings):
     )
 
     # ===== AUTH CONFIGURATION =====
+    # Feature Flag
     auth_enabled: bool = Field(
         alias="AUTH_ENABLED",
         default=True,
@@ -108,6 +146,7 @@ class Settings(BaseSettings):
         default=True,
         description="Enable token validation (can be disabled for externalized auth)",
     )
+    # Feature Flag
     auth_audit_enabled: bool = Field(
         alias="AUTH_AUDIT_ENABLED",
         default=True,
@@ -133,6 +172,7 @@ class Settings(BaseSettings):
     )
 
     # ===== PROMPT CACHE CONFIGURATION =====
+    # Feature Flag
     cache_enabled: bool = Field(
         alias="CACHE_ENABLED",
         default=True,
@@ -153,20 +193,22 @@ class Settings(BaseSettings):
         default="memory",
         description="Cache backend (memory only)",
     )
+    # Feature Flag
     cache_tool_calls: bool = Field(
         alias="CACHE_TOOL_CALLS",
         default=False,
         description="Cache tool calls (default: False - tool results may change over time)",
     )
-    cache_similarity_threshold: float = Field(
-        alias="CACHE_SIMILARITY_THRESHOLD",
-        default=0.8,
-        description="Similarity threshold for semantic cache matching (0.0-1.0)",
-    )
+    # Feature Flag
     cache_similarity_enabled: bool = Field(
         alias="CACHE_SIMILARITY_ENABLED",
         default=True,
         description="Enable similarity-based cache matching (default: True)",
+    )
+    cache_similarity_threshold: float = Field(
+        alias="CACHE_SIMILARITY_THRESHOLD",
+        default=0.8,
+        description="Similarity threshold for semantic cache matching (0.0-1.0)",
     )
 
     # ===== CHECKPOINTING CONFIGURATION =====
@@ -213,6 +255,7 @@ class Settings(BaseSettings):
         default=None,
         description="Maximum tokens for model responses (optional)",
     )
+    # Feature Flag
     cross_process_rate_limiter_enabled: bool = Field(
         alias="CROSS_PROCESS_RATE_LIMITER_ENABLED",
         default=False,
@@ -271,11 +314,13 @@ class Settings(BaseSettings):
         default=100,
         description="Maximum number of conversations per user",
     )
+    # Feature Flag
     enable_auto_cleanup: bool = Field(
         alias="ENABLE_AUTO_CLEANUP",
         default=True,
         description="Enable automatic conversation cleanup",
     )
+    # Feature Flag
     enable_monitoring: bool = Field(
         alias="ENABLE_MONITORING",
         default=True,
@@ -292,26 +337,15 @@ class Settings(BaseSettings):
         description="Base delay in seconds for checkpointing retry backoff",
     )
 
-    # ===== API DOCS CONFIGURATION =====
+    # ===== APIS SPECS DATA CONFIGURATION =====
     api_specs_path: str = Field(
         alias="API_SPECS_PATH",
         default="data/api_specs",
         description="Directory containing API specification files",
     )
 
-    # ===== API VERSION CONFIGURATION =====
-    api_version: str = Field(
-        alias="API_VERSION",
-        default="v1",
-        description="API version for endpoint prefixing",
-    )
-
-    @property
-    def api_prefix(self) -> str:
-        """Get API prefix based on version."""
-        return f"/api/{self.api_version}"
-
     # ===== TOOLS CONFIGURATION =====
+    # Feature Flag
     api_calls_enabled: bool = Field(
         alias="API_CALLS_ENABLED",
         default=False,

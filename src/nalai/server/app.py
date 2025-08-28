@@ -6,12 +6,11 @@ routes, and agent initialization.
 """
 
 import logging
-from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 
 from ..config import settings
 from ..core import create_agent
@@ -31,6 +30,7 @@ from .middleware import (
     create_log_request_middleware,
     create_user_context_middleware,
 )
+from .ui_routes import create_ui_route
 
 # Load environment variables
 load_dotenv()
@@ -52,26 +52,43 @@ user_context_middleware = create_user_context_middleware(
 )
 audit_middleware = create_audit_middleware(excluded_paths=PUBLIC_ENDPOINTS)
 
+# Create FastAPI application with conditional OpenAPI settings
+openapi_config = {
+    "title": APP_TITLE,
+    "version": APP_VERSION,
+    "description": APP_DESCRIPTION,
+    "openapi_tags": OPENAPI_TAGS,
+}
 
-# Create FastAPI application
-app = FastAPI(
-    title=APP_TITLE,
-    version=APP_VERSION,
-    description=APP_DESCRIPTION,
-    openapi_tags=OPENAPI_TAGS,
-)
+if settings.api_docs_endpoint_enabled:
+    openapi_config.update({
+        "openapi_url": "/openapi.json",
+        "docs_url": "/docs",
+        "redoc_url": "/redoc",
+    })
+    logger.info(f"OpenAPI docs endpoints enabled: {openapi_config["openapi_url"]}, {openapi_config["docs_url"]}, {openapi_config["redoc_url"]}")
+else:
+    openapi_config.update({
+        "openapi_url": None,
+        "docs_url": None,
+        "redoc_url": None,
+    })
+    logger.info("OpenAPI endpoints disabled")
+
+app = FastAPI(**openapi_config)
 
 # Configure CORS from environment variable
 allowed_origins = settings.cors_origins_list
 
-# Add CORS middleware for custom UI (must be first)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if allowed_origins:
+    # Add CORS middleware for custom UI (must be first)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 # Register middleware - explicit and readable
@@ -109,50 +126,30 @@ def initialize_app():
     if _initialized:
         return
 
-    # Mount UI static files
-    ui_path = Path(__file__).parent.parent.parent.parent / "demo" / "ui"
-    logger.info(f"Attempting to mount UI from path: {ui_path}")
-    logger.info(f"Path exists: {ui_path.exists()}")
-    logger.info(f"Path is absolute: {ui_path.is_absolute()}")
-    logger.info(f"Current working directory: {Path.cwd()}")
+    if settings.api_docs_endpoint_enabled:
+        @app.get("/", include_in_schema=False)
+        async def redirect_root_to_docs() -> RedirectResponse:
+            return RedirectResponse("/docs")
 
-    if ui_path.exists():
-        app.mount("/ui", StaticFiles(directory=str(ui_path)), name="ui")
-        logger.info(f"Mounted UI static files from {ui_path}")
-    else:
-        logger.warning(f"UI directory not found at {ui_path}")
-        # Try alternative paths
-        alt_paths = [
-            Path.cwd() / "demo" / "ui",
-            Path.cwd()
-            / "src"
-            / "nalai"
-            / "server"
-            / ".."
-            / ".."
-            / ".."
-            / ".."
-            / "demo"
-            / "ui",
-        ]
-        for alt_path in alt_paths:
-            logger.info(f"Trying alternative path: {alt_path}")
-            if alt_path.exists():
-                app.mount("/ui", StaticFiles(directory=str(alt_path)), name="ui")
-                logger.info(
-                    f"Mounted UI static files from alternative path: {alt_path}"
-                )
-                break
+    if settings.ui_enabled:
+        create_ui_route(app)
+        logger.info("UI enabled: /ui")
 
-    # Create basic routes
-    create_server_api(app)
+    if settings.system_endpoint_enabled:
+        # Create basic routes
+        create_server_api(app)
+        logger.info("System API endpoint enabled")
 
     # Initialize agent and create conversation routes
     agent = create_agent()
-    create_conversations_api(app, agent)
+
+    if settings.conversations_endpoint_enabled:
+        create_conversations_api(app, agent)
+        logger.info("Conversations API endpoint enabled")
 
     # Create agent message exchange routes
     create_agent_api(app, agent)
+    logger.info("Agent API endpoint enabled")
 
     logger.info("Application routes initialized")
     _initialized = True
