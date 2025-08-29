@@ -45,9 +45,9 @@ class TestLangGraphAgent:
 
         # Pre-populate with test conversation IDs for validation
         test_conversation_ids = [
-            "550e8400-e29b-41d4-a716-446655440000",
-            "550e8400-e29b-41d4-a716-446655440001",
-            "550e8400-e29b-41d4-a716-446655440002",
+            "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9",
+            "conv_abc123def456ghi789jkm2n3p4q5r6s7t8u9",
+            "conv_xyz789abc123def456ghi789jkm2n3p4q5r6s7t8u9",
         ]
 
         # Mock validate_thread_access to return True for test conversations
@@ -76,6 +76,16 @@ class TestLangGraphAgent:
         checkpointer = AsyncMock()
         checkpointer.aget = AsyncMock()
         checkpointer.aput = AsyncMock()
+
+        # Mock the extract_messages method to return a list, not a coroutine
+        def extract_messages(state):
+            if state and "channel_values" in state:
+                channel_values = state["channel_values"]
+                if "messages" in channel_values:
+                    return channel_values["messages"]
+            return []
+
+        checkpointer.extract_messages = extract_messages
         return checkpointer
 
     @pytest.fixture
@@ -284,8 +294,21 @@ class TestLangGraphAgent:
 
         # Mock checkpoint state based on test case
         if expected["success"]:
+            # Create proper mock messages
+            from langchain_core.messages import AIMessage, HumanMessage
+
+            mock_messages = []
+            for msg_data in expected.get("messages", []):
+                if msg_data["type"] == "human":
+                    mock_msg = HumanMessage(content=msg_data["content"])
+                elif msg_data["type"] == "ai":
+                    mock_msg = AIMessage(content=msg_data["content"])
+                else:
+                    mock_msg = HumanMessage(content=msg_data["content"])  # fallback
+                mock_messages.append(mock_msg)
+
             checkpoint_state = {
-                "channel_values": {"messages": expected.get("messages", [])},
+                "channel_values": {"messages": mock_messages},
                 "interrupts": []
                 if expected.get("status") != "interrupted"
                 else [{"type": "tool_approval"}],
@@ -298,7 +321,14 @@ class TestLangGraphAgent:
                 mock_checkpointer.aget.return_value = None
 
         # Apply patches for this test
-        with patch.object(langgraph_agent.checkpoints, "get", mock_checkpointer.aget):
+        with (
+            patch.object(langgraph_agent.checkpoints, "get", mock_checkpointer.aget),
+            patch.object(
+                langgraph_agent.checkpoints,
+                "extract_messages",
+                mock_checkpointer.extract_messages,
+            ),
+        ):
             # Act & Assert
             if expected["success"]:
                 (

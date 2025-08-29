@@ -82,7 +82,8 @@ export async function handleInterrupt(responseType, args = null) {
             toolDecision = {
                 type: 'tool_decision',
                 tool_call_id: window.currentInterrupt.value.tool_call_id || 'unknown',
-                decision: 'reject'
+                decision: 'reject',
+                message: args || 'User rejected the tool call'
             };
         } else {
             // Handle feedback case if needed
@@ -95,7 +96,6 @@ export async function handleInterrupt(responseType, args = null) {
         }
 
         const resumePayload = {
-            conversation_id: getCurrentThreadId(),
             input: [toolDecision],
             stream: 'full'
         };

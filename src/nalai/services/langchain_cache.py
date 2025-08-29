@@ -9,9 +9,10 @@ import logging
 from typing import Any
 
 from langchain_core.caches import BaseCache
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 
 from ..config import settings
+from ..utils.id_generator import generate_message_id
 from .cache_service import CacheService, get_cache_service
 
 logger = logging.getLogger(__name__)
@@ -103,9 +104,7 @@ class EnhancedLangChainCache(BaseCache):
             List of BaseMessage objects
         """
         if isinstance(prompt, str):
-            from langchain_core.messages import HumanMessage
-
-            return [HumanMessage(content=prompt)]
+            return [HumanMessage(content=prompt, id=generate_message_id())]
         else:
             return prompt
 

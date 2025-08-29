@@ -180,7 +180,9 @@ def create_conversations_api(app: FastAPI, agent: Agent) -> None:
         # Convert LangChain messages to API format using the same helper as agent responses
         from .message_serializer import convert_messages_to_output
 
-        output_messages = convert_messages_to_output(messages)
+        # For conversation loading, use conversation_id as run_id since we don't have a specific run
+        run_id = conversation_id
+        output_messages = convert_messages_to_output(messages, run_id)
 
         return LoadConversationResponse(
             conversation_id=conversation_info.conversation_id,

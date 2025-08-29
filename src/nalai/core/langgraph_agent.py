@@ -6,13 +6,13 @@ handling conversation management, access control, and agent invocation.
 """
 
 import logging
-import uuid
 from collections.abc import AsyncGenerator
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
+from ..utils.id_generator import generate_conversation_id, validate_domain_id_format
 from .agent import (
     # Exceptions
     AccessDeniedError,
@@ -102,11 +102,11 @@ class LangGraphAgent(Agent):
         return config
 
     def _validate_conversation_id_format(self, conversation_id: str) -> None:
-        """Validate conversation_id is a valid UUID."""
-        try:
-            uuid.UUID(conversation_id)
-        except ValueError as e:
-            raise ValidationError(f"Invalid conversation ID format: {e}") from e
+        """Validate conversation_id is a valid domain-prefixed ID."""
+        if not validate_domain_id_format(conversation_id, "conv"):
+            raise ValidationError(
+                f"Invalid conversation ID format: {conversation_id}"
+            ) from None
 
     def _extract_audit_context(self, config: dict) -> dict:
         """Extract audit context from config."""
@@ -174,7 +174,7 @@ class LangGraphAgent(Agent):
         self, user_id: str, config: dict
     ) -> tuple[str, dict]:
         """Create a new conversation and return conversation_id and updated config."""
-        conversation_id = str(uuid.uuid4())
+        conversation_id = generate_conversation_id()
         await self.checkpoints.create_conversation(user_id, conversation_id)
 
         # Audit conversation creation
@@ -525,7 +525,7 @@ class LangGraphAgent(Agent):
                 raise ConversationNotFoundError()
 
             # Extract messages using checkpoint operations
-            messages = await self.checkpoints.extract_messages(checkpoint_state)
+            messages = self.checkpoints.extract_messages(checkpoint_state)
 
             # Transform to core models
             core_messages = [transform_message(msg) for msg in messages]

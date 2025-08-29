@@ -197,7 +197,9 @@ class TestMessageSerializer:
         human_message = HumanMessage()
         human_message.__class__.__name__ = "HumanMessage"
 
-        result = convert_messages_to_output([human_message])
+        result = convert_messages_to_output(
+            [human_message], "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+        )
         assert len(result) == 1
         assert isinstance(result[0], HumanOutputMessage)
         assert result[0].content[0].text == "Hello"
@@ -218,7 +220,9 @@ class TestMessageSerializer:
         ai_message = AIMessage()
         ai_message.__class__.__name__ = "AIMessage"
 
-        result = convert_messages_to_output([ai_message])
+        result = convert_messages_to_output(
+            [ai_message], "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+        )
         assert len(result) == 1
         assert isinstance(result[0], AssistantOutputMessage)
         assert result[0].content[0].text == "Hello there"
@@ -239,7 +243,9 @@ class TestMessageSerializer:
         tool_message = ToolMessage()
         tool_message.__class__.__name__ = "ToolMessage"
 
-        result = convert_messages_to_output([tool_message])
+        result = convert_messages_to_output(
+            [tool_message], "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+        )
         assert len(result) == 1
         assert isinstance(result[0], ToolOutputMessage)
         assert result[0].content[0].text == "Tool result"
@@ -274,9 +280,56 @@ class TestMessageSerializer:
         ai_message = AIMessage()
         ai_message.__class__.__name__ = "AIMessage"
 
-        result = convert_messages_to_output([human_message, ai_message])
+        result = convert_messages_to_output(
+            [human_message, ai_message], "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+        )
         assert len(result) == 2
         assert isinstance(result[0], HumanOutputMessage)
         assert isinstance(result[1], AssistantOutputMessage)
         assert result[0].content[0].text == "Hello"
         assert result[1].content[0].text == "Hi there"
+
+    def test_extract_usage_from_streaming_chunks(self):
+        """Test extracting usage from streaming chunks."""
+        from nalai.server.message_serializer import extract_usage_from_streaming_chunks
+        
+        # Create mock streaming chunks with usage data
+        class MockChunk1:
+            def __init__(self):
+                self.usage = {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 20,
+                    "total_tokens": 30,
+                }
+        
+        class MockChunk2:
+            def __init__(self):
+                self.usage = {
+                    "prompt_tokens": 15,
+                    "completion_tokens": 25,
+                    "total_tokens": 40,
+                }
+        
+        class MockChunk3:
+            def __init__(self):
+                self.usage = None  # No usage data
+        
+        chunks = [MockChunk1(), MockChunk2(), MockChunk3()]
+        result = extract_usage_from_streaming_chunks(chunks)
+        
+        assert result == {
+            "prompt_tokens": 25,  # 10 + 15
+            "completion_tokens": 45,  # 20 + 25
+            "total_tokens": 70,  # 30 + 40
+        }
+    
+    def test_extract_usage_from_streaming_chunks_empty(self):
+        """Test extracting usage from empty streaming chunks list."""
+        from nalai.server.message_serializer import extract_usage_from_streaming_chunks
+        
+        result = extract_usage_from_streaming_chunks([])
+        assert result == {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }

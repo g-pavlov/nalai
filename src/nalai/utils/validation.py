@@ -5,7 +5,7 @@ This module contains validation functions that are used across multiple modules
 to avoid circular imports.
 """
 
-import uuid
+from .id_generator import validate_domain_id_format
 
 
 def validate_thread_id_format(thread_id: str) -> None:
@@ -16,7 +16,7 @@ def validate_thread_id_format(thread_id: str) -> None:
     to prevent injection attacks and ensure data consistency.
 
     Args:
-        thread_id: Thread ID to validate (must be a valid UUID4)
+        thread_id: Thread ID to validate (must be a valid domain-prefixed format)
 
     Raises:
         ValueError: If thread ID format is invalid
@@ -28,10 +28,6 @@ def validate_thread_id_format(thread_id: str) -> None:
     if len(thread_id) > 200:  # Reasonable length limit
         raise ValueError("thread_id too long (max 200 characters)")
 
-    # Check if it's a valid UUID4
-    try:
-        uuid_obj = uuid.UUID(thread_id, version=4)
-        if str(uuid_obj) != thread_id:
-            raise ValueError("thread_id must be a canonical UUID4 string")
-    except ValueError as err:
-        raise ValueError("thread_id must be a valid UUID4") from err
+    # Check if it's a valid domain-prefixed ID
+    if not validate_domain_id_format(thread_id, "conv"):
+        raise ValueError("thread_id must be a valid domain-prefixed format: conv_xxx")

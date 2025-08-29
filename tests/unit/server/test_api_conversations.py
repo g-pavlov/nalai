@@ -161,7 +161,7 @@ class TestBasicRoutes:
     @pytest.mark.parametrize(
         "path,expected_status,expected_redirect,expected_content",
         [
-            ("/", 307, True, None),  # Redirect to docs (FastAPI uses 307)
+            ("/", 404, False, None),  # No root route defined
             ("/healthz", 200, False, {"status": "Healthy"}),  # Health check
         ],
     )
@@ -177,6 +177,7 @@ class TestBasicRoutes:
             assert response.headers["location"] == "/docs"
         elif expected_content:
             assert response.json() == expected_content
+        # For 404, no additional assertions needed
 
 
 class TestAgentAPI:
@@ -192,7 +193,7 @@ class TestAgentAPI:
         mock_middleware_auth,
     ):
         """Critical: Should return proper agent response structure."""
-        _, mock_agent = app_and_agent
+        app, mock_agent = app_and_agent
 
         # Mock user context
         mock_user_context = MagicMock()
@@ -207,11 +208,13 @@ class TestAgentAPI:
         from nalai.core.agent import Message
 
         mock_messages = [
-            Message(content="Hello", type="human"),
-            Message(content="Hi there!", type="ai"),
+            Message(content="Hello", type="human", id="msg_2wkvcCeR82dP3rohyhutYa"),
+            Message(content="Hi there!", type="ai", id="msg_3xkwcCeR82dP3rohyhutYb"),
         ]
         mock_conversation_info = MagicMock()
-        mock_conversation_info.conversation_id = "test-conversation-123"
+        mock_conversation_info.conversation_id = (
+            "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+        )
         mock_conversation_info.interrupt_info = None
         mock_agent.chat.return_value = (mock_messages, mock_conversation_info)
 
@@ -220,7 +223,9 @@ class TestAgentAPI:
             "stream": "off",
         }
 
-        response = client.post("/api/v1/messages", json=payload)
+        response = client.post(
+            "/api/v1/messages", json=payload, headers={"Accept": "application/json"}
+        )
 
         assert response.status_code == 200
         response_data = response.json()
@@ -285,10 +290,11 @@ class TestAgentAPI:
         from nalai.core.agent import Message, ToolCall
 
         mock_messages = [
-            Message(content="Hello", type="human"),
+            Message(content="Hello", type="human", id="msg_2wkvcCeR82dP3rohyhutYa"),
             Message(
                 content="I'll check the weather for you.",
                 type="ai",
+                id="msg_3xkwcCeR82dP3rohyhutYb",
                 tool_calls=[
                     ToolCall(
                         id="call_123",
@@ -300,7 +306,7 @@ class TestAgentAPI:
             ),
         ]
         mock_conversation_info = MagicMock()
-        mock_conversation_info.conversation_id = "test-conversation-123"
+        mock_conversation_info.conversation_id = "conv_2wkvcCeR82dP3rohyhutYa"
         mock_conversation_info.interrupt_info = None
         mock_conversation_info.interrupt_info = None
         mock_agent.chat.return_value = (mock_messages, mock_conversation_info)
@@ -310,7 +316,9 @@ class TestAgentAPI:
             "stream": "off",
         }
 
-        response = client.post("/api/v1/messages", json=payload)
+        response = client.post(
+            "/api/v1/messages", json=payload, headers={"Accept": "application/json"}
+        )
 
         assert response.status_code == 200
         response_data = response.json()
@@ -353,12 +361,16 @@ class TestAgentAPI:
         from nalai.core.agent import Message
 
         mock_messages = [
-            Message(content="Hello", type="human"),
-            Message(content="I'll check the weather for you.", type="ai"),
+            Message(content="Hello", type="human", id="msg_2wkvcCeR82dP3rohyhutYa"),
+            Message(
+                content="I'll check the weather for you.",
+                type="ai",
+                id="msg_3xkwcCeR82dP3rohyhutYb",
+            ),
         ]
 
         mock_conversation_info = MagicMock()
-        mock_conversation_info.conversation_id = "test-conversation-123"
+        mock_conversation_info.conversation_id = "conv_2wkvcCeR82dP3rohyhutYa"
         mock_conversation_info.interrupt_info = None
         mock_conversation_info.interrupt_info = {
             "type": "tool_call",
@@ -376,7 +388,9 @@ class TestAgentAPI:
             "stream": "off",
         }
 
-        response = client.post("/api/v1/messages", json=payload)
+        response = client.post(
+            "/api/v1/messages", json=payload, headers={"Accept": "application/json"}
+        )
 
         assert response.status_code == 200
         response_data = response.json()
@@ -418,7 +432,9 @@ class TestAgentAPI:
             "stream": "off",
         }
 
-        response = client.post("/api/v1/messages", json=payload)
+        response = client.post(
+            "/api/v1/messages", json=payload, headers={"Accept": "application/json"}
+        )
 
         assert (
             response.status_code == 200
@@ -431,7 +447,10 @@ class TestAgentAPI:
         assert response_data["metadata"] is not None
         assert "error" in response_data["metadata"]
         assert response_data["metadata"]["error"] == "Test error"
-        assert response_data["output"] == []
+        # Error responses now include a proper error message in output
+        assert len(response_data["output"]) == 1
+        assert response_data["output"][0]["role"] == "assistant"
+        assert "Error: Test error" in response_data["output"][0]["content"][0]["text"]
 
     @patch("nalai.server.runtime_config.get_user_context")
     def test_agent_responses_metadata_structure(
@@ -458,16 +477,17 @@ class TestAgentAPI:
         from nalai.core.agent import Message
 
         mock_messages = [
-            Message(content="Hello", type="human"),
+            Message(content="Hello", type="human", id="msg_2wkvcCeR82dP3rohyhutYa"),
             Message(
                 content="Hi there!",
                 type="ai",
+                id="msg_3xkwcCeR82dP3rohyhutYb",
                 finish_reason="stop",
-                usage={"completion_tokens": 5},
+                usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
             ),
         ]
         mock_conversation_info = MagicMock()
-        mock_conversation_info.conversation_id = "test-conversation-123"
+        mock_conversation_info.conversation_id = "conv_2wkvcCeR82dP3rohyhutYa"
         mock_conversation_info.interrupt_info = None
         mock_conversation_info.interrupt_info = None
         mock_agent.chat.return_value = (mock_messages, mock_conversation_info)
@@ -477,7 +497,9 @@ class TestAgentAPI:
             "stream": "off",
         }
 
-        response = client.post("/api/v1/messages", json=payload)
+        response = client.post(
+            "/api/v1/messages", json=payload, headers={"Accept": "application/json"}
+        )
 
         assert response.status_code == 200
         response_data = response.json()
@@ -597,7 +619,9 @@ class TestAgentAPI:
             "stream": "off",
         }
 
-        response = client.post("/api/v1/messages", json=payload)
+        response = client.post(
+            "/api/v1/messages", json=payload, headers={"Accept": "application/json"}
+        )
 
         # Agent-specific errors should return proper HTTP status codes
         if error_type in [
@@ -633,7 +657,10 @@ class TestAgentAPI:
             assert response_data["metadata"] is not None
             assert "error" in response_data["metadata"]
             assert expected_error_in_metadata in response_data["metadata"]["error"]
-            assert response_data["output"] == []
+            # Error responses now include a proper error message in output
+            assert len(response_data["output"]) == 1
+            assert response_data["output"][0]["role"] == "assistant"
+            assert "Error:" in response_data["output"][0]["content"][0]["text"]
 
     @pytest.mark.parametrize(
         "agent_error,expected_error_message",
@@ -702,7 +729,9 @@ class TestAgentAPI:
             "stream": "off",
         }
 
-        response = client.post("/api/v1/messages", json=payload)
+        response = client.post(
+            "/api/v1/messages", json=payload, headers={"Accept": "application/json"}
+        )
 
         # Agent-specific errors should return proper HTTP status codes
         expected_status = {
@@ -771,11 +800,18 @@ class TestAgentAPI:
         from nalai.core.agent import Message
 
         mock_messages = [
-            Message(content="Hello", type="human"),
-            Message(content="Hi there!", type="ai"),
+            Message(content="Hello", type="human", id="msg_2wkvcCeR82dP3rohyhutYa"),
+            Message(
+                content="Hi there!",
+                type="ai",
+                id="msg_3wkvcCeR82dP3rohyhutYa",
+                usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            ),
         ]
         mock_conversation_info = MagicMock()
-        mock_conversation_info.conversation_id = "test-conversation-123"
+        mock_conversation_info.conversation_id = (
+            "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+        )
         mock_conversation_info.interrupt_info = None
         mock_agent.chat.return_value = (mock_messages, mock_conversation_info)
 
@@ -785,7 +821,9 @@ class TestAgentAPI:
             "stream": "off",
         }
 
-        response = client.post("/api/v1/messages", json=payload)
+        response = client.post(
+            "/api/v1/messages", json=payload, headers={"Accept": "application/json"}
+        )
 
         assert response.status_code == 200
         response_data = response.json()
@@ -922,14 +960,14 @@ class TestLoadConversation:
     @pytest.mark.parametrize(
         "conversation_id,agent_behavior,expected_status,expected_detail_keyword",
         [
-            ("550e8400-e29b-41d4-a716-446655440000", "success", 200, None),
+            ("conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9", "success", 200, None),
             (
-                "550e8400-e29b-41d4-a716-446655440000",
+                "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9",
                 "access_denied",
                 403,
                 "Access denied",
             ),
-            ("550e8400-e29b-41d4-a716-446655440000", "not_found", 404, "not found"),
+            ("conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9", "not_found", 404, "not found"),
             ("invalid-id", "any", 422, None),
         ],
     )
@@ -982,9 +1020,23 @@ class TestLoadConversation:
             from nalai.core.agent import Message
 
             mock_messages = [
-                Message(content="Hello", type="human"),
-                Message(content="Hi there!", type="ai"),
-                Message(content="API response", type="tool", tool_call_id="call_123"),
+                Message(content="Hello", type="human", id="msg_2wkvcCeR82dP3rohyhutYa"),
+                Message(
+                    content="Hi there!",
+                    type="ai",
+                    id="msg_3wkvcCeR82dP3rohyhutYa",
+                    usage={
+                        "prompt_tokens": 10,
+                        "completion_tokens": 5,
+                        "total_tokens": 15,
+                    },
+                ),
+                Message(
+                    content="API response",
+                    type="tool",
+                    tool_call_id="call_123",
+                    id="msg_4wkvcCeR82dP3rohyhutYa",
+                ),
             ]
 
             mock_conversation = MagicMock()
@@ -1024,7 +1076,7 @@ class TestLoadConversation:
             data = response.json()
             assert data["conversation_id"] == conversation_id
             assert len(data["messages"]) == 3
-            assert data["messages"][0]["role"] == "human"
+            assert data["messages"][0]["role"] == "user"
             assert data["messages"][0]["content"][0]["text"] == "Hello"
             assert data["messages"][1]["role"] == "assistant"
             assert data["messages"][1]["content"][0]["text"] == "Hi there!"
@@ -1074,7 +1126,7 @@ class TestListConversations:
             # Mock successful conversations list
             # Mock successful conversations list with proper string values
             mock_summary1 = MagicMock()
-            mock_summary1.conversation_id = "conv-1"
+            mock_summary1.conversation_id = "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
             mock_summary1.created_at = "2023-01-01T12:00:00"
             mock_summary1.last_accessed = (
                 "2023-01-02T12:00:00"  # Use last_accessed instead of last_updated
@@ -1084,7 +1136,7 @@ class TestListConversations:
             mock_summary1.metadata = {"title": "First Conversation"}
 
             mock_summary2 = MagicMock()
-            mock_summary2.conversation_id = "conv-2"
+            mock_summary2.conversation_id = "conv_abc123def456ghi789jkm2n3p4q5r6s7t8u9"
             mock_summary2.created_at = "2023-01-03T12:00:00"
             mock_summary2.last_accessed = (
                 "2023-01-04T12:00:00"  # Use last_accessed instead of last_updated
@@ -1117,7 +1169,9 @@ class TestListConversations:
             if expected_count > 0:
                 # Check first conversation
                 conv1 = data["conversations"][0]
-                assert conv1["conversation_id"] == "conv-1"
+                assert (
+                    conv1["conversation_id"] == "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+                )
                 assert conv1["created_at"] == "2023-01-01T12:00:00"
                 assert conv1["last_updated"] == "2023-01-02T12:00:00"
                 assert conv1["preview"] == "Hello, this is a test message"
@@ -1125,7 +1179,10 @@ class TestListConversations:
 
                 # Check second conversation
                 conv2 = data["conversations"][1]
-                assert conv2["conversation_id"] == "conv-2"
+                assert (
+                    conv2["conversation_id"]
+                    == "conv_abc123def456ghi789jkm2n3p4q5r6s7t8u9"
+                )
                 assert conv2["created_at"] == "2023-01-03T12:00:00"
                 assert conv2["last_updated"] == "2023-01-04T12:00:00"
                 assert conv2["preview"] == "Hello, this is a test message"
@@ -1140,26 +1197,26 @@ class TestDeleteConversation:
     @pytest.mark.parametrize(
         "conversation_id,agent_behavior,expected_status,expected_detail_keyword",
         [
-            ("550e8400-e29b-41d4-a716-446655440001", "success", 204, None),
+            ("conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9", "success", 204, None),
             (
-                "550e8400-e29b-41d4-a716-446655440001",
+                "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9",
                 "access_denied",
                 403,
                 "Access denied to conversation",
             ),
             (
-                "550e8400-e29b-41d4-a716-446655440001",
+                "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9",
                 "not_found",
                 404,
                 "Conversation not found",
             ),
             (
-                "550e8400-e29b-41d4-a716-446655440001",
+                "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9",
                 "unauthorized",
                 403,
                 "Authentication required",
             ),
-            ("invalid-id-format", "any", 422, "must be a valid UUID4"),
+            ("invalid-id-format", "any", 422, "must be a valid domain-prefixed format"),
         ],
     )
     @patch("nalai.server.runtime_config.get_user_context")

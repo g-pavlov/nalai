@@ -61,18 +61,24 @@ openapi_config = {
 }
 
 if settings.api_docs_endpoint_enabled:
-    openapi_config.update({
-        "openapi_url": "/openapi.json",
-        "docs_url": "/docs",
-        "redoc_url": "/redoc",
-    })
-    logger.info(f"OpenAPI docs endpoints enabled: {openapi_config["openapi_url"]}, {openapi_config["docs_url"]}, {openapi_config["redoc_url"]}")
+    openapi_config.update(
+        {
+            "openapi_url": "/openapi.json",
+            "docs_url": "/docs",
+            "redoc_url": "/redoc",
+        }
+    )
+    logger.info(
+        f"OpenAPI docs endpoints enabled: {openapi_config['openapi_url']}, {openapi_config['docs_url']}, {openapi_config['redoc_url']}"
+    )
 else:
-    openapi_config.update({
-        "openapi_url": None,
-        "docs_url": None,
-        "redoc_url": None,
-    })
+    openapi_config.update(
+        {
+            "openapi_url": None,
+            "docs_url": None,
+            "redoc_url": None,
+        }
+    )
     logger.info("OpenAPI endpoints disabled")
 
 app = FastAPI(**openapi_config)
@@ -127,6 +133,7 @@ def initialize_app():
         return
 
     if settings.api_docs_endpoint_enabled:
+
         @app.get("/", include_in_schema=False)
         async def redirect_root_to_docs() -> RedirectResponse:
             return RedirectResponse("/docs")

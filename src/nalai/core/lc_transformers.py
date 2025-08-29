@@ -10,14 +10,13 @@ from typing import Any
 
 from langchain_core.messages import BaseMessage
 from langchain_core.messages.tool import ToolMessage
-from langgraph.prebuilt.interrupt import HumanInterrupt
 
+from ..utils.id_generator import generate_message_id, generate_run_id
 from .agent import (
     InterruptChunk,
     Message,
     MessageChunk,
     StreamingChunk,
-    ToolCall,
     ToolCallChunk,
     ToolChunk,
     UpdateChunk,
@@ -33,18 +32,23 @@ StreamingChunkInput = (
 )  # Can be LangGraph event, message, or dict
 
 
-def transform_message(message: MessageInput) -> Message:
-    """Transform message to core model."""
+def transform_message(message: MessageInput, run_id: str | None = None) -> Message:
+    """Transform message to core model with consistent ID handling."""
     # Handle dict objects (already in the right format)
     if isinstance(message, dict):
         return Message(**message)
 
     # Handle message objects
-    # Extract all necessary data, no filtering
+    # Extract existing ID
+    message_id = _safe_getattr(message, "id")
+
+    # Determine the appropriate ID based on message type and our consistency rules
+    final_message_id = _determine_message_id(message, message_id, run_id)
+
     message_data = {
         "content": str(message.content),
         "type": message.__class__.__name__.lower().replace("message", ""),
-        "id": _safe_getattr(message, "id"),
+        "id": final_message_id,
         "tool_calls": _extract_tool_calls(message),
         "tool_call_chunks": _safe_getattr(message, "tool_call_chunks"),
         "invalid_tool_calls": _safe_getattr(message, "invalid_tool_calls"),
@@ -56,6 +60,45 @@ def transform_message(message: MessageInput) -> Message:
 
     # Pydantic validates and creates the model
     return Message(**message_data)
+
+
+def _determine_message_id(
+    message: BaseMessage, existing_id: str | None, run_id: str | None
+) -> str:
+    """
+    Determine the appropriate message ID based on our consistency rules.
+
+    Rules:
+    1. Human messages: Always use msg_ prefix (preserve if already msg_, generate if not)
+    2. AI/Tool messages: Always use run_ prefix for consistency (use run_id with index if provided, otherwise generate run_ ID)
+    """
+    message_type = message.__class__.__name__.lower().replace("message", "")
+
+    if message_type == "human":
+        # Human messages: Always use msg_ prefix
+        if (
+            existing_id
+            and _is_domain_prefixed_format(existing_id)
+            and existing_id.startswith("msg_")
+        ):
+            # Already has our msg_ format, preserve it
+            return existing_id
+        else:
+            # Generate new msg_ ID
+            return generate_message_id()
+
+    elif message_type in ["ai", "tool"]:
+        # AI and Tool messages: Always use run_ prefix for consistency
+        if run_id:
+            # Use run_id directly - it should already be in the correct format
+            return run_id
+        else:
+            # No run_id provided, generate a run_ ID to maintain consistency
+            return generate_run_id()
+
+    else:
+        # Unknown message type, generate msg_ ID
+        return generate_message_id()
 
 
 def transform_streaming_chunk(
@@ -112,10 +155,16 @@ def transform_streaming_chunk(
                     "id": getattr(message, "id", ""),
                     "content": str(getattr(message, "content", "")),
                     "additional_kwargs": getattr(message, "additional_kwargs", {}),
-                    "usage_metadata": getattr(message, "response_metadata", {}),
+                    "response_metadata": getattr(message, "response_metadata", {}),
+                    "usage_metadata": getattr(message, "usage_metadata", {}),
+                    "finish_reason": getattr(message, "finish_reason", None),
+                    "tool_calls": getattr(message, "tool_calls", []),
+                    "invalid_tool_calls": getattr(message, "invalid_tool_calls", []),
+                    "tool_call_chunks": getattr(message, "tool_call_chunks", []),
+                    "tool_call_id": getattr(message, "tool_call_id", None),
                 }
 
-                # Check if this is a tool call
+                # Check if this is a tool call message
                 if _is_tool_call_message(message_data):
                     return _handle_tool_call_message(
                         message_data, config, conversation_id
@@ -123,20 +172,163 @@ def transform_streaming_chunk(
 
                 # Regular message event
                 return _handle_regular_message(message_data, config, conversation_id)
-            else:
-                logger.warning(
-                    "Unexpected messages event data format: %s", type(event_data)
-                )
-                return None
 
-    # Fallback: handle any other chunk types
-    logger.warning("Unexpected streaming chunk type: %s", type(chunk))
+            # Handle single message
+            elif isinstance(event_data, BaseMessage):
+                # Transform to core message model
+                core_message = transform_message(event_data)
+                return MessageChunk(**core_message.model_dump())
+
+        elif event_type == "interrupts":
+            # Handle interrupt events
+            return _handle_interrupt_event(event_data, conversation_id)
+
+    # Handle direct message objects
+    elif isinstance(chunk, BaseMessage):
+        # Transform to core message model
+        core_message = transform_message(chunk)
+        return MessageChunk(**core_message.model_dump())
+
+    # Handle dict objects
+    elif isinstance(chunk, dict):
+        # Check if it's an interrupt chunk
+        if "interrupts" in chunk:
+            return _handle_interrupt_dict(chunk, conversation_id)
+
+        # Check if it's a tool chunk
+        if "tool_call_id" in chunk and "name" in chunk:
+            return _handle_tool_dict(chunk, conversation_id)
+
+        # Regular message chunk
+        return MessageChunk(**chunk)
+
+    logger.warning("Unrecognized chunk type: %s", type(chunk))
     return None
 
 
-def _is_langgraph_event(chunk: StreamingChunkInput) -> bool:
+def _is_langgraph_event(chunk: Any) -> bool:
     """Check if chunk is a LangGraph event tuple."""
-    return isinstance(chunk, tuple) and len(chunk) == 2 and isinstance(chunk[0], str)
+    return isinstance(chunk, tuple) and len(chunk) == 2
+
+
+def _handle_interrupt_update(
+    event_data: dict, conversation_id: str
+) -> InterruptChunk | None:
+    """Handle interrupt update events."""
+    try:
+        interrupt = event_data.get("__interrupt__", {})
+        # Handle interrupt_data as tuple (normative case)
+        if not isinstance(interrupt, tuple):
+            raise ValueError("Interrupt must be a tuple")
+        if len(interrupt) < 1:
+            raise ValueError("Interrupt elements must be > 0")
+        if len(interrupt[0].value) < 1:
+            raise ValueError("Interrupt value lenght must be > 0")
+        if not isinstance(interrupt[0].value[0], dict):
+            raise ValueError("Interrupt value must be a dict")
+        interrupt_values = interrupt[0].value
+        interrupt_id = interrupt[0].id
+        return InterruptChunk(
+            id=interrupt_id,
+            values=interrupt_values,
+            conversation_id=conversation_id,
+        )
+    except Exception as e:
+        logger.error("Error handling interrupt update: %s", e)
+        return None
+
+
+def _handle_tool_update(event_data: dict, conversation_id: str) -> ToolChunk | None:
+    """Handle tool update events."""
+    try:
+        tool_data = next(iter(event_data.values()))
+        return ToolChunk(
+            tool_call_id=tool_data.get("tool_call_id", ""),
+            tool_name=tool_data.get("name", ""),
+            status=tool_data.get("status", "running"),
+            content=tool_data.get("content", ""),
+            conversation_id=conversation_id,
+        )
+    except Exception as e:
+        logger.error("Error handling tool update: %s", e)
+        return None
+
+
+def _handle_regular_update(
+    event_data: dict, conversation_id: str
+) -> UpdateChunk | None:
+    """Handle regular update events."""
+    try:
+        return UpdateChunk(
+            task=next(iter(event_data.keys())),
+            messages=event_data.get("messages", []),
+            conversation_id=conversation_id,
+        )
+    except Exception as e:
+        logger.error("Error handling regular update: %s", e)
+        return None
+
+
+def _handle_tool_message(
+    message: ToolMessage, config: dict, conversation_id: str
+) -> ToolChunk | None:
+    """Handle ToolMessage events."""
+    try:
+        return ToolChunk(
+            id=message.tool_call_id or "",
+            tool_call_id=message.tool_call_id or "",
+            tool_name=message.name or "",
+            status="success",
+            content=message.content,
+            conversation_id=conversation_id,
+        )
+    except Exception as e:
+        logger.error("Error handling tool message: %s", e)
+        return None
+
+
+def _handle_interrupt_event(
+    event_data: Any, conversation_id: str
+) -> InterruptChunk | None:
+    """Handle interrupt events."""
+    try:
+        return InterruptChunk(
+            id=event_data.get("id", ""),
+            value=event_data,
+            conversation_id=conversation_id,
+        )
+    except Exception as e:
+        logger.error("Error handling interrupt event: %s", e)
+        return None
+
+
+def _handle_interrupt_dict(chunk: dict, conversation_id: str) -> InterruptChunk | None:
+    """Handle interrupt dict chunks."""
+    try:
+        return InterruptChunk(
+            id=chunk.get("id", ""),
+            value=chunk,
+            conversation_id=conversation_id,
+        )
+    except Exception as e:
+        logger.error("Error handling interrupt dict: %s", e)
+        return None
+
+
+def _handle_tool_dict(chunk: dict, conversation_id: str) -> ToolChunk | None:
+    """Handle tool dict chunks."""
+    try:
+        return ToolChunk(
+            id=chunk.get("tool_call_id", ""),
+            tool_call_id=chunk.get("tool_call_id", ""),
+            tool_name=chunk.get("name", ""),
+            status=chunk.get("status", "success"),
+            content=chunk.get("content", ""),
+            conversation_id=conversation_id,
+        )
+    except Exception as e:
+        logger.error("Error handling tool dict: %s", e)
+        return None
 
 
 def _is_tool_call_message(message_data: dict) -> bool:
@@ -145,64 +337,6 @@ def _is_tool_call_message(message_data: dict) -> bool:
         "additional_kwargs" in message_data
         and message_data["additional_kwargs"]
         and message_data["additional_kwargs"].get("tool_calls", [])
-    )
-
-
-def _handle_interrupt_update(event_data: dict, conversation_id: str) -> InterruptChunk:
-    """Handle interrupt update event."""
-    interrupt_data = event_data["__interrupt__"]
-
-    # Extract the first interrupt value and parse it
-    if isinstance(interrupt_data, tuple) and len(interrupt_data) > 0:
-        interrupt_obj = interrupt_data[0]
-        if hasattr(interrupt_obj, "value") and interrupt_obj.value:
-            normalized_value = HumanInterrupt(**interrupt_obj.value[0])
-        else:
-            normalized_value = {}
-        interrupt_id = getattr(interrupt_obj, "id", "")
-    else:
-        normalized_value = {}
-        interrupt_id = ""
-
-    return InterruptChunk(
-        type="interrupt",
-        conversation_id=conversation_id,
-        id=interrupt_id,
-        value=normalized_value,
-    )
-
-
-def _handle_tool_update(updates_data: dict, conversation_id: str) -> ToolChunk:
-    """Handle tool update event."""
-    event_key = next(iter(updates_data))
-    event_data = updates_data[event_key]
-    return ToolChunk(
-        type="tool",
-        conversation_id=conversation_id,
-        id=event_data.get("id", ""),
-        status=event_data.get("status", "success"),
-        tool_call_id=event_data.get("tool_call_id", ""),
-        content=event_data.get("content", ""),
-        tool_name=event_data.get("name", ""),
-    )
-
-
-def _handle_regular_update(updates_data: dict, conversation_id: str) -> UpdateChunk:
-    """Handle regular update event."""
-    event_key = next(iter(updates_data))
-    event_data = updates_data[event_key]
-
-    # Transform LangChain messages to core Message objects
-    messages = []
-    for msg in event_data.get("messages", []):
-        if isinstance(msg, BaseMessage | dict):
-            messages.append(transform_message(msg))
-
-    return UpdateChunk(
-        type="update",
-        conversation_id=conversation_id,
-        task=event_key,
-        messages=messages,
     )
 
 
@@ -233,78 +367,37 @@ def _handle_regular_message(
         content=message_data.get("content", ""),
         id=message_data.get("id", ""),
         metadata=message_data.get("usage_metadata"),
+        usage=message_data.get("usage_metadata"),
     )
 
 
-def _handle_tool_message(
-    message: ToolMessage, config: dict, conversation_id: str
-) -> ToolChunk:
-    """Handle tool message event."""
-    return ToolChunk(
-        type="tool",
-        conversation_id=conversation_id,
-        id=message.id,
-        status=message.status,
-        tool_call_id=message.tool_call_id,
-        content=message.content,
-        tool_name=message.name,
-    )
-
-
-def _extract_tool_calls(obj: MessageInput) -> list[ToolCall] | None:
-    """Extract tool calls from an object."""
-    raw_tool_calls = _safe_getattr(obj, "tool_calls")
-    if not raw_tool_calls:
+def _extract_tool_calls(message: BaseMessage) -> list[dict] | None:
+    """Extract tool calls from message."""
+    tool_calls = _safe_getattr(message, "tool_calls")
+    if not tool_calls:
         return None
 
-    tool_calls = []
-    for tc in raw_tool_calls:
+    result = []
+    for tc in tool_calls:
         if isinstance(tc, dict):
-            # Ensure required fields are not None
-            tool_id = tc.get("id")
-            tool_name = tc.get("name")
-
-            # Skip tool calls with missing required fields
-            if tool_id is None or tool_name is None:
-                continue
-
-            tool_calls.append(
-                ToolCall(
-                    id=tool_id,
-                    name=tool_name,
-                    args=tc.get("args", {}),
-                    type=tc.get("type"),
-                )
-            )
+            result.append(tc)
         else:
             # Handle tool call objects
-            tool_id = getattr(tc, "id", None)
-            tool_name = getattr(tc, "name", None)
-
-            # Skip tool calls with missing required fields
-            if tool_id is None or tool_name is None:
-                continue
-
-            tool_calls.append(
-                ToolCall(
-                    id=tool_id,
-                    name=tool_name,
-                    args=getattr(tc, "args", {}),
-                    type=getattr(tc, "type", None),
-                )
+            result.append(
+                {
+                    "id": _safe_getattr(tc, "id"),
+                    "name": _safe_getattr(tc, "name"),
+                    "args": _safe_getattr(tc, "args", {}),
+                }
             )
 
-    return tool_calls if tool_calls else None
+    return result if result else None
 
 
-def _safe_getattr(obj: MessageInput, attr: str, default=None):
-    """Safely get attribute value, handling Mock objects."""
+def _safe_getattr(obj: Any, attr: str, default: Any = None) -> Any:
+    """Safely get attribute from object, returning default if not found."""
     try:
-        value = getattr(obj, attr, default)
-        # If it's a Mock object, return the default
-        if hasattr(value, "_mock_name"):
-            return default
-        return value
+        return getattr(obj, attr, default)
     except Exception:
         return default
 
@@ -329,10 +422,22 @@ def extract_usage_from_messages(messages: list[MessageInput]) -> dict[str, int]:
     }
 
 
-def _extract_usage(obj: MessageInput) -> dict[str, int] | None:
-    """Extract usage information from an object."""
-    # Try usage_metadata first
-    usage_metadata = _safe_getattr(obj, "usage_metadata")
+def _extract_usage(message: BaseMessage) -> dict[str, int] | None:
+    """Extract usage information from message."""
+    # Check usage attribute first
+    usage = _safe_getattr(message, "usage")
+    if usage:
+        if isinstance(usage, dict):
+            return usage
+        # Handle usage objects
+        return {
+            "prompt_tokens": _safe_getattr(usage, "prompt_tokens", 0),
+            "completion_tokens": _safe_getattr(usage, "completion_tokens", 0),
+            "total_tokens": _safe_getattr(usage, "total_tokens", 0),
+        }
+
+    # Check usage_metadata
+    usage_metadata = _safe_getattr(message, "usage_metadata")
     if usage_metadata and isinstance(usage_metadata, dict):
         return {
             "prompt_tokens": usage_metadata.get("input_tokens", 0),
@@ -340,29 +445,63 @@ def _extract_usage(obj: MessageInput) -> dict[str, int] | None:
             "total_tokens": usage_metadata.get("total_tokens", 0),
         }
 
-    # Try usage attribute
-    usage = _safe_getattr(obj, "usage")
-    if usage and isinstance(usage, dict):
-        return usage
-
     return None
 
 
-def _extract_finish_reason(obj: MessageInput) -> str | None:
-    """Extract finish_reason from various possible locations in an object."""
-    # Try direct finish_reason attribute
-    finish_reason = _safe_getattr(obj, "finish_reason")
-    if finish_reason is not None:
+def _extract_finish_reason(message: BaseMessage) -> str | None:
+    """Extract finish reason from message."""
+    # Check direct finish_reason attribute first
+    finish_reason = _safe_getattr(message, "finish_reason")
+    if finish_reason:
         return finish_reason
 
-    # Try response_metadata
-    response_metadata = _safe_getattr(obj, "response_metadata")
+    # Check response_metadata
+    response_metadata = _safe_getattr(message, "response_metadata")
     if response_metadata and isinstance(response_metadata, dict):
-        return response_metadata.get("finish_reason")
+        finish_reason = response_metadata.get("finish_reason")
+        if finish_reason:
+            return finish_reason
 
-    # Try additional_kwargs
-    additional_kwargs = _safe_getattr(obj, "additional_kwargs")
+    # Check additional_kwargs
+    additional_kwargs = _safe_getattr(message, "additional_kwargs")
     if additional_kwargs and isinstance(additional_kwargs, dict):
-        return additional_kwargs.get("finish_reason")
+        finish_reason = additional_kwargs.get("finish_reason")
+        if finish_reason:
+            return finish_reason
 
     return None
+
+
+def _is_domain_prefixed_format(id_str: str) -> bool:
+    """
+    Check if ID follows basic domain-prefixed format (more lenient than strict validation).
+
+    Args:
+        id_str: ID string to check
+
+    Returns:
+        True if follows basic domain-prefixed pattern
+    """
+    if not id_str or not isinstance(id_str, str):
+        return False
+
+    if "_" not in id_str:
+        return False
+
+    domain, base62_part = id_str.split("_", 1)
+
+    from ..utils.id_generator import DomainPrefix
+
+    if domain not in DomainPrefix.__args__:  # type: ignore
+        return False
+
+    if not base62_part:
+        return False
+
+    from ..utils.id_generator import BASE62_ALPHABET
+
+    for char in base62_part:
+        if char not in BASE62_ALPHABET:
+            return False
+
+    return True

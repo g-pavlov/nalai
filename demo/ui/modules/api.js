@@ -157,8 +157,8 @@ function handleThreadIdResponse(response) {
     });
     
     if (conversationId && conversationId !== getCurrentThreadId()) {
-        // Validate that it's a proper UUID
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId)) {
+        // Validate that it's a proper domain-prefixed ID
+        if (/^conv_[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{10,}$/i.test(conversationId)) {
             setCurrentThreadId(conversationId);
             Logger.info('New conversation thread started', { 
                 conversationId

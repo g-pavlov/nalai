@@ -226,11 +226,11 @@ class TestThreadIdValidation:
     @pytest.mark.parametrize(
         "thread_id,should_be_valid",
         [
-            # Critical path: Valid UUID4 formats
-            ("550e8400-e29b-41d4-a716-446655440001", True),
+            # Critical path: Valid domain-prefixed formats
+            ("conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9", True),
             # Critical path: Invalid formats
             ("", False),
-            ("not-a-uuid", False),
+            ("not-a-conv-id", False),
         ],
     )
     def test_thread_access_control_validation(self, thread_id, should_be_valid):
@@ -244,17 +244,17 @@ class TestThreadIdValidation:
                 validate_thread_id_format(thread_id)
 
     def test_canonical_uuid_requirement(self):
-        """Test that UUIDs must be in canonical format."""
+        """Test that conversation IDs must be in domain-prefixed format."""
         # Non-canonical formats should be rejected
-        non_canonical_uuids = [
-            "550E8400-E29B-41D4-A716-446655440001",  # Uppercase
-            "{550e8400-e29b-41d4-a716-446655440001}",  # With braces
+        non_canonical_ids = [
+            "CONV_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9",  # Uppercase prefix
+            "conv-2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9",  # Wrong separator
         ]
 
-        for uuid_str in non_canonical_uuids:
+        for conv_id in non_canonical_ids:
             with pytest.raises(ValueError) as exc_info:
-                validate_thread_id_format(uuid_str)
-            assert "UUID4" in str(exc_info.value)
+                validate_thread_id_format(conv_id)
+            assert "domain-prefixed format" in str(exc_info.value)
 
     def test_thread_id_length_limits(self):
         """Test thread ID length limits for security."""

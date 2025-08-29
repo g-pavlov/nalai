@@ -24,6 +24,33 @@ class ToolCall(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
     type: str | None = None
 
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, v):
+        """Validate tool call ID format."""
+        from ..utils.id_generator import validate_domain_id_format
+
+        # Accept both tool_ and call_ prefixes
+        if validate_domain_id_format(v, "tool") or validate_domain_id_format(v, "call"):
+            return v
+        raise ValueError("Tool call ID must be either tool_xxx or call_xxx format")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v):
+        """Validate tool name."""
+        if not v or not v.strip():
+            raise ValueError("Tool name cannot be empty")
+        return v.strip()
+
+    @field_validator("args")
+    @classmethod
+    def validate_args(cls, v):
+        """Validate tool arguments."""
+        if not isinstance(v, dict):
+            raise ValueError("Tool arguments must be a dictionary")
+        return v
+
     class Config:
         extra = "allow"  # Allow extra fields during construction
         validate_assignment = True
@@ -42,6 +69,71 @@ class Message(BaseModel):
     usage: dict[str, int] | None = None
     finish_reason: str | None = None
     tool_call_id: str | None = None  # For tool messages
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, v):
+        """Validate message type."""
+        valid_types = {"human", "ai", "tool"}
+        if v not in valid_types:
+            raise ValueError(f"Message type must be one of {valid_types}")
+        return v
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v):
+        """Validate message content."""
+        if v is None:
+            raise ValueError("Message content cannot be None")
+        return v
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, v):
+        """Validate message ID format when provided."""
+        if v is not None:
+            from ..utils.id_generator import validate_domain_id_format
+
+            # Accept msg_ prefix format
+            if validate_domain_id_format(v, "msg"):
+                return v
+            # Accept run_ prefix format (both with and without index)
+            elif validate_domain_id_format(v, "run"):
+                return v
+            elif "_" in v and v.count("-") == 1:
+                # Check for run-scoped format: run_xxx-index
+                run_part, index_part = v.split("-", 1)
+                if validate_domain_id_format(run_part, "run") and index_part.isdigit():
+                    return v
+                # Check for conversation-scoped format: conv_xxx-index (for conversation loading)
+                elif (
+                    validate_domain_id_format(run_part, "conv") and index_part.isdigit()
+                ):
+                    return v
+                # Check for msg-scoped format: msg_xxx-index (for backward compatibility)
+                elif (
+                    validate_domain_id_format(run_part, "msg") and index_part.isdigit()
+                ):
+                    return v
+            raise ValueError(
+                "Message ID must be either msg_xxx format, run_xxx format, run_xxx-index format, conv_xxx-index format, or msg_xxx-index format"
+            )
+        return v
+
+    @field_validator("tool_call_id")
+    @classmethod
+    def validate_tool_call_id(cls, v):
+        """Validate tool call ID format when provided."""
+        if v is not None:
+            from ..utils.id_generator import validate_domain_id_format
+
+            # Accept both tool_ and call_ prefixes
+            if validate_domain_id_format(v, "tool") or validate_domain_id_format(
+                v, "call"
+            ):
+                return v
+            raise ValueError("Tool call ID must be either tool_xxx or call_xxx format")
+        return v
 
     class Config:
         extra = "allow"  # Allow extra fields during construction
@@ -75,6 +167,7 @@ class MessageChunk(BaseStreamingChunk):
     content: str
     id: str
     metadata: dict[str, Any] | None = None
+    usage: dict[str, Any] | None = None
 
 
 class ToolCallChunk(BaseStreamingChunk):
@@ -91,7 +184,7 @@ class InterruptChunk(BaseStreamingChunk):
 
     type: Literal["interrupt"] = "interrupt"
     id: str
-    value: dict[str, Any]  # serialized action request, config, description
+    values: list[dict[str, Any]]  # serialized action request, config, description
 
 
 class ToolChunk(BaseStreamingChunk):
@@ -189,12 +282,10 @@ class ConversationIdPathParam(BaseModel):
     @classmethod
     def validate_conversation_id(cls, v: str) -> str:
         """Validate conversation ID format."""
-        import uuid
+        from ..utils.id_generator import validate_domain_id_format
 
-        try:
-            uuid.UUID(v)
-        except ValueError as e:
-            raise ValueError(f"Invalid conversation ID format: {e}") from e
+        if not validate_domain_id_format(v, "conv"):
+            raise ValueError(f"Invalid conversation ID format: {v}") from None
         return v
 
 

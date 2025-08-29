@@ -1,6 +1,15 @@
 /**
  * Streaming Module
  * Handles streaming and non-streaming response processing
+ * 
+ * Event Types:
+ * - UPDATE EVENTS (response.update): Mark completion of workflow stages/nodes
+ *   - Track progress and show workflow completion status
+ *   - Do NOT affect content streaming
+ * 
+ * - OUTPUT EVENTS (response.output_text.delta): Stream actual LLM content
+ *   - Handle content replacement and streaming
+ *   - Clear intermediate task content when transitioning to LLM output
  */
 
 import { Logger } from './logger.js';
@@ -97,6 +106,7 @@ export function processStreamEvent(eventData, assistantMessageDiv) {
     Logger.info('Processing stream event', { eventData });
     
     // Handle SSE events with exact model from sse_serializer.py
+    // Distinguish between UPDATE events (workflow stages) and OUTPUT events (content streaming)
     if (eventData.event) {
         const eventType = eventData.event;
         
@@ -104,18 +114,19 @@ export function processStreamEvent(eventData, assistantMessageDiv) {
             case 'response.created':
                 handleResponseCreated(eventData, assistantMessageDiv);
                 break;
+            // OUTPUT EVENTS: Stream actual LLM content
             case 'response.output_text.delta':
                 handleOutputTextDelta(eventData, assistantMessageDiv);
                 break;
             case 'response.output_text.complete':
                 handleOutputTextComplete(eventData, assistantMessageDiv);
                 break;
-            case 'response.tool_calls.delta':
-                // Skip progressive tool call events - we only show completed tool calls
-                Logger.info('Skipping progressive tool call delta event', { eventData });
+            case 'response.output_tool_calls.delta':
+                handleOutputToolCallsDelta(eventData, assistantMessageDiv);
                 break;
-            case 'response.tool_calls.complete':
-                handleToolCallsComplete(eventData, assistantMessageDiv);
+            case 'response.output_tool_calls.complete':
+                // This event is not currently sent by the server, but we handle it if it comes
+                handleOutputToolCallsComplete(eventData, assistantMessageDiv);
                 break;
             case 'response.interrupt':
                 handleInterruptEvent(eventData, assistantMessageDiv);
@@ -132,6 +143,7 @@ export function processStreamEvent(eventData, assistantMessageDiv) {
             case 'response.tool':
                 handleToolEvent(eventData, assistantMessageDiv);
                 break;
+            // UPDATE EVENTS: Mark completion of workflow stages/nodes
             case 'response.update':
                 handleUpdateEvent(eventData, assistantMessageDiv);
                 break;
@@ -149,8 +161,8 @@ function handleResponseCreated(eventData, assistantMessageDiv) {
     
     // Handle conversation ID from event data if present
     if (eventData.conversation && eventData.conversation !== getCurrentThreadId()) {
-        // Validate that it's a proper UUID
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(eventData.conversation)) {
+        // Validate that it's a proper domain-prefixed ID
+        if (/^conv_[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{10,}$/i.test(eventData.conversation)) {
             setCurrentThreadId(eventData.conversation);
             Logger.info('New conversation thread started from response.created event', { 
                 conversationId: eventData.conversation
@@ -170,17 +182,45 @@ function handleOutputTextDelta(eventData, assistantMessageDiv) {
     
     if (eventData.content) {
         const currentContent = getFullMessageContent();
-        const newContent = currentContent + eventData.content;
         
-        Logger.info('Text delta received', {
-            deltaContent: eventData.content,
-            newContentLength: newContent.length
-        });
-        
-        setFullMessageContent(newContent);
-        
-        // Update streaming content in real-time
-        updateStreamingContent(assistantMessageDiv, newContent);
+        // OUTPUT EVENT: This is actual LLM content streaming
+        // If we have intermediate task output (from update events), clear it when we start receiving real LLM content
+        if (currentContent.includes('{"selected_apis":[]}') && 
+            !eventData.content.includes('{"selected_apis":[]}') &&
+            eventData.content.trim().length > 0) {
+            
+            Logger.info('OUTPUT EVENT: Clearing intermediate task content for real LLM output', {
+                currentContentPreview: currentContent.substring(0, 100),
+                newContentPreview: eventData.content.substring(0, 100)
+            });
+            
+            // Clear the accumulated content and start fresh with LLM output
+            setFullMessageContent('');
+            
+            // Clear the streaming content container
+            const streamingContent = assistantMessageDiv.querySelector('.streaming-content');
+            if (streamingContent) {
+                streamingContent.innerHTML = '';
+                Logger.info('Cleared streaming content container for LLM output transition');
+            }
+            
+            // Start with the new LLM content
+            setFullMessageContent(eventData.content);
+            updateStreamingContent(assistantMessageDiv, eventData.content);
+        } else {
+            // Normal case - append to existing content
+            const newContent = currentContent + eventData.content;
+            
+            Logger.info('OUTPUT EVENT: Appending LLM content', {
+                deltaContent: eventData.content,
+                newContentLength: newContent.length
+            });
+            
+            setFullMessageContent(newContent);
+            
+            // Update streaming content in real-time
+            updateStreamingContent(assistantMessageDiv, newContent);
+        }
     }
 }
 
@@ -360,12 +400,15 @@ function handleToolEvent(eventData, assistantMessageDiv) {
 }
 
 function handleUpdateEvent(eventData, assistantMessageDiv) {
-    Logger.info('Update event received', { eventData });
+    Logger.info('UPDATE EVENT: Workflow stage completion received', { eventData });
     
     const task = eventData.task;
     const messages = eventData.messages || [];
     
-    Logger.info('Processing SSE update event', { task, messageCount: messages.length });
+    Logger.info('UPDATE EVENT: Processing workflow stage completion', { task, messageCount: messages.length });
+    
+    // UPDATE EVENT: This marks completion of a workflow stage/node
+    // We track progress but don't affect content streaming - that's handled by output events
     
     // Create node log entry for the task
     const nodeLog = {
@@ -376,7 +419,7 @@ function handleUpdateEvent(eventData, assistantMessageDiv) {
         output: { task, messages }
     };
     
-    Logger.info('Created node log entry', {
+    Logger.info('UPDATE EVENT: Created workflow stage log entry', {
         task: task,
         outputPreview: JSON.stringify({ task, messages }).substring(0, 200)
     });
@@ -412,10 +455,10 @@ function handleUpdateEvent(eventData, assistantMessageDiv) {
         }
     }
     
-    // Update streaming UI to show progress
+    // UPDATE EVENT: Update progress UI to show workflow stage completion
     updateStreamingUI(assistantMessageDiv);
     
-    Logger.info('SSE update event processed', { task, messageCount: messages.length });
+    Logger.info('UPDATE EVENT: Workflow stage completion processed', { task, messageCount: messages.length });
 }
 
 /**
@@ -580,11 +623,20 @@ function handleInterruptEvent(eventData, assistantMessageDiv) {
     Logger.info('Maintaining processing state during interrupt');
     
     // Extract information from SSE interrupt format
-    const interruptId = eventData.interrupt_id;
-    const action = eventData.action;
-    const args = eventData.args || {};
-    const config = eventData.config || {};
-    const description = eventData.description || '';
+    // The interrupts field contains a list of interrupt objects
+    const interrupts = eventData.interrupts || [];
+    if (interrupts.length === 0) {
+        Logger.error('No interrupts found in SSE interrupt event', { eventData });
+        return;
+    }
+    
+    // Use the first interrupt (assuming single interrupt for now)
+    const interrupt = interrupts[0];
+    const actionRequest = interrupt.action_request || {};
+    const action = actionRequest.action;
+    const args = actionRequest.args || {};
+    const config = interrupt.config || {};
+    const description = interrupt.description || '';
     
     if (!action) {
         Logger.error('Missing action in SSE interrupt event', { eventData });
@@ -618,9 +670,33 @@ function handleInterruptEvent(eventData, assistantMessageDiv) {
     };
     createInterruptUI(assistantMessageDiv, actionRequestObj, interruptInfoWithConfig);
     
+    // Extract tool call ID from the last tool call that was generated
+    // The interrupt should reference the actual tool call that triggered it
+    let toolCallId = null;
+    
+    // Look for the last tool call ID from the streaming state
+    if (streamingProgressState.lastToolCall && streamingProgressState.lastToolCall.id) {
+        toolCallId = streamingProgressState.lastToolCall.id;
+    } else if (streamingProgressState.toolCalls && streamingProgressState.toolCalls.length > 0) {
+        // Find the last tool call with an ID
+        for (let i = streamingProgressState.toolCalls.length - 1; i >= 0; i--) {
+            const toolCall = streamingProgressState.toolCalls[i];
+            if (toolCall && toolCall.id) {
+                toolCallId = toolCall.id;
+                break;
+            }
+        }
+    }
+    
+    // If still no tool call ID, use a fallback
+    if (!toolCallId) {
+        toolCallId = `call_${Date.now()}`;
+        Logger.warn('No tool call ID found, using fallback', { toolCallId });
+    }
+    
     window.currentInterrupt = {
         value: {
-            tool_call_id: interruptId,
+            tool_call_id: toolCallId,
             action: action,
             args: args,
             action_request: { action, args },
@@ -632,7 +708,7 @@ function handleInterruptEvent(eventData, assistantMessageDiv) {
     };
     
     Logger.info('SSE interrupt event processed', { 
-        interruptId, 
+        toolCallId, 
         action, 
         args, 
         description 
@@ -1117,6 +1193,53 @@ export async function handleNonStreamingResponse(response, assistantMessageDiv) 
         }
     } catch (error) {
         ErrorHandler.handleParsingError(error, null, 'Non-streaming response parsing');
+    }
+}
+
+function handleOutputToolCallsDelta(eventData, assistantMessageDiv) {
+    Logger.info('Output tool calls delta received', { eventData });
+    
+    if (eventData.tool_calls && eventData.tool_calls.length > 0) {
+        // Store tool calls in streaming state for later display
+        if (!streamingProgressState.toolCalls) {
+            streamingProgressState.toolCalls = [];
+        }
+        
+        // Add new tool calls to the state
+        streamingProgressState.toolCalls.push(...eventData.tool_calls);
+        
+        // Capture the last tool call ID for interrupt handling
+        const lastToolCall = eventData.tool_calls[eventData.tool_calls.length - 1];
+        if (lastToolCall && lastToolCall.id) {
+            streamingProgressState.lastToolCall = lastToolCall;
+        }
+        
+        Logger.info('Tool calls delta processed', { 
+            toolCallsCount: eventData.tool_calls.length,
+            totalToolCallsCount: streamingProgressState.toolCalls.length,
+            lastToolCallId: streamingProgressState.lastToolCall?.id
+        });
+    }
+}
+
+function handleOutputToolCallsComplete(eventData, assistantMessageDiv) {
+    Logger.info('Output tool calls complete received', { eventData });
+    
+    // Tool calls streaming is complete - we can now display them
+    if (streamingProgressState.toolCalls && streamingProgressState.toolCalls.length > 0) {
+        const deduplicatedToolCalls = deduplicateToolCalls(streamingProgressState.toolCalls);
+        
+        // Add tool calls indicator to the message
+        addToolCallsIndicatorToMessage(
+            assistantMessageDiv, 
+            deduplicatedToolCalls.length, 
+            deduplicatedToolCalls
+        );
+        
+        Logger.info('Tool calls complete - added indicator', { 
+            originalCount: streamingProgressState.toolCalls.length,
+            deduplicatedCount: deduplicatedToolCalls.length
+        });
     }
 }
 

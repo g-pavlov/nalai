@@ -1,40 +1,45 @@
 """
-Agent Message Exchange Routes for API Assistant server.
+API agent endpoints for the server package.
 
-This module contains FastAPI route handlers for the agent message exchange endpoint
-that provides unified conversation operations.
+This module contains the FastAPI route handlers for agent message exchange.
 """
 
 import logging
-import uuid
 from datetime import UTC, datetime
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 
 from ..config import settings
-from ..core import (
+from ..core.agent import (
     AccessDeniedError,
     Agent,
     ClientError,
     ConversationNotFoundError,
     InvocationError,
-    ValidationError,
 )
-from .api_conversations import SSEStreamingResponse, handle_agent_errors
-from .message_serializer import (
-    convert_messages_to_output,
-    extract_usage_from_core_messages,
+from ..core.agent import (
+    ValidationError as AgentValidationError,
 )
-from .runtime_config import create_runtime_config
-from .schemas.messages import (
+from ..server.schemas.messages import (
     Interrupt,
     MessageRequest,
     MessageResponse,
     ResponseMetadata,
 )
+from ..utils.id_generator import generate_run_id
+from .api_conversations import SSEStreamingResponse, handle_agent_errors
+from .message_serializer import (
+    convert_messages_to_output,
+    extract_usage_from_core_messages,
+    extract_usage_from_streaming_chunks,
+)
+from .runtime_config import create_runtime_config
 from .sse_serializer import (
-    ResponseErrorEvent,
-    StreamingContext,
+    create_response_completed_event,
+    create_response_created_event,
+    create_response_error_event,
+    create_response_output_event,
+    create_response_output_tool_calls_complete_event,
     create_streaming_event_from_chunk,
 )
 
@@ -42,16 +47,16 @@ logger = logging.getLogger("nalai")
 
 
 def validate_streaming_compatibility(stream: str, accept_header: str) -> None:
-    """Validate streaming mode compatibility with Accept header according to truth matrix."""
+    """Validate streaming compatibility according to truth matrix."""
     if stream in ["full", "events"] and "text/event-stream" not in accept_header:
-        raise HTTPException(
-            status_code=406,
-            detail=f"Incompatible transport: stream={stream} requires Accept: text/event-stream",
+        raise ClientError(
+            f"Incompatible transport: stream={stream} requires Accept: text/event-stream",
+            http_status=406,
         )
-    if stream == "off" and "text/event-stream" in accept_header:
-        raise HTTPException(
-            status_code=406,
-            detail="Incompatible transport: stream=off requires Accept: application/json",
+    elif stream == "off" and "application/json" not in accept_header:
+        raise ClientError(
+            "Incompatible transport: stream=off requires Accept: application/json",
+            http_status=406,
         )
 
 
@@ -86,13 +91,13 @@ def create_agent_api(app, agent: Agent) -> None:
                     },
                     "text/event-stream": {
                         "example": """event: response.created
-data: {"id": "resp_789", "conversation": "conv_123"}
+data: {"id": "run_2b1c3d4e5f6g7h8", "conversation": "conv_2b1c3d4e5f6g7h8"}
 
 event: response.output_text.delta
-data: {"id": "resp_789", "conversation": "conv_123", "content": "Hello"}
+data: {"id": "run_2b1c3d4e5f6g7h8", "conversation": "conv_2b1c3d4e5f6g7h8", "content": "Hello"}
 
 event: response.completed
-data: {"id": "resp_789", "conversation": "conv_123", "usage": {...}}"""
+data: {"id": "run_2b1c3d4e5f6g7h8", "conversation": "conv_2b1c3d4e5f6g7h8", "usage": {...}}"""
                     },
                 },
                 "headers": {
@@ -268,6 +273,9 @@ async def _handle_json_response(
 ) -> MessageResponse:
     """Handle REST response for agent message exchange endpoint."""
     try:
+        # Generate a single run ID for this response cycle
+        run_id = generate_run_id()
+
         # Invoke agent
         result_messages, conversation_info = await agent.chat(
             messages, conversation_id, agent_config, previous_response_id
@@ -311,11 +319,11 @@ async def _handle_json_response(
                 interrupts_list = interrupt_infos
             status = "interrupted"
 
-        # Create response output
-        output_messages = convert_messages_to_output(result_messages)
+        # Create response output with run-scoped IDs
+        output_messages = convert_messages_to_output(result_messages, run_id)
 
         response_data = {
-            "id": str(uuid.uuid4()),
+            "id": run_id,  # Use run_id as the response ID
             "conversation_id": actual_conversation_id,
             "previous_response_id": previous_response_id,
             "output": output_messages,
@@ -329,7 +337,7 @@ async def _handle_json_response(
         return MessageResponse(**response_data)
 
     except (
-        ValidationError,
+        AgentValidationError,
         AccessDeniedError,
         ConversationNotFoundError,
         InvocationError,
@@ -340,11 +348,21 @@ async def _handle_json_response(
     except Exception as e:
         logger.error(f"Unexpected agent response error: {e}")
         # Create error response for unexpected errors
+        error_run_id = generate_run_id()
+        # Create a placeholder error message to satisfy the schema requirement
+        error_message = {
+            "id": f"msg_{error_run_id.replace('run_', '')}",
+            "role": "assistant",
+            "content": [{"type": "text", "text": f"Error: {str(e)}"}],
+            "finish_reason": "stop",
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+
         response_data = {
-            "id": str(uuid.uuid4()),
-            "conversation_id": conversation_id or "unknown",
+            "id": error_run_id,  # Use run_id as the response ID
+            "conversation_id": conversation_id,
             "previous_response_id": previous_response_id,
-            "output": [],
+            "output": [error_message],
             "created_at": datetime.now(UTC).isoformat(),
             "status": "error",
             "interrupts": None,
@@ -364,19 +382,22 @@ async def _handle_resume_json_response(
     agent_config: dict,
     request: MessageRequest,
 ) -> MessageResponse:
-    """Handle REST response for resume operations."""
+    """Handle resume JSON response for agent message exchange endpoint."""
     try:
+        # Generate a single run ID for this response cycle
+        run_id = generate_run_id()
+
         # Use the agent's resume functionality
         result_messages, conversation_info = await agent.resume_interrupted(
             resume_decision, conversation_id, agent_config
         )
 
-        # Create response output
+        # Create response output with run-scoped IDs
         response_data = {
-            "id": str(uuid.uuid4()),
+            "id": run_id,  # Use run_id as the response ID
             "conversation_id": conversation_info.conversation_id,
             "previous_response_id": None,  # Resume responses don't branch from previous responses
-            "output": convert_messages_to_output(result_messages),
+            "output": convert_messages_to_output(result_messages, run_id),
             "created_at": datetime.now(UTC).isoformat(),
             "status": "completed",
             "interrupts": None,
@@ -387,7 +408,7 @@ async def _handle_resume_json_response(
         return MessageResponse(**response_data)
 
     except (
-        ValidationError,
+        AgentValidationError,
         AccessDeniedError,
         ConversationNotFoundError,
         InvocationError,
@@ -398,11 +419,21 @@ async def _handle_resume_json_response(
     except Exception as e:
         logger.error(f"Unexpected agent resume response error: {e}")
         # Create error response for unexpected errors
+        error_run_id = generate_run_id()
+        # Create a placeholder error message to satisfy the schema requirement
+        error_message = {
+            "id": f"msg_{error_run_id.replace('run_', '')}",
+            "role": "assistant",
+            "content": [{"type": "text", "text": f"Error: {str(e)}"}],
+            "finish_reason": "stop",
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+
         response_data = {
-            "id": str(uuid.uuid4()),
+            "id": error_run_id,  # Use run_id as the response ID
             "conversation_id": conversation_id,
             "previous_response_id": None,  # Resume error responses don't branch from previous responses
-            "output": [],
+            "output": [error_message],
             "created_at": datetime.now(UTC).isoformat(),
             "status": "error",
             "interrupts": None,
@@ -424,56 +455,66 @@ async def _handle_resume_streaming_response(
 ) -> SSEStreamingResponse:
     """Handle resume streaming response for agent message exchange endpoint."""
     try:
-        # Use the agent's resume streaming functionality
+        # Generate a single run ID for this response cycle
+        run_id = generate_run_id()
+
+        # Use the agent's streaming resume functionality
         stream_gen, conversation_info = await agent.resume_interrupted_streaming(
             resume_decision, conversation_id, agent_config
         )
 
+        # Get the actual conversation ID from the agent response
+        actual_conversation_id = conversation_info.conversation_id
+
         async def generate():
-            # Create streaming context for managing event state
-            context = StreamingContext(
-                conversation_info.conversation_id, request.stream
+            # Send response created event with run ID
+            yield create_response_created_event(
+                conversation_id=actual_conversation_id,
+                run_id=run_id
             )
 
-            # Send response resumed event
-            yield context.create_resumed_event()
-
-            # Process all events through the context
+            # Collect messages and usage from the stream
+            collected_messages = []
+            
+            # Process all events through the stream
             async for event in stream_gen:
+                # Use the existing streaming event creation function for chunks
                 sse_event = create_streaming_event_from_chunk(
-                    event, conversation_id, context
+                    chunk=event,
+                    conversation_id=actual_conversation_id,
+                    context=None,
+                    run_id=run_id
                 )
-                if sse_event:  # Only yield non-empty events
+                if sse_event:
                     yield sse_event
+                
+                # Collect messages for usage extraction from the original chunk
+                if hasattr(event, "usage") and event.usage:
+                    collected_messages.append(event)
 
-            # Send completion events
-            text_complete = context.create_text_complete_event()
-            if text_complete:
-                yield text_complete
-
-            tool_calls_complete = context.create_tool_calls_complete_event()
-            if tool_calls_complete:
-                yield tool_calls_complete
-
-            # Send completion event
-            yield context.create_completed_event(
-                usage=extract_usage_from_core_messages([])  # TODO: Extract from stream
+            # Send completion event with actual usage
+            usage_data = extract_usage_from_streaming_chunks(collected_messages)
+            yield create_response_completed_event(
+                conversation_id=actual_conversation_id,
+                run_id=run_id,
+                usage=usage_data
             )
-
-        response = SSEStreamingResponse(generate())
-        if conversation_id:
-            response.headers["X-Conversation-ID"] = conversation_id
-        return response
+        return SSEStreamingResponse(generate())
 
     except Exception as e:
-        logger.error(f"Agent resume streaming error: {e}")
+        logger.error(f"Unexpected agent resume streaming response error: {e}")
+        error_run_id = generate_run_id()
         error_message = str(e)
 
-        # Return error event
         async def generate_error():
-            yield ResponseErrorEvent.create(
-                conversation_id,
-                error=error_message,
+            yield create_response_created_event(
+                conversation_id=conversation_id,
+                run_id=error_run_id
+            )
+            yield create_response_error_event(
+                conversation_id=conversation_id,
+                run_id=error_run_id,
+                error=error_message
             )
 
         return SSEStreamingResponse(generate_error())
@@ -489,6 +530,9 @@ async def _handle_streaming_response(
 ) -> SSEStreamingResponse:
     """Handle streaming response for agent message exchange endpoint."""
     try:
+        # Generate a single run ID for this response cycle
+        run_id = generate_run_id()
+
         # Get streaming response
         stream_gen, conversation_info = await agent.chat_streaming(
             messages, conversation_id, agent_config, previous_response_id
@@ -498,45 +542,69 @@ async def _handle_streaming_response(
         actual_conversation_id = conversation_info.conversation_id
 
         async def generate():
-            # Create streaming context for managing event state
-            context = StreamingContext(actual_conversation_id, request.stream)
+            # Send response created event with run ID
+            yield create_response_created_event(
+                conversation_id=actual_conversation_id,
+                run_id=run_id
+            )
 
-            # Send response created event
-            yield context.create_created_event()
-
-            # Process all events through the context
+            # Collect messages and usage from the stream
+            collected_messages = []
+            accumulated_tool_calls = []
+            
+            # Process all events through the stream
             async for event in stream_gen:
+                # Use the existing streaming event creation function for chunks
                 sse_event = create_streaming_event_from_chunk(
-                    event, actual_conversation_id, context
+                    chunk=event,
+                    conversation_id=actual_conversation_id,
+                    context=None,
+                    run_id=run_id
                 )
-                if sse_event:  # Only yield non-empty events
+                if sse_event:
                     yield sse_event
+                
+                # Collect tool calls for completion event
+                if hasattr(event, "tool_calls") and event.tool_calls:
+                    accumulated_tool_calls.extend(event.tool_calls)
+                
+                # Collect messages for usage extraction from the original chunk
+                if hasattr(event, "usage") and event.usage:
+                    collected_messages.append(event)
 
-            # Send completion events
-            text_complete = context.create_text_complete_event()
-            if text_complete:
-                yield text_complete
+            # Send tool calls complete event if we have any
+            if accumulated_tool_calls:
+                yield create_response_output_tool_calls_complete_event(
+                    conversation_id=actual_conversation_id,
+                    run_id=run_id,
+                    tool_calls=accumulated_tool_calls
+                )
 
-            tool_calls_complete = context.create_tool_calls_complete_event()
-            if tool_calls_complete:
-                yield tool_calls_complete
-
-            # Send completion event
-            yield context.create_completed_event(
-                usage=extract_usage_from_core_messages([])  # TODO: Extract from stream
+            # Send completion event with actual usage
+            usage_data = extract_usage_from_streaming_chunks(collected_messages)
+            yield create_response_completed_event(
+                conversation_id=actual_conversation_id,
+                run_id=run_id,
+                usage=usage_data
             )
 
         response = SSEStreamingResponse(generate())
-        if conversation_id:
-            response.headers["X-Conversation-ID"] = conversation_id
         return response
 
     except Exception as e:
-        logger.error(f"Agent streaming error: {e}")
+        logger.error(f"Unexpected agent streaming response error: {e}")
+        error_run_id = generate_run_id()
         error_message = str(e)
 
-        # Return error event
         async def generate_error():
-            yield ResponseErrorEvent.create(actual_conversation_id, error=error_message)
+            yield create_response_created_event(
+                conversation_id=conversation_id or "unknown",
+                run_id=error_run_id
+            )
+            yield create_response_error_event(
+                conversation_id=conversation_id or "unknown",
+                run_id=error_run_id,
+                error=error_message
+            )
 
         return SSEStreamingResponse(generate_error())

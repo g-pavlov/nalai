@@ -14,7 +14,7 @@ create_conversation_cases:
       user_context: "mock_context"
     expected:
       success: true
-      conversation_id: "uuid_pattern"
+      conversation_id: "conv_pattern"
       output:
         messages: [{"content": "Hello", "type": "ai"}]
         selected_apis: []
@@ -33,7 +33,7 @@ create_conversation_cases:
       user_context: "mock_context"
     expected:
       success: true
-      conversation_id: "uuid_pattern"
+      conversation_id: "conv_pattern"
       output:
         messages: []
         selected_apis: []
@@ -49,12 +49,12 @@ continue_conversation_cases:
         model_config:
           platform: "ollama"
           model: "llama3.2"
-      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      conversation_id: "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
       user_id: "user123"
       user_context: "mock_context"
     expected:
       success: true
-      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      conversation_id: "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
       output:
         messages: [{"content": "I'll continue", "type": "ai"}]
         selected_apis: []
@@ -69,7 +69,7 @@ continue_conversation_cases:
         model_config:
           platform: "ollama"
           model: "llama3.2"
-      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      conversation_id: "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
       user_id: "user456"
       user_context: "mock_context"
     expected:
@@ -85,7 +85,7 @@ continue_conversation_cases:
         model_config:
           platform: "ollama"
           model: "llama3.2"
-      conversation_id: "invalid-uuid"
+      conversation_id: "invalid-conv-id"
       user_id: "user123"
       user_context: "mock_context"
     expected:
@@ -97,12 +97,12 @@ load_conversation_cases:
   - name: "load_conversation_success"
     description: "Successfully load existing conversation"
     input:
-      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      conversation_id: "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
       user_id: "user123"
       user_context: "mock_context"
     expected:
       success: true
-      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      conversation_id: "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
       messages:
         - {"content": "Hello", "type": "human"}
         - {"content": "Hi there!", "type": "ai"}
@@ -112,7 +112,7 @@ load_conversation_cases:
   - name: "load_conversation_not_found"
     description: "Conversation not found"
     input:
-      conversation_id: "550e8400-e29b-41d4-a716-446655440001"
+      conversation_id: "conv_abc123def456ghi789jkm2n3p4q5r6s7t8u9"
       user_id: "user123"
       user_context: "mock_context"
     expected:
@@ -123,29 +123,30 @@ load_conversation_cases:
   - name: "load_conversation_interrupted_status"
     description: "Load conversation with interrupted status"
     input:
-      conversation_id: "550e8400-e29b-41d4-a716-446655440002"
+      conversation_id: "conv_xyz789abc123def456ghi789jkm2n3p4q5r6s7t8u9"
       user_id: "user123"
       user_context: "mock_context"
     expected:
       success: true
-      conversation_id: "550e8400-e29b-41d4-a716-446655440002"
+      conversation_id: "conv_xyz789abc123def456ghi789jkm2n3p4q5r6s7t8u9"
       status: "interrupted"
 
 delete_conversation_cases:
   - name: "delete_conversation_success"
     description: "Successfully delete conversation"
     input:
-      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      conversation_id: "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
       user_id: "user123"
       user_context: "mock_context"
     expected:
       success: true
+      conversation_id: "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
       deleted: true
 
   - name: "delete_conversation_not_found"
-    description: "Delete non-existent conversation"
+    description: "Conversation not found for deletion"
     input:
-      conversation_id: "550e8400-e29b-41d4-a716-446655440001"
+      conversation_id: "conv_abc123def456ghi789jkm2n3p4q5r6s7t8u9"
       user_id: "user123"
       user_context: "mock_context"
     expected:
@@ -180,40 +181,40 @@ list_conversations_cases:
       total_count: 0
 
 resume_decision_cases:
-  - name: "resume_decision_approve"
-    description: "Successfully resume conversation with approve decision"
+  - name: "resume_decision_accept"
+    description: "Successfully resume with accept decision"
     input:
       request:
         input:
-          decision: "approve"
-          tool_calls: [{"name": "http_request", "args": {"url": "https://api.example.com"}}]
-      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+          decision: "accept"
+          message: "Tool call accepted"
+      conversation_id: "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
       user_id: "user123"
       user_context: "mock_context"
     expected:
       success: true
-      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      conversation_id: "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
       output:
-        messages: [{"content": "Tool executed successfully", "type": "ai"}]
+        messages: [{"content": "Tool call accepted", "type": "ai"}]
         selected_apis: []
         cache_miss: null
       streaming: false
 
   - name: "resume_decision_reject"
-    description: "Successfully resume conversation with reject decision"
+    description: "Successfully resume with reject decision"
     input:
       request:
         input:
           decision: "reject"
-          tool_calls: [{"name": "http_request", "args": {"url": "https://api.example.com"}}]
-      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+          message: "I don't want to execute this tool"
+      conversation_id: "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
       user_id: "user123"
       user_context: "mock_context"
     expected:
       success: true
-      conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+      conversation_id: "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
       output:
-        messages: [{"content": "Tool execution cancelled", "type": "ai"}]
+        messages: [{"content": "Tool call rejected", "type": "ai"}]
         selected_apis: []
         cache_miss: null
       streaming: false

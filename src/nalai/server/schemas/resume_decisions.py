@@ -1,107 +1,48 @@
 """
-Resume decision resource schemas.
+Resume decision schemas for the server.
 
-This module contains all schemas for the resume decision resource:
-- /api/v1/conversations/{conversation_id}/resume-decision (POST) - Resume decision
+This module defines the request and response schemas for resume decision operations.
 """
 
 from typing import Any, Literal
 
 from langchain_core.messages import BaseMessage, HumanMessage
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
+
+from ...utils.id_generator import generate_message_id
+from .base import StrictModelMixin
 
 
-class SimpleResumeDecisionRequest(BaseModel):
-    """Simple tool call resume request that only requires decision."""
+class ResumeDecisionInput(BaseModel, StrictModelMixin):
+    """Input structure for resume decision operations."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    decision: Literal["accept", "reject"] = Field(
-        ..., description="Type of tool call decision. One of 'accept' or 'reject'"
+    decision: Literal["feedback", "edit", "reject"] = Field(
+        ..., description="Decision type"
     )
+    tool_call_id: str = Field(..., description="Tool call ID to respond to")
+    args: dict[str, Any] | None = Field(None, description="Arguments for edit decision")
     message: str | None = Field(
-        None, description="Optional message for reject decisions", max_length=1000
+        None, description="Message for feedback/reject decision"
     )
-
-
-class EditResumeDecisionRequest(BaseModel):
-    """Complex tool call resume request that requires both decision and args."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    decision: Literal["edit"] = Field(
-        "edit", description="Type of tool call decision - 'edit'"
-    )
-    args: dict = Field(
-        ...,
-        description="Edited tool call args. Must be valid tool arguments matching the original tool call structure.",
-    )
-
-
-class FeedbackResumeDecisionRequest(BaseModel):
-    """Complex tool call resume request that requires both decision and args."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    decision: Literal["feedback"] = Field(
-        "feedback", description="Type of tool call decision - 'feedback'"
-    )
-    message: str = Field(
-        ..., description="The feedback message to send back to LLM", max_length=1000
-    )
-
-
-ToolCallDecisionUnion = (
-    SimpleResumeDecisionRequest
-    | EditResumeDecisionRequest
-    | FeedbackResumeDecisionRequest
-)
 
 
 class ResumeDecisionRequest(BaseModel):
-    """Request model for tool decision handling.
+    """Request model for resume decision operations."""
 
-    **Decision Types:**
-    - **accept**: Execute the tool call as-is
-    - **reject**: Cancel the tool call (optional message)
-    - **edit**: Modify tool call arguments (requires valid args)
-    - **feedback**: Provide feedback to the LLM (requires message)
-
-    **Validation Rules:**
-    - edit decisions require valid args matching tool structure
-    - feedback decisions require non-empty message
-    - Message length limits: 1000 characters
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    input: ToolCallDecisionUnion = Field(
-        ..., description="The tool call decision input"
-    )
+    conversation_id: str = Field(..., description="Conversation ID")
+    response_id: str = Field(..., description="Response ID to resume")
+    input: ResumeDecisionInput = Field(..., description="Decision input")
 
     def to_internal(self) -> dict:
-        """
-        Convert the request to the internal format expected by LangGraph.
+        """Convert to internal format for agent processing."""
+        action = self.input.decision
+        args = {}
 
-        Returns:
-            dict: The internal format with action, args, and tool_call_id fields
-        """
-        decision_input = self.input
+        if self.input.decision == "edit" and self.input.args:
+            args = self.input.args
+        elif self.input.decision in ["feedback", "reject"] and self.input.message:
+            args = {"message": self.input.message}
 
-        # Extract the decision type
-        decision = decision_input.decision
-
-        # Pass through the decision as the action
-        action = decision
-
-        # Extract args based on decision type
-        if decision == "edit":
-            args = decision_input.args
-        elif decision == "feedback":
-            args = decision_input.message
-        else:
-            # For accept and reject, no args needed
-            args = None
         return {"action": action, "args": args}
 
     def to_langchain_messages(self) -> list[BaseMessage]:
@@ -117,12 +58,15 @@ class ResumeDecisionRequest(BaseModel):
         elif decision_input.decision == "reject" and hasattr(decision_input, "message"):
             content += f" - {decision_input.message}"
 
-        return [HumanMessage(content=content)]
+        return [HumanMessage(content=content, id=generate_message_id())]
 
 
 class ResumeDecisionResponse(BaseModel):
     """Response model for resume decision operations."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    output: dict[str, Any] = Field(..., description="Resume decision output")
+    conversation_id: str = Field(..., description="Conversation ID")
+    response_id: str = Field(..., description="New response ID")
+    status: Literal["completed", "processing", "error"] = Field(
+        ..., description="Response status"
+    )
+    message: str | None = Field(None, description="Status message")

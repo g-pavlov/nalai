@@ -56,7 +56,9 @@ class TestAgentResponses:
 
         mock_message = Message(content="Hello!", type="ai")
 
-        mock_conversation_info = MagicMock(conversation_id="conv_123")
+        mock_conversation_info = MagicMock(
+            conversation_id="conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+        )
         mock_conversation_info.interrupt_info = (
             None  # Explicitly set to None to avoid MagicMock issues
         )
@@ -74,7 +76,11 @@ class TestAgentResponses:
             "store": True,
         }
 
-        response = client.post("/api/v1/messages", json=request_data)
+        response = client.post(
+            "/api/v1/messages",
+            json=request_data,
+            headers={"Accept": "application/json"},
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -106,7 +112,9 @@ class TestAgentResponses:
 
         mock_message = Message(content="How can I help?", type="ai")
 
-        mock_conversation_info = MagicMock(conversation_id="conv_456")
+        mock_conversation_info = MagicMock(
+            conversation_id="conv_abc123def456ghi789jkm2n3p4q5r6s7t8u9"
+        )
         mock_conversation_info.interrupt_info = (
             None  # Explicitly set to None to avoid MagicMock issues
         )
@@ -119,7 +127,7 @@ class TestAgentResponses:
         client = TestClient(app)
 
         request_data = {
-            "conversation_id": "conv_456",
+            "conversation_id": "conv_abc123def456ghi789jkm2n3p4q5r6s7t8u9",
             "input": [
                 {
                     "role": "user",
@@ -130,17 +138,23 @@ class TestAgentResponses:
             "store": True,
         }
 
-        response = client.post("/api/v1/messages", json=request_data)
+        response = client.post(
+            "/api/v1/messages",
+            json=request_data,
+            headers={"Accept": "application/json"},
+        )
 
         assert response.status_code == 200
         data = response.json()
 
         # Verify conversation_id is preserved
-        assert data["conversation_id"] == "conv_456"
+        assert data["conversation_id"] == "conv_abc123def456ghi789jkm2n3p4q5r6s7t8u9"
 
         # Verify agent was called with correct conversation_id
         call_args = mock_agent.chat.call_args
-        assert call_args[0][1] == "conv_456"  # conversation_id parameter
+        assert (
+            call_args[0][1] == "conv_abc123def456ghi789jkm2n3p4q5r6s7t8u9"
+        )  # conversation_id parameter
 
     @pytest.mark.asyncio
     async def test_agent_responses_with_previous_response_id(
@@ -154,7 +168,9 @@ class TestAgentResponses:
 
         mock_message = Message(content="Continuing from previous response", type="ai")
 
-        mock_conversation_info = MagicMock(conversation_id="conv_789")
+        mock_conversation_info = MagicMock(
+            conversation_id="conv_xyz789abc123def456ghi789jkm2n3p4q5r6s7t8u9"
+        )
         mock_conversation_info.interrupt_info = None
 
         mock_agent.chat.return_value = (
@@ -173,23 +189,29 @@ class TestAgentResponses:
                     ],
                 }
             ],
-            "previous_response_id": "prev_response_123",
+            "previous_response_id": "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9",
             "stream": "off",
             "store": True,
         }
 
-        response = client.post("/api/v1/messages", json=request_data)
+        response = client.post(
+            "/api/v1/messages",
+            json=request_data,
+            headers={"Accept": "application/json"},
+        )
 
         assert response.status_code == 200
         data = response.json()
 
         # Verify previous_response_id is included in response
         assert "previous_response_id" in data
-        assert data["previous_response_id"] == "prev_response_123"
+        assert data["previous_response_id"] == "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
 
         # Verify agent was called with correct previous_response_id
         call_args = mock_agent.chat.call_args
-        assert call_args[0][3] == "prev_response_123"  # previous_response_id parameter
+        assert (
+            call_args[0][3] == "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+        )  # previous_response_id parameter
 
     @pytest.mark.asyncio
     async def test_agent_responses_validation_error(
@@ -244,61 +266,54 @@ class TestAgentResponses:
         # Note: X-Conversation-ID header is only set when conversation_id is not None
         # In this test, conversation_id is None (new conversation), so header won't be set
 
+    @pytest.mark.parametrize(
+        "stream_value,accept_header,expected_error_message",
+        [
+            (
+                "full",
+                "application/json",
+                "Incompatible transport: stream=full requires Accept: text/event-stream",
+            ),
+            (
+                "events",
+                "application/json",
+                "Incompatible transport: stream=events requires Accept: text/event-stream",
+            ),
+            (
+                "off",
+                "text/event-stream",
+                "Incompatible transport: stream=off requires Accept: application/json",
+            ),
+        ],
+    )
     @pytest.mark.asyncio
     async def test_agent_responses_streaming_validation_406(
-        self, app_and_agent, mock_auth_service
+        self,
+        app_and_agent,
+        mock_auth_service,
+        stream_value,
+        accept_header,
+        expected_error_message,
     ):
         """Test 406 errors for incompatible transport combinations."""
         app, mock_agent = app_and_agent
 
         client = TestClient(app)
 
-        # Test 1: stream=full with Accept: application/json → 406
         request_data = {
             "input": [{"role": "user", "content": [{"type": "text", "text": "Hello"}]}],
-            "stream": "full",
+            "stream": stream_value,
             "store": True,
         }
 
         response = client.post(
             "/api/v1/messages",
             json=request_data,
-            headers={"Accept": "application/json"},
+            headers={"Accept": accept_header},
         )
 
         assert response.status_code == 406
-        assert (
-            "Incompatible transport: stream=full requires Accept: text/event-stream"
-            in response.json()["detail"]
-        )
-
-        # Test 2: stream=events with Accept: application/json → 406
-        request_data["stream"] = "events"
-        response = client.post(
-            "/api/v1/messages",
-            json=request_data,
-            headers={"Accept": "application/json"},
-        )
-
-        assert response.status_code == 406
-        assert (
-            "Incompatible transport: stream=events requires Accept: text/event-stream"
-            in response.json()["detail"]
-        )
-
-        # Test 3: stream=off with Accept: text/event-stream → 406
-        request_data["stream"] = "off"
-        response = client.post(
-            "/api/v1/messages",
-            json=request_data,
-            headers={"Accept": "text/event-stream"},
-        )
-
-        assert response.status_code == 406
-        assert (
-            "Incompatible transport: stream=off requires Accept: application/json"
-            in response.json()["detail"]
-        )
+        assert expected_error_message in response.json()["detail"]
 
 
 class TestResponseSchemas:

@@ -14,6 +14,7 @@ def create_ui_route(app: FastAPI) -> None:
     @app.get("/ui", include_in_schema=False)
     async def redirect_ui_to_index() -> RedirectResponse:
         return RedirectResponse("/ui/index.html")
+
     # Mount UI static files
     ui_path = Path(__file__).parent.parent.parent.parent / "demo" / "ui"
     logger.debug(f"Attempting to mount UI from path: {ui_path}")
