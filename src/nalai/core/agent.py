@@ -159,6 +159,14 @@ class UpdateChunk(BaseStreamingChunk):
     messages: list["Message"] = Field(default_factory=list)
 
 
+class ToolCallUpdateChunk(BaseStreamingChunk):
+    """Update chunk for workflow progress events."""
+
+    type: Literal["tool_call_update"] = "tool_call_update"
+    task: str  # event_key
+    tool_calls: list[dict[str, Any]] | None = Field(default=None)
+
+
 class MessageChunk(BaseStreamingChunk):
     """Message chunk for AI message content."""
 
@@ -176,7 +184,7 @@ class ToolCallChunk(BaseStreamingChunk):
     type: Literal["tool_call"] = "tool_call"
     task: str  # langgraph_node
     id: str
-    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    tool_calls_chunks: list[dict[str, Any]] | None = Field(default=None)
 
 
 class InterruptChunk(BaseStreamingChunk):
@@ -196,10 +204,20 @@ class ToolChunk(BaseStreamingChunk):
     tool_call_id: str
     content: str
     tool_name: str
+    args: dict[str, Any] | None = Field(
+        None, description="Actual args used for execution"
+    )
 
 
 # Union type for all chunk types
-StreamingChunk = UpdateChunk | MessageChunk | ToolCallChunk | InterruptChunk | ToolChunk
+StreamingChunk = (
+    UpdateChunk
+    | ToolCallUpdateChunk
+    | MessageChunk
+    | ToolCallChunk
+    | InterruptChunk
+    | ToolChunk
+)
 
 
 class ModelConfig(BaseModel):

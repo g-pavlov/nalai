@@ -8,7 +8,7 @@ to internal data models.
 import logging
 from typing import Any
 
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_core.messages.tool import ToolMessage
 
 from ..utils.id_generator import generate_message_id, generate_run_id
@@ -18,6 +18,7 @@ from .agent import (
     MessageChunk,
     StreamingChunk,
     ToolCallChunk,
+    ToolCallUpdateChunk,
     ToolChunk,
     UpdateChunk,
 )
@@ -111,34 +112,25 @@ def transform_streaming_chunk(
         event_type, event_data = chunk
 
         if event_type == "updates":
-            # Handle updates events
             if not isinstance(event_data, dict):
                 logger.warning(
                     "Unexpected updates event data type: %s", type(event_data)
                 )
                 return None
 
-            # Get the first key-value pair
             if not event_data:
                 logger.warning("Empty updates event data")
                 return None
 
-            event_key = next(iter(event_data))
-            event_value = event_data[event_key]
-
-            # Check if this is an interrupt event
-            if event_key == "__interrupt__":
+            if _is_interrupt_update_event(event_data):
                 return _handle_interrupt_update(event_data, conversation_id)
 
-            # Check if this is a tool event (contains ToolMessage)
-            if (
-                isinstance(event_value, dict)
-                and "name" in event_value
-                and "tool_call_id" in event_value
-            ):
+            if _is_tool_call_update_event(event_data):
+                return _handle_tool_call_update(event_data, conversation_id)
+
+            if _is_tool_update_event(event_data):
                 return _handle_tool_update(event_data, conversation_id)
 
-            # Regular update event
             return _handle_regular_update(event_data, conversation_id)
 
         elif event_type == "messages":
@@ -147,7 +139,7 @@ def transform_streaming_chunk(
                 message, config = event_data
 
                 # Check if this is a ToolMessage first
-                if isinstance(message, ToolMessage):
+                if _is_tool_message(message):
                     return _handle_tool_message(message, config, conversation_id)
 
                 # Extract message properties directly
@@ -165,7 +157,7 @@ def transform_streaming_chunk(
                 }
 
                 # Check if this is a tool call message
-                if _is_tool_call_message(message_data):
+                if _is_tool_call_message(message):
                     return _handle_tool_call_message(
                         message_data, config, conversation_id
                     )
@@ -179,29 +171,6 @@ def transform_streaming_chunk(
                 core_message = transform_message(event_data)
                 return MessageChunk(**core_message.model_dump())
 
-        elif event_type == "interrupts":
-            # Handle interrupt events
-            return _handle_interrupt_event(event_data, conversation_id)
-
-    # Handle direct message objects
-    elif isinstance(chunk, BaseMessage):
-        # Transform to core message model
-        core_message = transform_message(chunk)
-        return MessageChunk(**core_message.model_dump())
-
-    # Handle dict objects
-    elif isinstance(chunk, dict):
-        # Check if it's an interrupt chunk
-        if "interrupts" in chunk:
-            return _handle_interrupt_dict(chunk, conversation_id)
-
-        # Check if it's a tool chunk
-        if "tool_call_id" in chunk and "name" in chunk:
-            return _handle_tool_dict(chunk, conversation_id)
-
-        # Regular message chunk
-        return MessageChunk(**chunk)
-
     logger.warning("Unrecognized chunk type: %s", type(chunk))
     return None
 
@@ -209,6 +178,63 @@ def transform_streaming_chunk(
 def _is_langgraph_event(chunk: Any) -> bool:
     """Check if chunk is a LangGraph event tuple."""
     return isinstance(chunk, tuple) and len(chunk) == 2
+
+
+def _is_tool_call_update_event(event_data: dict) -> bool:
+    """Check if event data contains tool calls."""
+    event_key = next(iter(event_data.keys()))
+    messages = event_data[event_key].get("messages", [])
+    if not messages:
+        return False
+
+    # Check only the last message in the array
+    last_message = messages[-1]
+    if isinstance(last_message, AIMessage):
+        if last_message.tool_calls:
+            return True
+    return False
+
+
+def _is_tool_update_event(event_data: dict) -> bool:
+    """Check if event data is a tool update event."""
+    event_value = next(iter(event_data.values()))
+    return (
+        isinstance(event_value, dict)
+        and "name" in event_value
+        and "tool_call_id" in event_value
+    )
+
+
+def _is_interrupt_update_event(event_data: dict) -> bool:
+    """Check if event data is an interrupt update event."""
+    event_key = next(iter(event_data.keys()))
+    return event_key == "__interrupt__"
+
+
+def _handle_tool_call_update(
+    event_data: dict, conversation_id: str
+) -> ToolCallUpdateChunk | None:
+    """Handle tool call update events."""
+    try:
+        event_key = next(iter(event_data.keys()))
+        messages = event_data[event_key].get("messages", [])
+        if not messages:
+            return None
+
+        # Check only the last message in the array
+        last_message = messages[-1]
+        if isinstance(last_message, AIMessage):
+            if last_message.tool_calls:
+                return ToolCallUpdateChunk(
+                    id=last_message.id,
+                    conversation_id=conversation_id,
+                    task=event_key,
+                    tool_calls=last_message.tool_calls,
+                )
+        return None
+    except Exception as e:
+        logger.error("Error handling tool call update: %s", e)
+        return None
 
 
 def _handle_interrupt_update(
@@ -274,12 +300,39 @@ def _handle_tool_message(
 ) -> ToolChunk | None:
     """Handle ToolMessage events."""
     try:
+        # Extract args and determine content/tool_name
+        args = None
+        tool_name = message.name or ""
+        content = message.content
+
+        # Check for special interrupt response format in content
+        if hasattr(message, "content") and message.content:
+            content_dict = None
+
+            # Try to parse JSON string or use dict directly
+            if isinstance(message.content, str):
+                try:
+                    import json
+
+                    content_dict = json.loads(message.content)
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            elif isinstance(message.content, dict):
+                content_dict = message.content
+
+            # Extract from interrupt response format if found
+            if content_dict and content_dict.get("_is_interrupt_response"):
+                args = content_dict.get("execution_args")
+                tool_name = content_dict.get("tool_name", tool_name)
+                content = content_dict.get("content", content)
+
         return ToolChunk(
             id=message.tool_call_id or "",
             tool_call_id=message.tool_call_id or "",
-            tool_name=message.name or "",
+            tool_name=tool_name,
             status="success",
-            content=message.content,
+            content=content,
+            args=args,
             conversation_id=conversation_id,
         )
     except Exception as e:
@@ -287,57 +340,14 @@ def _handle_tool_message(
         return None
 
 
-def _handle_interrupt_event(
-    event_data: Any, conversation_id: str
-) -> InterruptChunk | None:
-    """Handle interrupt events."""
-    try:
-        return InterruptChunk(
-            id=event_data.get("id", ""),
-            value=event_data,
-            conversation_id=conversation_id,
-        )
-    except Exception as e:
-        logger.error("Error handling interrupt event: %s", e)
-        return None
+def _is_tool_message(message: object) -> bool:
+    """Check if message is a ToolMessage."""
+    return isinstance(message, ToolMessage)
 
 
-def _handle_interrupt_dict(chunk: dict, conversation_id: str) -> InterruptChunk | None:
-    """Handle interrupt dict chunks."""
-    try:
-        return InterruptChunk(
-            id=chunk.get("id", ""),
-            value=chunk,
-            conversation_id=conversation_id,
-        )
-    except Exception as e:
-        logger.error("Error handling interrupt dict: %s", e)
-        return None
-
-
-def _handle_tool_dict(chunk: dict, conversation_id: str) -> ToolChunk | None:
-    """Handle tool dict chunks."""
-    try:
-        return ToolChunk(
-            id=chunk.get("tool_call_id", ""),
-            tool_call_id=chunk.get("tool_call_id", ""),
-            tool_name=chunk.get("name", ""),
-            status=chunk.get("status", "success"),
-            content=chunk.get("content", ""),
-            conversation_id=conversation_id,
-        )
-    except Exception as e:
-        logger.error("Error handling tool dict: %s", e)
-        return None
-
-
-def _is_tool_call_message(message_data: dict) -> bool:
+def _is_tool_call_message(message: object) -> bool:
     """Check if message data contains tool calls."""
-    return (
-        "additional_kwargs" in message_data
-        and message_data["additional_kwargs"]
-        and message_data["additional_kwargs"].get("tool_calls", [])
-    )
+    return isinstance(message, AIMessageChunk) and message.tool_call_chunks
 
 
 def _handle_tool_call_message(
@@ -345,13 +355,13 @@ def _handle_tool_call_message(
 ) -> ToolCallChunk:
     """Handle tool call message event."""
     langgraph_node = config.get("langgraph_node", "")
-    tool_calls = message_data["additional_kwargs"].get("tool_calls", [])
+    tool_calls_chunks = message_data["tool_call_chunks"]
     return ToolCallChunk(
         type="tool_call",
         conversation_id=conversation_id,
         task=langgraph_node,
         id=message_data.get("id", ""),
-        tool_calls=tool_calls,
+        tool_calls_chunks=tool_calls_chunks,
     )
 
 

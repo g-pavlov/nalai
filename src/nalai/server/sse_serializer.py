@@ -16,6 +16,7 @@ from ..core.agent import (
     MessageChunk,
     StreamingChunk,
     ToolCallChunk,
+    ToolCallUpdateChunk,
     ToolChunk,
     UpdateChunk,
 )
@@ -79,6 +80,23 @@ class ResponseOutputTextDeltaEvent(BaseSSEEvent):
     content: str = Field(..., description="Text content delta")
     usage: dict[str, Any] | None = Field(None, description="Usage metadata")
 
+    @classmethod
+    def create(
+        cls,
+        conversation_id: str,
+        content: str,
+        usage: dict[str, Any] | None = None,
+        id: str | None = None,
+    ) -> str:
+        """Create a response.output_text.delta event."""
+        event = cls(
+            conversation=conversation_id,
+            content=content,
+            usage=usage,
+            id=id,
+        )
+        return event.to_sse()
+
 
 class ResponseOutputTextCompleteEvent(BaseSSEEvent):
     """Response output text complete event - sent when text streaming is complete."""
@@ -92,7 +110,22 @@ class ResponseOutputToolCallsDeltaEvent(BaseSSEEvent):
     event: Literal["response.output_tool_calls.delta"] = (
         "response.output_tool_calls.delta"
     )
-    tool_calls: list[dict[str, Any]] = Field(..., description="Tool calls delta")
+    tool_calls: list[dict[str, Any]] = Field(..., description="Tool calls")
+
+    @classmethod
+    def create(
+        cls,
+        conversation_id: str,
+        tool_calls: list[dict[str, Any]],
+        id: str | None = None,
+    ) -> str:
+        """Create a response.output_tool_calls.delta event."""
+        event = cls(
+            conversation=conversation_id,
+            tool_calls=tool_calls,
+            id=id,
+        )
+        return event.to_sse()
 
 
 class ResponseOutputToolCallsCompleteEvent(BaseSSEEvent):
@@ -101,6 +134,22 @@ class ResponseOutputToolCallsCompleteEvent(BaseSSEEvent):
     event: Literal["response.output_tool_calls.complete"] = (
         "response.output_tool_calls.complete"
     )
+    tool_calls: list[dict[str, Any]] = Field(..., description="Tool calls")
+
+    @classmethod
+    def create(
+        cls,
+        conversation_id: str,
+        tool_calls: list[dict[str, Any]],
+        id: str | None = None,
+    ) -> str:
+        """Create a response.output_tool_calls.complete event."""
+        event = cls(
+            conversation=conversation_id,
+            tool_calls=tool_calls,
+            id=id,
+        )
+        return event.to_sse()
 
 
 class ResponseInterruptEvent(BaseSSEEvent):
@@ -109,13 +158,47 @@ class ResponseInterruptEvent(BaseSSEEvent):
     event: Literal["response.interrupt"] = "response.interrupt"
     interrupts: list[dict[str, Any]] = Field(..., description="Interrupt information")
 
+    @classmethod
+    def create(
+        cls,
+        conversation_id: str,
+        interrupts: list[dict[str, Any]],
+        id: str | None = None,
+    ) -> str:
+        """Create a response.interrupt event."""
+        event = cls(
+            conversation=conversation_id,
+            interrupts=interrupts,
+            id=id,
+        )
+        return event.to_sse()
+
 
 class ResponseUpdateEvent(BaseSSEEvent):
     """Response update event - sent when a workflow node/task completes."""
 
     event: Literal["response.update"] = "response.update"
     task: str = Field(..., description="Task/node that completed")
-    messages: list[dict[str, Any]] | None = Field(None, description="Messages from the task")
+    messages: list[dict[str, Any]] | None = Field(
+        None, description="Messages from the task"
+    )
+
+    @classmethod
+    def create(
+        cls,
+        conversation_id: str,
+        task: str,
+        messages: list[dict[str, Any]] | None = None,
+        id: str | None = None,
+    ) -> str:
+        """Create a response.update event."""
+        event = cls(
+            conversation=conversation_id,
+            task=task,
+            messages=messages,
+            id=id,
+        )
+        return event.to_sse()
 
 
 class ResponseToolEvent(BaseSSEEvent):
@@ -126,6 +209,9 @@ class ResponseToolEvent(BaseSSEEvent):
     tool_name: str = Field(..., description="Tool name")
     status: str = Field(..., description="Tool execution status")
     content: str = Field(..., description="Tool execution result")
+    args: dict[str, Any] | None = Field(
+        None, description="Actual args used for execution"
+    )
 
     @classmethod
     def create(
@@ -135,6 +221,7 @@ class ResponseToolEvent(BaseSSEEvent):
         tool_name: str,
         status: str,
         content: str,
+        args: dict[str, Any] | None = None,
     ) -> str:
         """Create a response.tool event."""
         event = cls(
@@ -143,6 +230,7 @@ class ResponseToolEvent(BaseSSEEvent):
             tool_name=tool_name,
             status=status,
             content=content,
+            args=args,
         )
         return event.to_sse()
 
@@ -155,54 +243,59 @@ def create_streaming_event_from_chunk(
         if isinstance(chunk, MessageChunk):
             # Handle message chunks
             if chunk.content:
-                event = ResponseOutputTextDeltaEvent(
-                    id=run_id,
-                    conversation=conversation_id,
+                return ResponseOutputTextDeltaEvent.create(
+                    conversation_id=conversation_id,
                     content=chunk.content,
                     usage=chunk.usage,
+                    id=run_id,
                 )
-                return event.to_sse()
 
         elif isinstance(chunk, ToolCallChunk):
-            # Handle tool call chunks
-            if chunk.tool_calls:
-                event = ResponseOutputToolCallsDeltaEvent(
+            # Use tool_calls_chunks for delta events
+            if chunk.tool_calls_chunks:
+                # Delta event - incremental tool call updates
+                return ResponseOutputToolCallsDeltaEvent.create(
+                    conversation_id=conversation_id,
+                    tool_calls=chunk.tool_calls_chunks,
                     id=run_id,
-                    conversation=conversation_id,
-                    tool_calls=chunk.tool_calls,
                 )
-                return event.to_sse()
 
         elif isinstance(chunk, InterruptChunk):
             # Handle interrupt chunks
             if chunk.values:
-                event = ResponseInterruptEvent(
-                    id=run_id,
-                    conversation=conversation_id,
+                return ResponseInterruptEvent.create(
+                    conversation_id=conversation_id,
                     interrupts=chunk.values,
+                    id=run_id,
                 )
-                return event.to_sse()
 
         elif isinstance(chunk, ToolChunk):
             # Handle tool chunks (tool execution results)
-            event = ResponseToolEvent.create(
+            return ResponseToolEvent.create(
                 conversation_id=conversation_id,
                 tool_call_id=chunk.tool_call_id,
                 tool_name=chunk.tool_name,
                 status=chunk.status,
                 content=chunk.content,
+                args=chunk.args,
             )
-            return event
 
         elif isinstance(chunk, UpdateChunk):
             # Handle update chunks (workflow progress events)
-            event = ResponseUpdateEvent(
-                id=run_id,
-                conversation=conversation_id,
+            return ResponseUpdateEvent.create(
+                conversation_id=conversation_id,
                 task=chunk.task,
-                messages=[msg.model_dump() for msg in chunk.messages] if chunk.messages else None,
+                messages=[msg.model_dump() for msg in chunk.messages]
+                if chunk.messages
+                else None,
+                id=run_id,
             )
-            return event.to_sse()
+        elif isinstance(chunk, ToolCallUpdateChunk):
+            return ResponseOutputToolCallsCompleteEvent.create(
+                conversation_id=conversation_id,
+                tool_calls=chunk.tool_calls,
+                id=run_id,
+            )
 
         return None
 
@@ -250,17 +343,5 @@ def create_response_output_event(
         id=run_id,
         conversation=conversation_id,
         output=output,
-    )
-    return event.to_sse()
-
-
-def create_response_output_tool_calls_complete_event(
-    conversation_id: str, run_id: str, tool_calls: list[dict[str, Any]]
-) -> str:
-    """Create response output tool calls complete event."""
-    event = ResponseOutputToolCallsCompleteEvent(
-        id=run_id,
-        conversation=conversation_id,
-        tool_calls=tool_calls,
     )
     return event.to_sse()

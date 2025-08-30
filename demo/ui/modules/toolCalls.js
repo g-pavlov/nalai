@@ -91,7 +91,13 @@ function createToolsPanel(toolCalls) {
                 <div class="tool-call-section-title">Arguments</div>
                 <div class="tool-call-args">${formatToolArgs(toolCall.args)}</div>
             </div>
-            ${toolCall.response ? `
+            ${toolCall.content ? `
+                <div class="tool-call-section">
+                    <div class="tool-call-section-title">Result</div>
+                    <div class="tool-call-response">${formatToolResponse(toolCall.content)}</div>
+                </div>
+            ` : ''}
+            ${toolCall.response && !toolCall.content ? `
                 <div class="tool-call-section">
                     <div class="tool-call-section-title">Response</div>
                     <div class="tool-call-response">${formatToolResponse(toolCall.response)}</div>
@@ -111,6 +117,26 @@ function createToolsPanel(toolCalls) {
  * @returns {string} - Status string
  */
 function getToolCallStatus(toolCall) {
+    // Handle interrupted flow tool calls
+    if (toolCall.source === 'output_tool_calls_complete' || toolCall.source === 'output_tool_calls_complete_accumulated') {
+        if (toolCall.status === 'pending' || !toolCall.content) {
+            return 'Pending';
+        } else if (toolCall.status === 'completed' || toolCall.content) {
+            return 'Completed';
+        }
+    }
+    
+    // Handle response.tool events
+    if (toolCall.source === 'response.tool') {
+        if (toolCall.status === 'completed' || toolCall.content) {
+            return 'Completed';
+        } else if (toolCall.status === 'pending') {
+            return 'Pending';
+        } else if (toolCall.status === 'error') {
+            return 'Error';
+        }
+    }
+    
     // Only track user confirmation status for interrupt flow tool calls
     if (toolCall.source === 'interrupt') {
         if (toolCall.confirmed === true) {
@@ -130,6 +156,26 @@ function getToolCallStatus(toolCall) {
  * @returns {string} - CSS class name
  */
 function getToolCallStatusClass(toolCall) {
+    // Handle interrupted flow tool calls
+    if (toolCall.source === 'output_tool_calls_complete' || toolCall.source === 'output_tool_calls_complete_accumulated') {
+        if (toolCall.status === 'pending' || !toolCall.content) {
+            return 'pending';
+        } else if (toolCall.status === 'completed' || toolCall.content) {
+            return 'completed';
+        }
+    }
+    
+    // Handle response.tool events
+    if (toolCall.source === 'response.tool') {
+        if (toolCall.status === 'completed' || toolCall.content) {
+            return 'completed';
+        } else if (toolCall.status === 'pending') {
+            return 'pending';
+        } else if (toolCall.status === 'error') {
+            return 'error';
+        }
+    }
+    
     // Only track user confirmation status for interrupt flow tool calls
     if (toolCall.source === 'interrupt') {
         if (toolCall.confirmed === true) {
@@ -224,7 +270,7 @@ export function addToolCallsIndicatorToMessage(messageDiv, toolCount, toolCalls 
     const indicator = createToolCallsIndicator(toolCount, toolCalls);
     
     if (indicator) {
-        // Append the indicator to the message div (after all content)
+        // Append the indicator to the message div (positioned absolutely at bottom-right)
         messageDiv.appendChild(indicator);
     }
 }

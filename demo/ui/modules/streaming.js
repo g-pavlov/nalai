@@ -33,6 +33,8 @@ let streamingProgressState = {
     nodeLogs: [],
     toolCalls: [],
     pendingToolCalls: new Map(),
+    // New: Accumulate tool call definitions from SSE deltas
+    accumulatingToolCalls: new Map(), // tool_call_id -> { name, arguments, function_call }
     toolCallCounter: 0,
     finalMessage: null,
     isComplete: false
@@ -173,8 +175,107 @@ function handleResponseCreated(eventData, assistantMessageDiv) {
     }
     
     // Response created - initialize streaming state
-    resetStreamingProgressState();
+    // Only reset if this is a new conversation, not a resume
+    if (!window.currentInterrupt) {
+        resetStreamingProgressState();
+        Logger.info('Reset streaming state for new conversation');
+    } else {
+        Logger.info('Preserving streaming state during interrupt resume');
+    }
+    
+    // Check if this is a resume scenario by looking for existing tool calls in the conversation
+    // When resuming, we need to extract tool calls from conversation history since SSE deltas won't be re-sent
+    if (eventData.conversation) {
+        extractToolCallsFromConversationHistory(eventData.conversation);
+    }
+    
     Logger.info('Initialized streaming state for new response');
+}
+
+/**
+ * Extract tool calls from conversation history when resuming
+ * This is needed because SSE deltas are not re-sent for existing tool calls during resume
+ * @param {string} conversationId - The conversation ID to extract tool calls from
+ */
+function extractToolCallsFromConversationHistory(conversationId) {
+    try {
+        // Get conversation history from the UI state or localStorage
+        const conversationHistory = getConversationHistory(conversationId);
+        
+        if (!conversationHistory || !Array.isArray(conversationHistory)) {
+            Logger.info('No conversation history found for tool call extraction', { conversationId });
+            return;
+        }
+        
+        Logger.info('Extracting tool calls from conversation history', { 
+            conversationId, 
+            historyLength: conversationHistory.length 
+        });
+        
+        // Look for assistant messages with tool calls in the history
+        for (const message of conversationHistory) {
+            if (message.role === 'assistant' && message.tool_calls && Array.isArray(message.tool_calls)) {
+                for (const toolCall of message.tool_calls) {
+                    if (toolCall.id && toolCall.name) {
+                        // Create accumulated tool call entry from history
+                        const accumulatedToolCall = {
+                            id: toolCall.id,
+                            name: toolCall.name,
+                            arguments: '',
+                            function_call: {
+                                name: toolCall.name,
+                                arguments: JSON.stringify(toolCall.args || {})
+                            }
+                        };
+                        
+                        streamingProgressState.accumulatingToolCalls.set(toolCall.id, accumulatedToolCall);
+                        
+                        Logger.info('Extracted tool call from conversation history', {
+                            toolCallId: toolCall.id,
+                            name: toolCall.name,
+                            args: toolCall.args
+                        });
+                    }
+                }
+            }
+        }
+        
+        Logger.info('Tool call extraction from conversation history completed', {
+            conversationId,
+            extractedCount: streamingProgressState.accumulatingToolCalls.size
+        });
+        
+    } catch (error) {
+        Logger.error('Error extracting tool calls from conversation history', {
+            conversationId,
+            error: error.message
+        });
+    }
+}
+
+/**
+ * Get conversation history from UI state or localStorage
+ * @param {string} conversationId - The conversation ID
+ * @returns {Array|null} - Conversation history or null if not found
+ */
+function getConversationHistory(conversationId) {
+    try {
+        // Try to get from UI state first (if available)
+        if (window.conversationHistory && window.conversationHistory[conversationId]) {
+            return window.conversationHistory[conversationId];
+        }
+        
+        // Fallback to localStorage if available
+        const storedHistory = localStorage.getItem(`conversation_${conversationId}`);
+        if (storedHistory) {
+            return JSON.parse(storedHistory);
+        }
+        
+        return null;
+    } catch (error) {
+        Logger.warn('Error getting conversation history', { conversationId, error: error.message });
+        return null;
+    }
 }
 
 function handleOutputTextDelta(eventData, assistantMessageDiv) {
@@ -265,18 +366,26 @@ function handleResponseCompleted(eventData, assistantMessageDiv) {
     
     streamingProgressState.isComplete = true;
     
-    // Add tool calls indicator if there are tool calls
-    if (streamingProgressState.toolCalls && streamingProgressState.toolCalls.length > 0) {
-        const deduplicatedToolCalls = deduplicateToolCalls(streamingProgressState.toolCalls);
-        addToolCallsIndicatorToMessage(
-            assistantMessageDiv, 
-            deduplicatedToolCalls.length, 
-            deduplicatedToolCalls
-        );
-        Logger.info('Added tool calls indicator from response completed', { 
-            originalCount: streamingProgressState.toolCalls.length,
-            deduplicatedCount: deduplicatedToolCalls.length
+    // DO NOT add tool calls indicator here if there's an active interrupt
+    // The indicator should only appear after response.tool events are received
+    if (window.currentInterrupt) {
+        Logger.info('Interrupt active - skipping tool calls indicator in response completed', { 
+            toolCallsCount: streamingProgressState.toolCalls?.length || 0
         });
+    } else {
+        // Only add tool calls indicator for non-interrupted flows
+        if (streamingProgressState.toolCalls && streamingProgressState.toolCalls.length > 0) {
+            const deduplicatedToolCalls = deduplicateToolCalls(streamingProgressState.toolCalls);
+            addToolCallsIndicatorToMessage(
+                assistantMessageDiv, 
+                deduplicatedToolCalls.length, 
+                deduplicatedToolCalls
+            );
+            Logger.info('Added tool calls indicator from response completed (non-interrupted flow)', { 
+                originalCount: streamingProgressState.toolCalls.length,
+                deduplicatedCount: deduplicatedToolCalls.length
+            });
+        }
     }
     
     // Clean up streaming UI
@@ -343,41 +452,123 @@ function handleToolEvent(eventData, assistantMessageDiv) {
     const toolName = eventData.tool_name;
     const status = eventData.status;
     const content = eventData.content;
+    const eventArgs = eventData.args; // ✅ NEW: Extract args from tool event
     
     if (!toolCallId || !toolName) {
         Logger.warn('Missing required tool event fields', { eventData });
         return;
     }
     
-    // Get args from pending tool calls if available
+    // Get args from tool event first (enhanced approach), then fall back to accumulated data
     let args = {};
-    if (streamingProgressState.pendingToolCalls && streamingProgressState.pendingToolCalls.has(toolCallId)) {
-        const pendingInfo = streamingProgressState.pendingToolCalls.get(toolCallId);
-        args = pendingInfo.args || {};
-    }
+    let accumulatedToolCall = null;
     
-    // Create tool call object for tracking
-    const toolCall = {
-        name: toolName,
-        content: content,
-        status: status,
-        tool_call_id: toolCallId,
-        args: args, // Include args for proper deduplication
-        timestamp: new Date().toISOString()
-    };
-    
-    // Add to streaming progress state (avoid duplicates)
-    if (!toolCallExists(toolCall)) {
-        streamingProgressState.toolCalls.push(toolCall);
-        Logger.info('Added tool call to streaming state', { 
-            toolName: toolCall.name, 
-            toolCallId: toolCall.tool_call_id 
+    // ✅ NEW: Use args from tool event if available (this includes edited args from interrupts)
+    if (eventArgs && typeof eventArgs === 'object') {
+        args = eventArgs;
+        Logger.info('Using args from tool event', { toolCallId, args });
+    } else if (streamingProgressState.accumulatingToolCalls && streamingProgressState.accumulatingToolCalls.has(toolCallId)) {
+        // Fallback to accumulated tool calls (legacy approach)
+        accumulatedToolCall = streamingProgressState.accumulatingToolCalls.get(toolCallId);
+        
+        // Parse the accumulated arguments JSON
+        if (accumulatedToolCall.function_call && accumulatedToolCall.function_call.arguments) {
+            try {
+                args = JSON.parse(accumulatedToolCall.function_call.arguments);
+            } catch (parseError) {
+                Logger.warn('Failed to parse accumulated tool call arguments', {
+                    toolCallId,
+                    arguments: accumulatedToolCall.function_call.arguments,
+                    error: parseError.message
+                });
+                args = { raw_arguments: accumulatedToolCall.function_call.arguments };
+            }
+        } else if (accumulatedToolCall.args) {
+            // Use args directly if available (from output_tool_calls.complete event)
+            args = accumulatedToolCall.args;
+        }
+        
+        Logger.info('Found accumulated tool call data', {
+            toolCallId,
+            accumulatedName: accumulatedToolCall.name,
+            args: args
         });
     } else {
-        Logger.info('Tool call already exists in streaming state, skipping', { 
-            toolName: toolCall.name, 
-            toolCallId: toolCall.tool_call_id 
+        // Fallback: Get args from pending tool calls if available
+        if (streamingProgressState.pendingToolCalls && streamingProgressState.pendingToolCalls.has(toolCallId)) {
+            const pendingInfo = streamingProgressState.pendingToolCalls.get(toolCallId);
+            args = pendingInfo.args || {};
+            Logger.info('Using fallback pending tool call args', { toolCallId, args });
+        }
+    }
+    
+    // Use the name from accumulated data if available, otherwise use the tool event name
+    const finalToolName = accumulatedToolCall?.name || toolName;
+    
+    // Check if we already have a tool call with this ID in the main array
+    let existingToolCallIndex = -1;
+    if (streamingProgressState.toolCalls) {
+        existingToolCallIndex = streamingProgressState.toolCalls.findIndex(tc => tc.tool_call_id === toolCallId);
+        Logger.info('Checking for existing tool call', {
+            toolCallId,
+            toolCallsCount: streamingProgressState.toolCalls.length,
+            existingToolCallIndex,
+            toolCallIds: streamingProgressState.toolCalls.map(tc => tc.tool_call_id)
         });
+    }
+    
+    if (existingToolCallIndex >= 0) {
+        // Update existing tool call with results from response.tool event
+        const existingToolCall = streamingProgressState.toolCalls[existingToolCallIndex];
+        existingToolCall.content = content;
+        existingToolCall.status = status;
+        existingToolCall.timestamp = new Date().toISOString();
+        
+        // Preserve the args from the original tool call (don't overwrite with empty args)
+        if (!existingToolCall.args || Object.keys(existingToolCall.args).length === 0) {
+            existingToolCall.args = args;
+        }
+        
+        Logger.info('Updated existing tool call with response.tool results', {
+            toolCallId,
+            name: existingToolCall.name,
+            status: status,
+            contentLength: content?.length || 0,
+            args: existingToolCall.args
+        });
+        
+        // Update the tool call display in the UI
+        displayToolCallInStreamingContent(assistantMessageDiv, existingToolCall);
+        
+    } else {
+        // Create new tool call object for tracking
+        const toolCall = {
+            name: finalToolName,
+            content: content,
+            status: status,
+            tool_call_id: toolCallId,
+            args: args,
+            timestamp: new Date().toISOString(),
+            source: 'response.tool'
+        };
+        
+        // Add to streaming progress state (avoid duplicates)
+        if (!toolCallExists(toolCall)) {
+            streamingProgressState.toolCalls.push(toolCall);
+            Logger.info('Added new tool call to streaming state', { 
+                toolName: toolCall.name, 
+                toolCallId: toolCall.tool_call_id,
+                args: toolCall.args
+            });
+        } else {
+            Logger.info('Tool call already exists in streaming state, skipping', { 
+                toolName: toolCall.name, 
+                toolCallId: toolCall.tool_call_id 
+            });
+        }
+        
+        // Display tool call in streaming content
+        displayToolCallInStreamingContent(assistantMessageDiv, toolCall);
     }
     
     // Remove from pending calls if present
@@ -385,17 +576,31 @@ function handleToolEvent(eventData, assistantMessageDiv) {
         streamingProgressState.pendingToolCalls.delete(toolCallId);
     }
     
-    // Display tool call in streaming content
-    displayToolCallInStreamingContent(assistantMessageDiv, toolCall);
+    // Check if this is the first response.tool event - if so, add the tool calls indicator
+    const existingIndicator = assistantMessageDiv.querySelector('.message-tools-indicator');
+    if (!existingIndicator && streamingProgressState.toolCalls.length > 0) {
+        const deduplicatedToolCalls = deduplicateToolCalls(streamingProgressState.toolCalls);
+        addToolCallsIndicatorToMessage(
+            assistantMessageDiv, 
+            deduplicatedToolCalls.length, 
+            deduplicatedToolCalls
+        );
+        Logger.info('Added tool calls indicator on first response.tool event', { 
+            toolCallsCount: streamingProgressState.toolCalls.length,
+            deduplicatedCount: deduplicatedToolCalls.length
+        });
+    }
     
     // Update streaming UI
     updateStreamingUI(assistantMessageDiv);
     
     Logger.info('Processed tool event', { 
-        toolName, 
+        toolName: finalToolName, 
         status, 
         toolCallId,
-        contentLength: content?.length || 0
+        contentLength: content?.length || 0,
+        args: args,
+        updatedExisting: existingToolCallIndex >= 0
     });
 }
 
@@ -427,13 +632,43 @@ function handleUpdateEvent(eventData, assistantMessageDiv) {
     streamingProgressState.nodeLogs.push(nodeLog);
     streamingProgressState.currentNode = task;
     
+    // Clear streaming content when moving to a new node (except for the first node)
+    // Only clear content for intermediate nodes, not for the final call_model node
+    if (streamingProgressState.nodeLogs.length > 1) {
+        const streamingContent = assistantMessageDiv.querySelector('.streaming-content');
+        if (streamingContent) {
+            const hasRealContent = streamingContent.textContent.trim().length > 0 && 
+                                 !streamingContent.textContent.includes('{"selected_apis":[]}');
+            
+            if (task !== 'call_model') {
+                streamingContent.innerHTML = '';
+                Logger.info('Cleared streaming content for intermediate node transition', { 
+                    previousNode: streamingProgressState.nodeLogs[streamingProgressState.nodeLogs.length - 2]?.node,
+                    currentNode: task
+                });
+            } else if (task === 'call_model' && hasRealContent) {
+                Logger.info('Preserved streaming content for call_model transition', { 
+                    previousNode: streamingProgressState.nodeLogs[streamingProgressState.nodeLogs.length - 2]?.node,
+                    currentNode: task,
+                    contentLength: streamingContent.textContent.length
+                });
+            } else if (task === 'call_model' && !hasRealContent) {
+                Logger.info('No real content to preserve for call_model transition', { 
+                    previousNode: streamingProgressState.nodeLogs[streamingProgressState.nodeLogs.length - 2]?.node,
+                    currentNode: task,
+                    contentPreview: streamingContent.textContent.substring(0, 50)
+                });
+            }
+        }
+    }
+    
     // Process any messages in the update
     if (messages && Array.isArray(messages)) {
         for (const message of messages) {
             Logger.info('Processing message in update event', { 
                 messageType: message.type, 
                 hasContent: !!message.content,
-                content: message.content?.substring(0, 100) // Log first 100 chars
+                content: typeof message.content === 'string' ? message.content?.substring(0, 100) : JSON.stringify(message.content).substring(0, 100) // Log first 100 chars
             });
             
             // Handle different message types
@@ -509,7 +744,8 @@ function handleToolMessage(message, messages, assistantMessageDiv) {
     const toolName = findToolNameByCallId(message.tool_call_id, messages, streamingProgressState);
     
     // Check if this tool message has already been processed
-    const toolMessageKey = message.tool_call_id || `${toolName}_${message.content?.substring(0, 50)}`;
+    const contentPreview = typeof message.content === 'string' ? message.content?.substring(0, 50) : JSON.stringify(message.content).substring(0, 50);
+    const toolMessageKey = message.tool_call_id || `${toolName}_${contentPreview}`;
     if (streamingProgressState.processedToolCalls && streamingProgressState.processedToolCalls.has(toolMessageKey)) {
         Logger.info('Tool message already processed, skipping', {
             toolName: toolName,
@@ -659,8 +895,22 @@ function handleInterruptEvent(eventData, assistantMessageDiv) {
         }
     }
     
-    // Capture tool call arguments from interrupt data
-    captureToolCall(action, args, 'interrupt');
+    // Capture tool call arguments from interrupt data and get the tool_call_id
+    const capturedToolCall = captureToolCall(action, args, 'interrupt');
+    const toolCallId = capturedToolCall ? capturedToolCall.id : null;
+    
+    // Add call model response message for interrupted tool calls
+    const streamingContent = assistantMessageDiv.querySelector('.streaming-content');
+    if (streamingContent) {
+        const callModelResponse = document.createElement('div');
+        callModelResponse.className = 'call-model-response';
+        callModelResponse.textContent = 'AI processed the request and identified tool calls that require human review.';
+        streamingContent.appendChild(callModelResponse);
+        Logger.info('Added call model response for interrupted tool call', { 
+            toolCallId: toolCallId,
+            action: action 
+        });
+    }
     
     // Create interrupt UI with the SSE format
     const actionRequestObj = { action, args };
@@ -670,36 +920,11 @@ function handleInterruptEvent(eventData, assistantMessageDiv) {
     };
     createInterruptUI(assistantMessageDiv, actionRequestObj, interruptInfoWithConfig);
     
-    // Extract tool call ID from the last tool call that was generated
-    // The interrupt should reference the actual tool call that triggered it
-    let toolCallId = null;
-    
-    // Look for the last tool call ID from the streaming state
-    if (streamingProgressState.lastToolCall && streamingProgressState.lastToolCall.id) {
-        toolCallId = streamingProgressState.lastToolCall.id;
-    } else if (streamingProgressState.toolCalls && streamingProgressState.toolCalls.length > 0) {
-        // Find the last tool call with an ID
-        for (let i = streamingProgressState.toolCalls.length - 1; i >= 0; i--) {
-            const toolCall = streamingProgressState.toolCalls[i];
-            if (toolCall && toolCall.id) {
-                toolCallId = toolCall.id;
-                break;
-            }
-        }
-    }
-    
-    // If still no tool call ID, use a fallback
-    if (!toolCallId) {
-        toolCallId = `call_${Date.now()}`;
-        Logger.warn('No tool call ID found, using fallback', { toolCallId });
-    }
-    
+    // Store the complete interrupt data for later use
     window.currentInterrupt = {
         value: {
             tool_call_id: toolCallId,
-            action: action,
-            args: args,
-            action_request: { action, args },
+            action_request: actionRequest,
             config: config,
             description: description
         },
@@ -708,7 +933,7 @@ function handleInterruptEvent(eventData, assistantMessageDiv) {
     };
     
     Logger.info('SSE interrupt event processed', { 
-        toolCallId, 
+        toolCallId: toolCallId,
         action, 
         args, 
         description 
@@ -1045,6 +1270,8 @@ export function resetStreamingProgressState() {
         toolCalls: [],
         pendingToolCalls: new Map(),
         processedToolCalls: new Set(),
+        // New: Reset accumulating tool calls
+        accumulatingToolCalls: new Map(),
         toolCallCounter: 0,
         finalMessage: null,
         isComplete: false
@@ -1200,13 +1427,55 @@ function handleOutputToolCallsDelta(eventData, assistantMessageDiv) {
     Logger.info('Output tool calls delta received', { eventData });
     
     if (eventData.tool_calls && eventData.tool_calls.length > 0) {
-        // Store tool calls in streaming state for later display
-        if (!streamingProgressState.toolCalls) {
-            streamingProgressState.toolCalls = [];
-        }
-        
-        // Add new tool calls to the state
-        streamingProgressState.toolCalls.push(...eventData.tool_calls);
+        // Process each tool call delta to accumulate the complete tool call definition
+        eventData.tool_calls.forEach(toolCallDelta => {
+            const toolCallId = toolCallDelta.id;
+            
+            if (!toolCallId) {
+                Logger.warn('Tool call delta missing ID', { toolCallDelta });
+                return;
+            }
+            
+            // Get or create accumulating tool call
+            if (!streamingProgressState.accumulatingToolCalls.has(toolCallId)) {
+                streamingProgressState.accumulatingToolCalls.set(toolCallId, {
+                    id: toolCallId,
+                    name: '',
+                    arguments: '',
+                    function_call: {}
+                });
+            }
+            
+            const accumulatingToolCall = streamingProgressState.accumulatingToolCalls.get(toolCallId);
+            
+            // Accumulate name if present
+            if (toolCallDelta.name) {
+                accumulatingToolCall.name = toolCallDelta.name;
+            }
+            
+            // Accumulate function call data if present
+            if (toolCallDelta.function_call) {
+                if (toolCallDelta.function_call.name) {
+                    accumulatingToolCall.function_call.name = toolCallDelta.function_call.name;
+                }
+                if (toolCallDelta.function_call.arguments) {
+                    accumulatingToolCall.function_call.arguments = 
+                        (accumulatingToolCall.function_call.arguments || '') + toolCallDelta.function_call.arguments;
+                }
+            }
+            
+            // Update the name from function_call.name if available
+            if (accumulatingToolCall.function_call.name) {
+                accumulatingToolCall.name = accumulatingToolCall.function_call.name;
+            }
+            
+            Logger.info('Accumulated tool call delta', {
+                toolCallId,
+                name: accumulatingToolCall.name,
+                argumentsLength: accumulatingToolCall.function_call.arguments?.length || 0,
+                functionCall: accumulatingToolCall.function_call
+            });
+        });
         
         // Capture the last tool call ID for interrupt handling
         const lastToolCall = eventData.tool_calls[eventData.tool_calls.length - 1];
@@ -1216,7 +1485,7 @@ function handleOutputToolCallsDelta(eventData, assistantMessageDiv) {
         
         Logger.info('Tool calls delta processed', { 
             toolCallsCount: eventData.tool_calls.length,
-            totalToolCallsCount: streamingProgressState.toolCalls.length,
+            totalAccumulatingCount: streamingProgressState.accumulatingToolCalls.size,
             lastToolCallId: streamingProgressState.lastToolCall?.id
         });
     }
@@ -1225,21 +1494,114 @@ function handleOutputToolCallsDelta(eventData, assistantMessageDiv) {
 function handleOutputToolCallsComplete(eventData, assistantMessageDiv) {
     Logger.info('Output tool calls complete received', { eventData });
     
-    // Tool calls streaming is complete - we can now display them
-    if (streamingProgressState.toolCalls && streamingProgressState.toolCalls.length > 0) {
-        const deduplicatedToolCalls = deduplicateToolCalls(streamingProgressState.toolCalls);
-        
-        // Add tool calls indicator to the message
-        addToolCallsIndicatorToMessage(
-            assistantMessageDiv, 
-            deduplicatedToolCalls.length, 
-            deduplicatedToolCalls
-        );
-        
-        Logger.info('Tool calls complete - added indicator', { 
-            originalCount: streamingProgressState.toolCalls.length,
-            deduplicatedCount: deduplicatedToolCalls.length
+    // Process tool calls from the complete event (before interrupt)
+    const completedToolCalls = [];
+    
+    if (eventData.tool_calls && Array.isArray(eventData.tool_calls)) {
+        // Process tool calls directly from the complete event
+        eventData.tool_calls.forEach(toolCall => {
+            try {
+                const toolCallId = toolCall.id;
+                const toolName = toolCall.name;
+                const args = toolCall.args || {};
+                
+                if (!toolCallId || !toolName) {
+                    Logger.warn('Tool call missing required fields', { toolCall });
+                    return;
+                }
+                
+                const completedToolCall = {
+                    id: toolCallId,
+                    name: toolName,
+                    args: args,
+                    tool_call_id: toolCallId,
+                    timestamp: new Date().toISOString(),
+                    source: 'output_tool_calls_complete',
+                    status: 'pending', // Will be updated when response.tool event arrives
+                    content: null // Will be populated when response.tool event arrives
+                };
+                
+                completedToolCalls.push(completedToolCall);
+                
+                // Store in accumulating tool calls for later matching with response.tool events
+                streamingProgressState.accumulatingToolCalls.set(toolCallId, {
+                    id: toolCallId,
+                    name: toolName,
+                    args: args,
+                    function_call: {
+                        name: toolName,
+                        arguments: JSON.stringify(args)
+                    }
+                });
+                
+                Logger.info('Completed tool call from complete event', {
+                    toolCallId,
+                    name: completedToolCall.name,
+                    args: completedToolCall.args
+                });
+                
+            } catch (error) {
+                Logger.error('Error processing tool call from complete event', {
+                    toolCall,
+                    error: error.message
+                });
+            }
         });
+    } else {
+        // Fallback: Process accumulated tool calls from delta events
+        for (const [toolCallId, accumulatingToolCall] of streamingProgressState.accumulatingToolCalls.entries()) {
+            try {
+                // Parse the accumulated arguments JSON
+                let args = {};
+                if (accumulatingToolCall.function_call.arguments) {
+                    try {
+                        args = JSON.parse(accumulatingToolCall.function_call.arguments);
+                    } catch (parseError) {
+                        Logger.warn('Failed to parse tool call arguments', {
+                            toolCallId,
+                            arguments: accumulatingToolCall.function_call.arguments,
+                            error: parseError.message
+                        });
+                        args = { raw_arguments: accumulatingToolCall.function_call.arguments };
+                    }
+                }
+                
+                const completedToolCall = {
+                    id: toolCallId,
+                    name: accumulatingToolCall.name || 'Unknown tool',
+                    args: args,
+                    tool_call_id: toolCallId,
+                    timestamp: new Date().toISOString(),
+                    source: 'output_tool_calls_complete_accumulated',
+                    status: 'pending',
+                    content: null
+                };
+                
+                completedToolCalls.push(completedToolCall);
+                
+                Logger.info('Completed tool call from accumulated data', {
+                    toolCallId,
+                    name: completedToolCall.name,
+                    args: completedToolCall.args
+                });
+                
+            } catch (error) {
+                Logger.error('Error processing completed tool call', {
+                    toolCallId,
+                    error: error.message,
+                    accumulatingToolCall
+                });
+            }
+        }
     }
+    
+    // Add completed tool calls to the main toolCalls array
+    streamingProgressState.toolCalls.push(...completedToolCalls);
+    
+    // DO NOT add tool calls indicator here - wait for response.tool events
+    // The indicator will be added when the first response.tool event is received
+    Logger.info('Tool calls complete - stored for later display when response.tool events arrive', { 
+        completedCount: completedToolCalls.length
+    });
 }
 

@@ -123,8 +123,19 @@ async function processApiResponse(response, assistantMessageDiv, isStreamingEnab
     try {
         Validator.validateApiResponse(response);
         
-        // Handle thread ID
-        handleThreadIdResponse(response);
+        // Extract conversation ID from response body for non-streaming responses
+        let conversationIdFromBody = null;
+        if (!isStreamingEnabled) {
+            try {
+                const responseBody = await response.clone().json();
+                conversationIdFromBody = responseBody.conversation_id;
+            } catch (error) {
+                Logger.warn('Failed to extract conversation ID from response body', { error });
+            }
+        }
+        
+        // Handle thread ID - pass conversation ID from body if available
+        handleThreadIdResponse(response, conversationIdFromBody);
 
         // Process response based on type
         if (isStreamingEnabled) {
@@ -146,22 +157,37 @@ async function processApiResponse(response, assistantMessageDiv, isStreamingEnab
     }
 }
 
-function handleThreadIdResponse(response) {
-    const conversationId = response.headers.get('X-Conversation-ID');
-    Logger.info('Received conversation ID from response', { 
-        conversationId, 
-        conversationIdType: typeof conversationId,
-        hasConversationId: !!conversationId,
-        currentThreadId: getCurrentThreadId(),
-        willUpdate: conversationId && conversationId !== getCurrentThreadId()
-    });
+function handleThreadIdResponse(response, conversationIdFromBody = null) {
+    // Try to get conversation ID from response header first (for backward compatibility)
+    let conversationId = response.headers.get('X-Conversation-ID');
+    
+    // If not in header, use the one from response body
+    if (!conversationId && conversationIdFromBody) {
+        conversationId = conversationIdFromBody;
+        Logger.info('Using conversation ID from response body', { 
+            conversationId, 
+            conversationIdType: typeof conversationId,
+            hasConversationId: !!conversationId,
+            currentThreadId: getCurrentThreadId(),
+            willUpdate: conversationId && conversationId !== getCurrentThreadId()
+        });
+    } else if (conversationId) {
+        Logger.info('Using conversation ID from response header', { 
+            conversationId, 
+            conversationIdType: typeof conversationId,
+            hasConversationId: !!conversationId,
+            currentThreadId: getCurrentThreadId(),
+            willUpdate: conversationId && conversationId !== getCurrentThreadId()
+        });
+    }
     
     if (conversationId && conversationId !== getCurrentThreadId()) {
         // Validate that it's a proper domain-prefixed ID
         if (/^conv_[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{10,}$/i.test(conversationId)) {
             setCurrentThreadId(conversationId);
             Logger.info('New conversation thread started', { 
-                conversationId
+                conversationId,
+                source: conversationIdFromBody ? 'response body' : 'response header'
             });
             
             // Auto-refresh conversations list when a new conversation is created

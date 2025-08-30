@@ -33,14 +33,16 @@ export async function handleInterrupt(responseType, args = null) {
     // Capture edited tool call arguments if this is an edit submission
     if (responseType === 'edit' && args && window.currentInterrupt?.value?.action_request?.action) {
         const actionRequest = window.currentInterrupt.value.action_request;
+        const toolCallId = window.currentInterrupt.value.tool_call_id;
         Logger.info('Capturing edited tool call arguments', { 
             toolName: actionRequest.action, 
+            toolCallId: toolCallId,
             originalArgs: actionRequest.args, 
             editedArgs: args 
         });
         
-        // Capture the edited tool call arguments
-        captureToolCall(actionRequest.action, args, 'interrupt_edit');
+        // Capture the edited tool call arguments with the tool call ID
+        captureToolCall(actionRequest.action, args, 'interrupt_edit', toolCallId);
     }
     
     // Update tool call status based on decision
@@ -96,6 +98,7 @@ export async function handleInterrupt(responseType, args = null) {
         }
 
         const resumePayload = {
+            conversation_id: getCurrentThreadId(),
             input: [toolDecision],
             stream: 'full'
         };
@@ -104,7 +107,7 @@ export async function handleInterrupt(responseType, args = null) {
 
         // Log the full request details for debugging
         Logger.info('Resume request details', {
-            url: buildApiUrl(API_CONFIG.URL_TEMPLATES.RESUME_DECISION, { conversation_id: getCurrentThreadId() }),
+            url: buildApiUrl(API_CONFIG.URL_TEMPLATES.MESSAGES),
             method: 'POST',
             payload: resumePayload,
             responseType,
@@ -214,6 +217,17 @@ async function handleResumeStream(response) {
         if (existingInterrupt) {
             existingInterrupt.remove();
         }
+        
+        // Show the streaming content container again on error
+        const assistantMessageForError = document.querySelector('.assistant-message:last-child');
+        if (assistantMessageForError) {
+            const streamingContainer = assistantMessageForError.querySelector('.streaming-content');
+            if (streamingContainer) {
+                streamingContainer.classList.remove('hidden');
+                Logger.info('Streaming content container shown again after resume stream error');
+            }
+        }
+        
         Logger.info('Interrupt state cleared due to resume stream error');
         
         // Clear processing state on error since the workflow is complete
@@ -221,11 +235,21 @@ async function handleResumeStream(response) {
     } finally {
         reader.releaseLock();
         
-        // Remove the interrupt container after the entire flow is complete
+        // Remove the interrupt container and show streaming container again after the entire flow is complete
         const existingInterrupt = document.querySelector('.interrupt-container');
         if (existingInterrupt) {
             existingInterrupt.remove();
             Logger.info('Interrupt container removed after resume stream completion');
+        }
+        
+        // Show the streaming content container again
+        const assistantMessageForStreaming = document.querySelector('.assistant-message:last-child');
+        if (assistantMessageForStreaming) {
+            const streamingContainer = assistantMessageForStreaming.querySelector('.streaming-content');
+            if (streamingContainer) {
+                streamingContainer.classList.remove('hidden');
+                Logger.info('Streaming content container shown again after resume stream completion');
+            }
         }
         
         // Clear interrupt state after container removal
@@ -277,12 +301,14 @@ export function createInterruptUI(assistantMessageDiv, actionRequest, interruptI
         Logger.info('Removed existing interrupt UI before creating new one');
     }
     
-    // Clear the streaming content area and replace it with the interrupt UI
-    const streamingContent = assistantMessageDiv.querySelector('.streaming-content');
-    if (streamingContent) {
-        streamingContent.remove();
-        Logger.info('Removed streaming content to make room for interrupt UI');
+    // Hide the streaming content container and clear the progress container
+    const streamingContainer = assistantMessageDiv.querySelector('.streaming-content');
+    if (streamingContainer) {
+        streamingContainer.classList.add('hidden');
+        Logger.info('Hidden streaming content container to make room for interrupt UI');
     }
+    
+
     
     const interruptDiv = document.createElement('div');
     interruptDiv.className = 'interrupt-container fade-in';
@@ -370,7 +396,22 @@ export function createInterruptUI(assistantMessageDiv, actionRequest, interruptI
         </div>
     `;
     
-    assistantMessageDiv.appendChild(interruptDiv);
+    // Insert the interrupt container BEFORE the streaming progress container
+    // This ensures the call_model response appears below the interrupt dialog
+    const streamingProgress = assistantMessageDiv.querySelector('.streaming-progress');
+    const streamingContent = assistantMessageDiv.querySelector('.streaming-content');
+    
+    if (streamingProgress) {
+        // Insert before streaming progress
+        streamingProgress.insertAdjacentElement('beforebegin', interruptDiv);
+    } else if (streamingContent) {
+        // Insert before streaming content if no progress container
+        streamingContent.insertAdjacentElement('beforebegin', interruptDiv);
+    } else {
+        // Fallback: append to the end
+        assistantMessageDiv.appendChild(interruptDiv);
+    }
+    
     const chatContainer = document.getElementById('chatContainer');
     if (chatContainer) {
         chatContainer.scrollTop = chatContainer.scrollHeight;

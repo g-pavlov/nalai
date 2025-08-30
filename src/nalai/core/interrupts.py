@@ -5,7 +5,11 @@ from datetime import UTC, datetime
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langchain_core.tools import tool as create_tool
-from langgraph.prebuilt.interrupt import HumanInterrupt, HumanInterruptConfig
+from langgraph.prebuilt.interrupt import (
+    ActionRequest,
+    HumanInterrupt,
+    HumanInterruptConfig,
+)
 from langgraph.types import interrupt
 
 from ..config import BaseRuntimeConfiguration
@@ -68,7 +72,7 @@ def add_human_in_the_loop(
     if not isinstance(tool, BaseTool):
         tool = create_tool(tool)
 
-    if interrupt_config is None:
+    if not interrupt_config:
         interrupt_config = {
             "allow_accept": True,
             "allow_edit": True,
@@ -77,14 +81,15 @@ def add_human_in_the_loop(
 
     @create_tool(tool.name, description=tool.description, args_schema=tool.args_schema)
     def call_tool_with_interrupt(config: RunnableConfig, **tool_input):
-        request: HumanInterrupt = {
-            "action_request": {
-                "action": tool.name,
-                "args": tool_input,
-            },
-            "config": interrupt_config,
-            "description": tool.description,
-        }
+        request = request = HumanInterrupt(
+            action_request=ActionRequest(
+                action=tool.name,  # The action being requested
+                args=tool_input,  # Arguments for the action
+            ),
+            config=HumanInterruptConfig(**interrupt_config),
+            description="Please review the command before execution",
+        )
+
         logger.info(f"Interrupt request: {request}")
         response = interrupt([request])[0]
         logger.info(f"Interrupt response: {response}")
@@ -95,6 +100,18 @@ def add_human_in_the_loop(
             tool_response = tool._run(
                 **tool_input, config=config, run_manager=run_manager
             )
+
+            # Store the args in the response for later extraction
+            # We'll use a special format that can be parsed by the transformer
+            response_with_args = {
+                "content": str(tool_response),
+                "tool_name": tool.name,
+                "execution_args": tool_input,
+                "_is_interrupt_response": True,
+            }
+
+            # Return the dictionary directly, not as a string
+            return response_with_args
         elif action == "reject":
             tool_response = "User rejected the tool call"
         elif action == "edit":
@@ -109,6 +126,18 @@ def add_human_in_the_loop(
             tool_response = tool._run(
                 **tool_input, config=config, run_manager=run_manager
             )
+
+            # Store the args in the response for later extraction
+            # We'll use a special format that can be parsed by the transformer
+            response_with_args = {
+                "content": str(tool_response),
+                "tool_name": tool.name,
+                "execution_args": tool_input,
+                "_is_interrupt_response": True,
+            }
+
+            # Return the dictionary directly, not as a string
+            return response_with_args
         elif action == "feedback":
             # Handle feedback decision - args should contain the user's feedback message
             user_feedback = response.get("args")

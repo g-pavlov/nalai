@@ -38,8 +38,6 @@ from .sse_serializer import (
     create_response_completed_event,
     create_response_created_event,
     create_response_error_event,
-    create_response_output_event,
-    create_response_output_tool_calls_complete_event,
     create_streaming_event_from_chunk,
 )
 
@@ -469,13 +467,12 @@ async def _handle_resume_streaming_response(
         async def generate():
             # Send response created event with run ID
             yield create_response_created_event(
-                conversation_id=actual_conversation_id,
-                run_id=run_id
+                conversation_id=actual_conversation_id, run_id=run_id
             )
 
             # Collect messages and usage from the stream
             collected_messages = []
-            
+
             # Process all events through the stream
             async for event in stream_gen:
                 # Use the existing streaming event creation function for chunks
@@ -483,11 +480,11 @@ async def _handle_resume_streaming_response(
                     chunk=event,
                     conversation_id=actual_conversation_id,
                     context=None,
-                    run_id=run_id
+                    run_id=run_id,
                 )
                 if sse_event:
                     yield sse_event
-                
+
                 # Collect messages for usage extraction from the original chunk
                 if hasattr(event, "usage") and event.usage:
                     collected_messages.append(event)
@@ -495,10 +492,9 @@ async def _handle_resume_streaming_response(
             # Send completion event with actual usage
             usage_data = extract_usage_from_streaming_chunks(collected_messages)
             yield create_response_completed_event(
-                conversation_id=actual_conversation_id,
-                run_id=run_id,
-                usage=usage_data
+                conversation_id=actual_conversation_id, run_id=run_id, usage=usage_data
             )
+
         return SSEStreamingResponse(generate())
 
     except Exception as e:
@@ -508,13 +504,12 @@ async def _handle_resume_streaming_response(
 
         async def generate_error():
             yield create_response_created_event(
-                conversation_id=conversation_id,
-                run_id=error_run_id
+                conversation_id=conversation_id, run_id=error_run_id
             )
             yield create_response_error_event(
                 conversation_id=conversation_id,
                 run_id=error_run_id,
-                error=error_message
+                error=error_message,
             )
 
         return SSEStreamingResponse(generate_error())
@@ -544,14 +539,12 @@ async def _handle_streaming_response(
         async def generate():
             # Send response created event with run ID
             yield create_response_created_event(
-                conversation_id=actual_conversation_id,
-                run_id=run_id
+                conversation_id=actual_conversation_id, run_id=run_id
             )
 
             # Collect messages and usage from the stream
             collected_messages = []
-            accumulated_tool_calls = []
-            
+
             # Process all events through the stream
             async for event in stream_gen:
                 # Use the existing streaming event creation function for chunks
@@ -559,33 +552,19 @@ async def _handle_streaming_response(
                     chunk=event,
                     conversation_id=actual_conversation_id,
                     context=None,
-                    run_id=run_id
+                    run_id=run_id,
                 )
                 if sse_event:
                     yield sse_event
-                
-                # Collect tool calls for completion event
-                if hasattr(event, "tool_calls") and event.tool_calls:
-                    accumulated_tool_calls.extend(event.tool_calls)
-                
+
                 # Collect messages for usage extraction from the original chunk
                 if hasattr(event, "usage") and event.usage:
                     collected_messages.append(event)
 
-            # Send tool calls complete event if we have any
-            if accumulated_tool_calls:
-                yield create_response_output_tool_calls_complete_event(
-                    conversation_id=actual_conversation_id,
-                    run_id=run_id,
-                    tool_calls=accumulated_tool_calls
-                )
-
             # Send completion event with actual usage
             usage_data = extract_usage_from_streaming_chunks(collected_messages)
             yield create_response_completed_event(
-                conversation_id=actual_conversation_id,
-                run_id=run_id,
-                usage=usage_data
+                conversation_id=actual_conversation_id, run_id=run_id, usage=usage_data
             )
 
         response = SSEStreamingResponse(generate())
@@ -598,13 +577,12 @@ async def _handle_streaming_response(
 
         async def generate_error():
             yield create_response_created_event(
-                conversation_id=conversation_id or "unknown",
-                run_id=error_run_id
+                conversation_id=conversation_id or "unknown", run_id=error_run_id
             )
             yield create_response_error_event(
                 conversation_id=conversation_id or "unknown",
                 run_id=error_run_id,
-                error=error_message
+                error=error_message,
             )
 
         return SSEStreamingResponse(generate_error())

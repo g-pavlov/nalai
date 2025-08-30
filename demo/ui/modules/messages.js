@@ -30,23 +30,33 @@ export function createAssistantMessageElement() {
     
     const assistantMessageDiv = document.createElement('div');
     assistantMessageDiv.className = 'message assistant-message fade-in';
-    assistantMessageDiv.textContent = '';
+    
+    // Always create streaming content container (using existing streaming-content class)
+    const streamingContainer = document.createElement('div');
+    streamingContainer.className = 'streaming-content';
+    assistantMessageDiv.appendChild(streamingContainer);
+    
     DOM.chatContainer.appendChild(assistantMessageDiv);
     DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
     
-    Logger.info('Created new assistant message element, reset streaming state, and cleared expanded tools panels');
+    Logger.info('Created new assistant message element with streaming container, reset streaming state, and cleared expanded tools panels');
     return assistantMessageDiv;
 }
 
 export function updateMessageContent(element, content) {
-    // If no element is provided (for resume streams), find the last assistant message
+    // If no element is provided (for resume streams), find the streaming container in the last assistant message
     if (!element) {
-        element = DOM.chatContainer.querySelector('.assistant-message:last-child');
-        if (!element) {
+        const lastAssistantMessage = DOM.chatContainer.querySelector('.assistant-message:last-child');
+        if (!lastAssistantMessage) {
             Logger.warn('No assistant message element found for content update');
             return;
         }
-        Logger.info('Found last assistant message element for resume stream update');
+        element = lastAssistantMessage.querySelector('.streaming-content');
+        if (!element) {
+            Logger.warn('No streaming content container found for content update');
+            return;
+        }
+        Logger.info('Found streaming content container for resume stream update');
     }
     
     Logger.info('Updating message content', { 
@@ -81,9 +91,15 @@ export function addMessage(content, type, options = {}) {
         messageDiv.className = `message ${type}-message fade-in`;
         
         if (type === 'assistant') {
-            updateMessageContent(messageDiv, content);
+            // Create streaming content container first (using existing streaming-content class)
+            const streamingContainer = document.createElement('div');
+            streamingContainer.className = 'streaming-content';
+            messageDiv.appendChild(streamingContainer);
             
-            // Add tool calls indicator if tool calls are provided
+            // Update the content in the streaming container
+            updateMessageContent(streamingContainer, content);
+            
+            // Add tool calls indicator if tool calls are provided (after streaming container)
             if (options.toolCalls && options.toolCalls.length > 0) {
                 addToolCallsIndicatorToMessage(
                     messageDiv, 
@@ -180,3 +196,4 @@ export function handleMessageError(error) {
     DOM.chatContainer.appendChild(errorDiv);
     DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
 }
+

@@ -48,6 +48,8 @@ export function getRequestHeaders(isStreamingEnabled, isNoCacheEnabled) {
     
     if (isStreamingEnabled) {
         headers[API_CONFIG.HEADERS.ACCEPT] = API_CONFIG.HEADERS.ACCEPT_STREAM;
+    } else {
+        headers[API_CONFIG.HEADERS.ACCEPT] = 'application/json';
     }
     
     if (isNoCacheEnabled) {
@@ -66,6 +68,15 @@ export function buildRequestPayload(message, config) {
     const currentThreadId = getCurrentThreadId();
     if (currentThreadId) {
         payload.conversation_id = currentThreadId;
+        Logger.info('Including conversation_id in request payload', { 
+            conversation_id: currentThreadId,
+            payload: payload
+        });
+    } else {
+        Logger.info('No conversation_id to include in request payload', { 
+            currentThreadId: currentThreadId,
+            payload: payload
+        });
     }
 
     // Add streaming configuration
