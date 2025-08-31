@@ -13,7 +13,8 @@ import { Validator } from './validator.js';
 import { setupMessageProcessing, cleanupMessageProcessing, handleMessageError } from './messages.js';
 import { createAssistantMessageElement } from './messages.js';
 import { DOM } from './dom.js';
-import { handleStreamingResponse, handleNonStreamingResponse } from './streaming.js';
+import { parseSSEStream, routeEventToStateMachine } from './eventParser.js';
+
 
 export async function sendMessage() {
     if (getProcessingStatus()) {
@@ -138,10 +139,16 @@ async function processApiResponse(response, assistantMessageDiv, isStreamingEnab
         handleThreadIdResponse(response, conversationIdFromBody);
 
         // Process response based on type
+        Logger.info('Processing API response', {
+            isStreamingEnabled,
+            responseType: isStreamingEnabled ? 'streaming' : 'non-streaming',
+            hasStateMachine: !!assistantMessageDiv.stateMachine
+        });
+        
         if (isStreamingEnabled) {
-            await handleStreamingResponse(response, assistantMessageDiv);
+            await handleStreamingResponseWithStateMachine(response, assistantMessageDiv);
         } else {
-            await handleNonStreamingResponse(response, assistantMessageDiv);
+            await handleNonStreamingResponseWithStateMachine(response, assistantMessageDiv);
         }
 
     } catch (error) {
@@ -154,6 +161,43 @@ async function processApiResponse(response, assistantMessageDiv, isStreamingEnab
         } else {
             throw error;
         }
+    }
+}
+
+async function handleStreamingResponseWithStateMachine(response, assistantMessageDiv) {
+    Logger.info('Starting streaming response with state machine');
+    
+    // Parse SSE stream and route events to state machine
+    await parseSSEStream(
+        response,
+        routeEventToStateMachine,
+        () => Logger.info('Streaming response completed'),
+        (error) => {
+            Logger.error('Error in streaming response', { error });
+            throw error;
+        }
+    );
+}
+
+async function handleNonStreamingResponseWithStateMachine(response, assistantMessageDiv) {
+    try {
+        const responseData = await response.json();
+        
+        Logger.info('Processing non-streaming response with state machine', {
+            hasStateMachine: !!assistantMessageDiv.stateMachine,
+            responseData: JSON.stringify(responseData).substring(0, 200) + '...'
+        });
+        
+        // For non-streaming responses, we can create a single content update
+        if (assistantMessageDiv.stateMachine && responseData.content) {
+            assistantMessageDiv.stateMachine.updateContentProgressive(responseData.content);
+        } else {
+            Logger.warn('No state machine or content found for non-streaming response');
+        }
+        
+    } catch (error) {
+        Logger.error('Error processing non-streaming response', { error });
+        throw error;
     }
 }
 

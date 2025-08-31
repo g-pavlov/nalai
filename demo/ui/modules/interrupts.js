@@ -9,8 +9,9 @@ import { ErrorHandler } from './errorHandler.js';
 import { NetworkManager } from './network.js';
 import { buildApiUrl, API_CONFIG } from './config.js';
 import { getCurrentThreadId } from './state.js';
-import { processStreamEvent, resetStreamingStateAfterInterrupt, handleStreamingCompletion, captureToolCall, updateToolCallStatus } from './streaming.js';
+
 import { cleanupMessageProcessing } from './messages.js';
+import { parseSSEStream, routeEventToStateMachine } from './eventParser.js';
 
 export async function handleInterrupt(responseType, args = null) {
     if (!window.currentInterrupt) {
@@ -41,15 +42,12 @@ export async function handleInterrupt(responseType, args = null) {
             editedArgs: args 
         });
         
-        // Capture the edited tool call arguments with the tool call ID
-        captureToolCall(actionRequest.action, args, 'interrupt_edit', toolCallId);
+        // Tool call tracking is now handled by the state machine
+        Logger.info('Tool call edit captured by state machine');
     }
     
-    // Update tool call status based on decision
-    if (window.currentInterrupt?.value?.action_request?.action) {
-        const actionRequest = window.currentInterrupt.value.action_request;
-        updateToolCallStatus(actionRequest.action, responseType);
-    }
+    // Tool call status updates are now handled by the state machine
+    Logger.info('Tool call status update handled by state machine');
 
     try {
         Logger.info('Current thread ID format', { currentThreadId: getCurrentThreadId() });
@@ -60,7 +58,14 @@ export async function handleInterrupt(responseType, args = null) {
         });
         
         // Use currentThreadId directly since it's already in the correct format
-        if (!getCurrentThreadId()) {
+        const currentThreadId = getCurrentThreadId();
+        Logger.info('Checking conversation ID for resume request', {
+            currentThreadId: currentThreadId,
+            hasThreadId: !!currentThreadId,
+            threadIdType: typeof currentThreadId
+        });
+        
+        if (!currentThreadId) {
             throw new Error('No conversation ID available for resume request');
         }
         
@@ -157,121 +162,48 @@ export async function handleInterrupt(responseType, args = null) {
 
 async function handleResumeStream(response) {
     Logger.info('Starting resume stream processing', { responseStatus: response.status });
+
+    // Parse SSE stream and route events to state machine
+    await parseSSEStream(
+        response,
+        routeEventToStateMachine,
+        handleResumeStreamComplete,
+        handleResumeStreamError
+    );
+}
+
+function handleResumeStreamComplete() {
+    Logger.info('Resume stream completed successfully');
     
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+    // Cleanup interrupt UI and state
+    cleanupInterruptState();
+    
+    // Clear processing state
+    cleanupMessageProcessing();
+}
 
-    try {
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-                Logger.info('Resume stream completed (done)');
-                break;
-            }
+function handleResumeStreamError(error) {
+    Logger.error('Resume stream error', { error });
+    
+    // Clear interrupt state on error
+    cleanupInterruptState();
+    
+    // Clear processing state
+    cleanupMessageProcessing();
+}
 
-            const chunk = decoder.decode(value, { stream: true });
-            Logger.info('Received resume stream chunk', { chunkLength: chunk.length, chunk: chunk.substring(0, 100) });
-            
-            buffer += chunk;
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-                Logger.info('Processing resume line', { line: line.substring(0, 100) });
-                
-                if (line.startsWith('data: ')) {
-                    const data = line.slice(6);
-                    Logger.info('Processing resume data', { data: data.substring(0, 100) });
-                    
-                    if (data === '[DONE]') {
-                        Logger.info('Resume stream marked as done');
-                        break;
-                    }
-
-                    try {
-                        if (!data || data.trim() === '') continue;
-                        const eventData = JSON.parse(data);
-
-                        // Use the same event processing logic as regular streaming
-                        // Find the last assistant message div to update
-                        const lastAssistantMessage = document.querySelector('.assistant-message:last-child');
-                        processStreamEvent(eventData, lastAssistantMessage);
-                    } catch (e) {
-                        Logger.warn('Failed to parse resume event', { error: e.message });
-                    }
-                }
-            }
-        }
-    } catch (error) {
-        Logger.error('Resume stream processing caught error', { 
-            error, 
-            errorType: typeof error, 
-            errorMessage: error?.message,
-            errorStack: error?.stack 
-        });
-        ErrorHandler.handleError(error, 'Resume stream processing');
-        // Clear interrupt state on error as well
+function cleanupInterruptState() {
+    // Remove interrupt UI
+    const existingInterrupt = document.querySelector('.interrupt-container');
+    if (existingInterrupt) {
+        existingInterrupt.remove();
+        Logger.info('Interrupt container removed');
+    }
+    
+    // Clear interrupt state
+    if (window.currentInterrupt) {
         window.currentInterrupt = null;
-        const existingInterrupt = document.querySelector('.interrupt-container');
-        if (existingInterrupt) {
-            existingInterrupt.remove();
-        }
-        
-        // Show the streaming content container again on error
-        const assistantMessageForError = document.querySelector('.assistant-message:last-child');
-        if (assistantMessageForError) {
-            const streamingContainer = assistantMessageForError.querySelector('.streaming-content');
-            if (streamingContainer) {
-                streamingContainer.classList.remove('hidden');
-                Logger.info('Streaming content container shown again after resume stream error');
-            }
-        }
-        
-        Logger.info('Interrupt state cleared due to resume stream error');
-        
-        // Clear processing state on error since the workflow is complete
-        cleanupMessageProcessing();
-    } finally {
-        reader.releaseLock();
-        
-        // Remove the interrupt container and show streaming container again after the entire flow is complete
-        const existingInterrupt = document.querySelector('.interrupt-container');
-        if (existingInterrupt) {
-            existingInterrupt.remove();
-            Logger.info('Interrupt container removed after resume stream completion');
-        }
-        
-        // Show the streaming content container again
-        const assistantMessageForStreaming = document.querySelector('.assistant-message:last-child');
-        if (assistantMessageForStreaming) {
-            const streamingContainer = assistantMessageForStreaming.querySelector('.streaming-content');
-            if (streamingContainer) {
-                streamingContainer.classList.remove('hidden');
-                Logger.info('Streaming content container shown again after resume stream completion');
-            }
-        }
-        
-        // Clear interrupt state after container removal
-        if (window.currentInterrupt) {
-            window.currentInterrupt = null;
-            
-            // Reset streaming state to clear accumulated content
-            resetStreamingStateAfterInterrupt();
-            
-            Logger.info('Interrupt state cleared after successful resume stream completion');
-        }
-        
-        // Handle streaming completion for resume stream (after interrupt is cleared)
-        const lastAssistantMessage = document.querySelector('.assistant-message:last-child');
-        if (lastAssistantMessage) {
-            handleStreamingCompletion(true, lastAssistantMessage);
-        }
-        
-        // Clear processing state only after the entire workflow is complete
-        // This ensures the send button remains disabled until processing is finished
-        cleanupMessageProcessing();
-        Logger.info('Processing state cleared after resume stream completion');
+        Logger.info('Interrupt state cleared');
     }
 }
 
@@ -301,12 +233,8 @@ export function createInterruptUI(assistantMessageDiv, actionRequest, interruptI
         Logger.info('Removed existing interrupt UI before creating new one');
     }
     
-    // Hide the streaming content container and clear the progress container
-    const streamingContainer = assistantMessageDiv.querySelector('.streaming-content');
-    if (streamingContainer) {
-        streamingContainer.classList.add('hidden');
-        Logger.info('Hidden streaming content container to make room for interrupt UI');
-    }
+    // Content visibility is now managed by the state machine
+    Logger.info('Content visibility managed by state machine for interrupt UI');
     
 
     
@@ -398,19 +326,8 @@ export function createInterruptUI(assistantMessageDiv, actionRequest, interruptI
     
     // Insert the interrupt container BEFORE the streaming progress container
     // This ensures the call_model response appears below the interrupt dialog
-    const streamingProgress = assistantMessageDiv.querySelector('.streaming-progress');
-    const streamingContent = assistantMessageDiv.querySelector('.streaming-content');
-    
-    if (streamingProgress) {
-        // Insert before streaming progress
-        streamingProgress.insertAdjacentElement('beforebegin', interruptDiv);
-    } else if (streamingContent) {
-        // Insert before streaming content if no progress container
-        streamingContent.insertAdjacentElement('beforebegin', interruptDiv);
-    } else {
-        // Fallback: append to the end
-        assistantMessageDiv.appendChild(interruptDiv);
-    }
+    // Insert the interrupt UI into the message
+    assistantMessageDiv.appendChild(interruptDiv);
     
     const chatContainer = document.getElementById('chatContainer');
     if (chatContainer) {

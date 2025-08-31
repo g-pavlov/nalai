@@ -8,11 +8,12 @@ import { Logger } from './logger.js';
 import { ErrorHandler } from './errorHandler.js';
 import { setCurrentThreadId, setProcessing, getProcessingStatus } from './state.js';
 import { addToolCallsIndicatorToMessage } from './toolCalls.js';
-import { resetStreamingProgressState } from './streaming.js';
+
+import { ResponseStateMachine } from './responseStateMachine.js';
 
 export function createAssistantMessageElement() {
-    // Reset streaming state to ensure clean state for new message
-    resetStreamingProgressState();
+            // Reset state for new message
+        Logger.info('Creating new assistant message element');
     
     // Clear any expanded tools panels from previous messages (but keep the indicators)
     const existingToolsPanels = DOM.chatContainer.querySelectorAll('.tools-panel');
@@ -31,32 +32,36 @@ export function createAssistantMessageElement() {
     const assistantMessageDiv = document.createElement('div');
     assistantMessageDiv.className = 'message assistant-message fade-in';
     
-    // Always create streaming content container (using existing streaming-content class)
-    const streamingContainer = document.createElement('div');
-    streamingContainer.className = 'streaming-content';
-    assistantMessageDiv.appendChild(streamingContainer);
+    // Add unique message ID for state machine tracking
+    assistantMessageDiv.dataset.messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Initialize response state machine for this message
+    const stateMachine = new ResponseStateMachine(assistantMessageDiv);
+    assistantMessageDiv.stateMachine = stateMachine;
     
     DOM.chatContainer.appendChild(assistantMessageDiv);
     DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
     
-    Logger.info('Created new assistant message element with streaming container, reset streaming state, and cleared expanded tools panels');
+    Logger.info('Created new assistant message element with response state machine', {
+        messageId: assistantMessageDiv.dataset.messageId
+    });
     return assistantMessageDiv;
 }
 
 export function updateMessageContent(element, content) {
-    // If no element is provided (for resume streams), find the streaming container in the last assistant message
+    // If no element is provided (for resume streams), find the content element in the last assistant message
     if (!element) {
         const lastAssistantMessage = DOM.chatContainer.querySelector('.assistant-message:last-child');
         if (!lastAssistantMessage) {
             Logger.warn('No assistant message element found for content update');
             return;
         }
-        element = lastAssistantMessage.querySelector('.streaming-content');
+        element = lastAssistantMessage.querySelector('.response-content');
         if (!element) {
-            Logger.warn('No streaming content container found for content update');
+            Logger.warn('No response content container found for content update');
             return;
         }
-        Logger.info('Found streaming content container for resume stream update');
+        Logger.info('Found response content container for resume stream update');
     }
     
     Logger.info('Updating message content', { 
@@ -91,15 +96,11 @@ export function addMessage(content, type, options = {}) {
         messageDiv.className = `message ${type}-message fade-in`;
         
         if (type === 'assistant') {
-            // Create streaming content container first (using existing streaming-content class)
-            const streamingContainer = document.createElement('div');
-            streamingContainer.className = 'streaming-content';
-            messageDiv.appendChild(streamingContainer);
+            // For assistant messages, content is handled by the state machine
+            // Just add the message to the container
+            messageDiv.textContent = content;
             
-            // Update the content in the streaming container
-            updateMessageContent(streamingContainer, content);
-            
-            // Add tool calls indicator if tool calls are provided (after streaming container)
+            // Add tool calls indicator if tool calls are provided
             if (options.toolCalls && options.toolCalls.length > 0) {
                 addToolCallsIndicatorToMessage(
                     messageDiv, 

@@ -71,3 +71,5 @@ export async function initializeApp() {
 export { sendMessage, startNewConversation, loadConversation, handleInterrupt, toggleSettings, showConversationsList, hideConversationsList, refreshConversationsList };
 
 
+
+

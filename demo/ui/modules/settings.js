@@ -104,12 +104,21 @@ export function getMessageConfig() {
         selectedModel = { name: "gpt-4.1", platform: "openai" };
     }
     
-    return {
+    const config = {
         selectedModel,
         isStreamingEnabled: DOM.streamingToggle.checked,
         isNoCacheEnabled: DOM.noCacheToggle.checked,
         isJsonFormatEnabled: DOM.jsonFormatToggle.checked
     };
+    
+    Logger.info('Message config retrieved', {
+        isStreamingEnabled: config.isStreamingEnabled,
+        isNoCacheEnabled: config.isNoCacheEnabled,
+        isJsonFormatEnabled: config.isJsonFormatEnabled,
+        selectedModel: config.selectedModel
+    });
+    
+    return config;
 }
 
 export function isJsonFormatEnabled() {
