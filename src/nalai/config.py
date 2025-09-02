@@ -375,6 +375,32 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
+class ToolCallMetadata(BaseModel):
+    """Metadata for a single tool call."""
+
+    name: str = Field(..., description="Tool name")
+    args: dict[str, Any] = Field(
+        default_factory=dict, description="Tool arguments used to execute the call"
+    )
+    node: str | None = Field(
+        None, description="LangGraph node where tool call originated"
+    )
+    original_args: dict[str, Any] | None = Field(
+        None, description="Args prior to potential edit decision"
+    )
+
+
+class ExecutionContext(BaseModel):
+    """Execution context for tracking tool calls and metadata across the pipeline."""
+
+    tool_calls: dict[str, ToolCallMetadata] = Field(
+        default_factory=dict, description="Registry of tool calls by ID for enrichment"
+    )
+
+    class Config:
+        extra = "allow"
+
+
 class BaseRuntimeConfiguration(BaseModel):
     """Runtime configuration for agent execution.
     Handles model configuration and runtime settings that can be
@@ -393,12 +419,17 @@ class BaseRuntimeConfiguration(BaseModel):
     model: dict[str, str] | None = Field(
         default_factory=lambda: {
             "name": os.getenv("MODEL_ID", settings.default_model_id),
-            "provider": os.getenv("MODEL_PLATFORM", settings.default_model_platform),
+            "platform": os.getenv("MODEL_PLATFORM", settings.default_model_platform),
         },
         metadata={
             "description": "The model configuration, including the model's name and platform. "
             "Example: {'name': 'llama3.1:8b', 'platform': 'ollama'}."
         },
+    )
+
+    execution_context: ExecutionContext = Field(
+        default_factory=ExecutionContext,
+        description="Execution context for tracking tool calls and metadata",
     )
 
 

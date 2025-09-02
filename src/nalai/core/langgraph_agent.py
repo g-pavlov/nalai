@@ -108,6 +108,49 @@ class LangGraphAgent(Agent):
                 f"Invalid conversation ID format: {conversation_id}"
             ) from None
 
+    def _filter_current_response_messages(
+        self, result_messages: list, input_messages: list
+    ) -> list:
+        """
+        Filter messages to only include those from the current response cycle.
+
+        This prevents sending the entire conversation history in each response.
+        The current response cycle includes:
+        1. The most recent assistant message(s) with tool calls or final response
+        2. Any tool messages that are responses to those tool calls
+        3. Excludes all previous conversation history
+
+        Args:
+            result_messages: All messages from the agent result
+            input_messages: Input messages sent to the agent
+
+        Returns:
+            List of messages that are part of the current response cycle
+        """
+        if not result_messages:
+            return []
+
+        # Find the last human message to determine where the current response starts
+        last_human_index = -1
+        for i, msg in enumerate(result_messages):
+            if hasattr(msg, "role") and msg.role == "user":
+                last_human_index = i
+            elif hasattr(msg, "type") and msg.type == "human":
+                last_human_index = i
+
+        # Get messages after the last human message (current response cycle)
+        if last_human_index >= 0:
+            current_response_messages = result_messages[last_human_index + 1 :]
+        else:
+            # If no human message found, assume all messages are current
+            current_response_messages = result_messages
+
+        logger.info(
+            f"Filtered messages for current response: {len(result_messages)} -> {len(current_response_messages)}"
+        )
+
+        return current_response_messages
+
     def _extract_audit_context(self, config: dict) -> dict:
         """Extract audit context from config."""
         configurable = config.get("configurable", {})
@@ -312,8 +355,19 @@ class LangGraphAgent(Agent):
             result.get("messages", messages) if isinstance(result, dict) else messages
         )
 
+        # CRITICAL FIX: Filter messages to only include those from the current response cycle
+        # This prevents sending the entire conversation history in each response
+        current_response_messages = self._filter_current_response_messages(
+            result_messages, messages
+        )
+
         # Transform to core models
-        core_messages = [transform_message(msg) for msg in result_messages]
+        core_messages = [
+            transform_message(
+                message=msg, config=config, conversation_id=conversation_id
+            )
+            for msg in current_response_messages
+        ]
 
         # Check for interrupts in the result
         interrupt_info = None
@@ -329,7 +383,7 @@ class LangGraphAgent(Agent):
 
                 # Extract tool call IDs from the last assistant message
                 tool_call_ids = []
-                for message in reversed(result_messages):
+                for message in reversed(current_response_messages):
                     if hasattr(message, "tool_calls") and message.tool_calls:
                         # Handle both object and dict formats
                         for tc in message.tool_calls:
@@ -528,7 +582,12 @@ class LangGraphAgent(Agent):
             messages = self.checkpoints.extract_messages(checkpoint_state)
 
             # Transform to core models
-            core_messages = [transform_message(msg) for msg in messages]
+            core_messages = [
+                transform_message(
+                    message=msg, config=config, conversation_id=conversation_id
+                )
+                for msg in messages
+            ]
 
             # Get conversation info
             conversation_info = await self._get_conversation_info(
@@ -620,8 +679,19 @@ class LangGraphAgent(Agent):
         # Extract conversation data from the result
         result_messages = result.get("messages", []) if isinstance(result, dict) else []
 
+        # CRITICAL FIX: Filter messages to only include those from the current response cycle
+        # This prevents sending the entire conversation history in each response
+        current_response_messages = self._filter_current_response_messages(
+            result_messages, []
+        )
+
         # Transform to core models
-        core_messages = [transform_message(msg) for msg in result_messages]
+        core_messages = [
+            transform_message(
+                message=msg, config=config, conversation_id=conversation_id
+            )
+            for msg in current_response_messages
+        ]
 
         # Get conversation info
         conversation_info = await self._get_conversation_info(conversation_id, config)
@@ -702,7 +772,12 @@ class LangGraphAgent(Agent):
             messages = self.checkpoints.extract_messages(checkpoint_state)
 
             # Transform to core models
-            core_messages = [transform_message(msg) for msg in messages]
+            core_messages = [
+                transform_message(
+                    message=msg, config=config, conversation_id=conversation_id
+                )
+                for msg in messages
+            ]
 
             # Get conversation info
             conversation_info = await self._get_conversation_info(

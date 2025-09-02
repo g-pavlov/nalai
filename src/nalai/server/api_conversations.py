@@ -233,7 +233,9 @@ def create_conversations_api(app: FastAPI, agent: Agent) -> None:
                 conversation_id=info.conversation_id,
                 created_at=info.created_at,
                 last_updated=info.last_accessed,  # Map last_accessed to last_updated for API
-                preview=info.preview,
+                preview=info.preview[:256]
+                if info.preview
+                else None,  # Truncate preview to 256 chars
                 metadata=getattr(info, "metadata", {}),
             )
             for info in conversation_infos

@@ -43,8 +43,8 @@ class TestAgentModels:
         from nalai.core.agent import Message
 
         messages = [
-            Message(content="Hello", type="human"),
-            Message(content="Hi there!", type="ai"),
+            Message(content="Hello", type="human", status=None),
+            Message(content="Hi there!", type="ai", status=None),
         ]
 
         conversation = Conversation(

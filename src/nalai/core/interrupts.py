@@ -12,7 +12,7 @@ from langgraph.prebuilt.interrupt import (
 )
 from langgraph.types import interrupt
 
-from ..config import BaseRuntimeConfiguration
+from ..config import BaseRuntimeConfiguration, ExecutionContext, ToolCallMetadata
 from ..utils.pii_masking import mask_pii
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ def add_human_in_the_loop(
 
     @create_tool(tool.name, description=tool.description, args_schema=tool.args_schema)
     def call_tool_with_interrupt(config: RunnableConfig, **tool_input):
-        request = request = HumanInterrupt(
+        request = HumanInterrupt(
             action_request=ActionRequest(
                 action=tool.name,  # The action being requested
                 args=tool_input,  # Arguments for the action
@@ -94,62 +94,47 @@ def add_human_in_the_loop(
         response = interrupt([request])[0]
         logger.info(f"Interrupt response: {response}")
         action = response.get("action")
-        if action == "accept":
-            run_manager = config.get("run_manager") if config else None
-            # Use the tool's _run method directly to avoid LangGraph context issues
-            tool_response = tool._run(
-                **tool_input, config=config, run_manager=run_manager
-            )
 
-            # Store the args in the response for later extraction
-            # We'll use a special format that can be parsed by the transformer
-            response_with_args = {
-                "content": str(tool_response),
-                "tool_name": tool.name,
-                "execution_args": tool_input,
-                "_is_interrupt_response": True,
-            }
+        if action not in ["accept", "reject", "edit", "feedback"]:
+            logger.warning(f"Unexpected interrupt response structure: {response}")
+            raise ValueError(f"Unsupported interrupt response action: {action}")
 
-            # Return the dictionary directly, not as a string
-            return response_with_args
-        elif action == "reject":
+        if action == "reject":
             tool_response = "User rejected the tool call"
-        elif action == "edit":
+
+        if action == "feedback":
+            # Handle feedback decision - args should contain the user's feedback message
+            tool_response = response.get("args")
+            if tool_response is None:
+                logger.warning("No feedback message provided, using default message")
+                tool_response = "User provided feedback"
+
+        original_args = tool_input
+        if action == "edit":
             # args should contain the new tool arguments
             args = response.get("args")
             if isinstance(args, dict):
                 tool_input = args
             else:
                 logger.warning(f"Unexpected args format for edit: {args}")
-                tool_input = tool_input
+
+        if action != "reject" and action != "feedback":
             run_manager = config.get("run_manager") if config else None
             tool_response = tool._run(
                 **tool_input, config=config, run_manager=run_manager
             )
 
-            # Store the args in the response for later extraction
-            # We'll use a special format that can be parsed by the transformer
-            response_with_args = {
-                "content": str(tool_response),
-                "tool_name": tool.name,
-                "execution_args": tool_input,
-                "_is_interrupt_response": True,
-            }
+        tool_calls = {}
+        tool_calls[response.get("tool_call_id")] = ToolCallMetadata(
+            name=tool.name, args=tool_input, original_args=original_args
+        )
+        exec_ctx = ExecutionContext(tool_calls=tool_calls)
 
-            # Return the dictionary directly, not as a string
-            return response_with_args
-        elif action == "feedback":
-            # Handle feedback decision - args should contain the user's feedback message
-            user_feedback = response.get("args")
-            if user_feedback is None:
-                logger.warning("No feedback message provided, using default message")
-                user_feedback = "User provided feedback"
-            tool_response = user_feedback
-        else:
-            # Log the actual response structure for debugging
-            logger.error(f"Unexpected interrupt response structure: {response}")
-            raise ValueError(f"Unsupported interrupt response action: {action}")
-
-        return tool_response
+        composite_tool_response = {
+            "tool_response": str(tool_response),
+            "execution_context": exec_ctx.model_dump(),
+            "_is_interrupt_response": True,
+        }
+        return composite_tool_response
 
     return call_tool_with_interrupt

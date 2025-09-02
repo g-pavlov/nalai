@@ -637,6 +637,11 @@ class ToolOutputMessage(BaseOutputMessage):
     tool_call_id: str = Field(
         ..., description="Tool call ID", min_length=1, max_length=100
     )
+    tool_name: str | None = Field(None, description="Tool name", max_length=100)
+    status: str | None = Field(None, description="Tool execution status", max_length=50)
+    args: dict[str, Any] | None = Field(
+        None, description="Actual args used for execution", max_length=10000
+    )
 
     @field_validator("tool_call_id")
     @classmethod

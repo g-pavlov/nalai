@@ -345,3 +345,22 @@ def create_response_output_event(
         output=output,
     )
     return event.to_sse()
+
+
+def extract_usage_from_streaming_chunks(chunks: list) -> dict[str, int]:
+    """Extract and aggregate usage information from streaming chunks."""
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    total_tokens = 0
+
+    for chunk in chunks:
+        if hasattr(chunk, "usage") and chunk.usage and isinstance(chunk.usage, dict):
+            total_prompt_tokens += chunk.usage.get("prompt_tokens", 0)
+            total_completion_tokens += chunk.usage.get("completion_tokens", 0)
+            total_tokens += chunk.usage.get("total_tokens", 0)
+
+    return {
+        "prompt_tokens": total_prompt_tokens,
+        "completion_tokens": total_completion_tokens,
+        "total_tokens": total_tokens,
+    }

@@ -40,7 +40,31 @@ def mock_agent():
     """Create a mock WorkflowNodes instance."""
     agent = MagicMock(spec=WorkflowNodes)
     agent.http_toolkit = MagicMock()
-    agent.http_toolkit.get_tools.return_value = [MagicMock(), MagicMock()]
+
+    # Create proper callable mock tools with required attributes
+    def mock_tool1_function(**kwargs):
+        """A test tool function."""
+        return "test_tool_1_result"
+
+    def mock_tool2_function(**kwargs):
+        """Another test tool function."""
+        return "test_tool_2_result"
+
+    # Set attributes on the functions
+    mock_tool1_function.name = "test_tool_1"
+    mock_tool1_function.description = "A test tool"
+    mock_tool1_function.args_schema = {}
+
+    mock_tool2_function.name = "test_tool_2"
+    mock_tool2_function.description = "Another test tool"
+    mock_tool2_function.args_schema = {}
+
+    agent.http_toolkit.get_tools.return_value = [
+        mock_tool1_function,
+        mock_tool2_function,
+    ]
+    agent.http_toolkit.is_safe_tool.return_value = False  # Default to unsafe tools
+
     return agent
 
 
@@ -53,7 +77,14 @@ def mock_memory_store():
 @pytest.fixture
 def mock_available_tools():
     """Create mock available tools."""
-    return {"call_api": MagicMock(spec=ToolNode)}
+    # Create a proper mock ToolNode
+    mock_tool_node = MagicMock(spec=ToolNode)
+    mock_tool_node.name = "call_api"
+    mock_tool_node.description = "API calling tool"
+    mock_tool_node.args_schema = {}
+    mock_tool_node._run = MagicMock()
+
+    return {"call_api": mock_tool_node}
 
 
 class TestWorkflowCreation:
@@ -86,8 +117,16 @@ class TestWorkflowCreation:
             output=OutputSchema,
         )
 
-        # Verify tool node creation
-        mock_tool_node.assert_called_once_with(mock_agent.http_toolkit.get_tools())
+        # Verify tool node creation - the tools are processed by add_human_in_the_loop
+        # so we can't directly compare the original tools
+        mock_tool_node.assert_called_once()
+        # Verify that ToolNode was called with a list of tools
+        call_args = mock_tool_node.call_args[0][0]
+        assert len(call_args) == 2  # Should have 2 tools
+        # Verify the tools are StructuredTool instances (processed by add_human_in_the_loop)
+        from langchain_core.tools import StructuredTool
+
+        assert all(isinstance(tool, StructuredTool) for tool in call_args)
 
         # Verify nodes were added
         mock_graph_instance.add_node.assert_any_call(
@@ -209,7 +248,14 @@ class TestWorkflowCreation:
         result = create_and_compile_workflow(mock_agent, available_tools=partial_tools)
 
         # Verify that call_api tool was created using agent's toolkit
-        mock_tool_node.assert_called_once_with(mock_agent.http_toolkit.get_tools())
+        # The tools are processed by add_human_in_the_loop, so we can't directly compare
+        mock_tool_node.assert_called_once()
+        call_args = mock_tool_node.call_args[0][0]
+        assert len(call_args) == 2  # Should have 2 tools
+        # Verify the tools are StructuredTool instances (processed by add_human_in_the_loop)
+        from langchain_core.tools import StructuredTool
+
+        assert all(isinstance(tool, StructuredTool) for tool in call_args)
         mock_graph_instance.add_node.assert_any_call(
             NODE_CALL_API, mock_tool_node_instance
         )
@@ -397,9 +443,14 @@ class TestWorkflowExecution:
 
         # Verify that the agent's tools were used to create ToolNode
         mock_agent.http_toolkit.get_tools.assert_called_once()
-        mock_tool_node_class.assert_called_once_with(
-            mock_agent.http_toolkit.get_tools()
-        )
+        # The tools are processed by add_human_in_the_loop, so we can't directly compare
+        mock_tool_node_class.assert_called_once()
+        call_args = mock_tool_node_class.call_args[0][0]
+        assert len(call_args) == 2  # Should have 2 tools
+        # Verify the tools are StructuredTool instances (processed by add_human_in_the_loop)
+        from langchain_core.tools import StructuredTool
+
+        assert all(isinstance(tool, StructuredTool) for tool in call_args)
 
         # Verify the workflow was created successfully
         assert workflow is not None
@@ -498,9 +549,14 @@ class TestWorkflowExecution:
         mock_agent.http_toolkit.get_tools.assert_called_once()
 
         # Verify ToolNode was created with the tools
-        mock_tool_node_class.assert_called_once_with(
-            mock_agent.http_toolkit.get_tools()
-        )
+        # The tools are processed by add_human_in_the_loop, so we can't directly compare
+        mock_tool_node_class.assert_called_once()
+        call_args = mock_tool_node_class.call_args[0][0]
+        assert len(call_args) == 2  # Should have 2 tools
+        # Verify the tools are StructuredTool instances (processed by add_human_in_the_loop)
+        from langchain_core.tools import StructuredTool
+
+        assert all(isinstance(tool, StructuredTool) for tool in call_args)
 
         # Verify the tools list is not empty
         tools = mock_agent.http_toolkit.get_tools.return_value
@@ -527,9 +583,14 @@ class TestWorkflowExecution:
         mock_agent.http_toolkit.get_tools.assert_called_once()
 
         # Verify ToolNode was created with the tools
-        mock_tool_node_class.assert_called_once_with(
-            mock_agent.http_toolkit.get_tools()
-        )
+        # The tools are processed by add_human_in_the_loop, so we can't directly compare
+        mock_tool_node_class.assert_called_once()
+        call_args = mock_tool_node_class.call_args[0][0]
+        assert len(call_args) == 2  # Should have 2 tools
+        # Verify the tools are StructuredTool instances (processed by add_human_in_the_loop)
+        from langchain_core.tools import StructuredTool
+
+        assert all(isinstance(tool, StructuredTool) for tool in call_args)
 
     @patch("nalai.core.workflow.ToolNode")
     def test_workflow_tool_node_integration(self, mock_tool_node_class, mock_agent):
@@ -548,9 +609,14 @@ class TestWorkflowExecution:
         mock_agent.http_toolkit.get_tools.assert_called_once()
 
         # Verify ToolNode was created with the tools
-        mock_tool_node_class.assert_called_once_with(
-            mock_agent.http_toolkit.get_tools()
-        )
+        # The tools are processed by add_human_in_the_loop, so we can't directly compare
+        mock_tool_node_class.assert_called_once()
+        call_args = mock_tool_node_class.call_args[0][0]
+        assert len(call_args) == 2  # Should have 2 tools
+        # Verify the tools are StructuredTool instances (processed by add_human_in_the_loop)
+        from langchain_core.tools import StructuredTool
+
+        assert all(isinstance(tool, StructuredTool) for tool in call_args)
 
         # Verify that tools were provided to the workflow
         tools = mock_agent.http_toolkit.get_tools.return_value

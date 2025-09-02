@@ -25,6 +25,7 @@ from .constants import (
 )
 from .interrupts import add_human_in_the_loop
 from .states import AgentState, InputSchema, OutputSchema
+from .tools import add_execution_context
 from .workflow_nodes import WorkflowNodes
 
 
@@ -49,7 +50,7 @@ def create_and_compile_workflow(
         tools = [
             add_human_in_the_loop(tool)
             if not workflow_nodes.http_toolkit.is_safe_tool(tool.name)
-            else tool
+            else add_execution_context(tool)
             for tool in workflow_nodes.http_toolkit.get_tools()
         ]
         available_tools[NODE_CALL_API] = ToolNode(tools)

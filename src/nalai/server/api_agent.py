@@ -31,7 +31,6 @@ from .api_conversations import SSEStreamingResponse, handle_agent_errors
 from .message_serializer import (
     convert_messages_to_output,
     extract_usage_from_core_messages,
-    extract_usage_from_streaming_chunks,
 )
 from .runtime_config import create_runtime_config
 from .sse_serializer import (
@@ -39,6 +38,7 @@ from .sse_serializer import (
     create_response_created_event,
     create_response_error_event,
     create_streaming_event_from_chunk,
+    extract_usage_from_streaming_chunks,
 )
 
 logger = logging.getLogger("nalai")

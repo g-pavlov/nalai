@@ -291,7 +291,7 @@ class TestMessageSerializer:
 
     def test_extract_usage_from_streaming_chunks(self):
         """Test extracting usage from streaming chunks."""
-        from nalai.server.message_serializer import extract_usage_from_streaming_chunks
+        from nalai.server.sse_serializer import extract_usage_from_streaming_chunks
 
         # Create mock streaming chunks with usage data
         class MockChunk1:
@@ -325,7 +325,7 @@ class TestMessageSerializer:
 
     def test_extract_usage_from_streaming_chunks_empty(self):
         """Test extracting usage from empty streaming chunks list."""
-        from nalai.server.message_serializer import extract_usage_from_streaming_chunks
+        from nalai.server.sse_serializer import extract_usage_from_streaming_chunks
 
         result = extract_usage_from_streaming_chunks([])
         assert result == {

@@ -164,7 +164,13 @@ class TestLangGraphAgent:
         result_messages_list = []
         for msg in result_messages:
             if hasattr(msg, "content"):
-                result_messages_list.append({"content": msg.content, "type": msg.type})
+                result_messages_list.append(
+                    {
+                        "content": msg.content,
+                        "type": msg.type,
+                        "status": getattr(msg, "status", None),
+                    }
+                )
         assert result_messages_list == expected["output"]["messages"]
 
         # Verify checkpoints was called for new conversations
@@ -247,7 +253,11 @@ class TestLangGraphAgent:
                 for msg in result_messages:
                     if hasattr(msg, "content"):
                         result_messages_list.append(
-                            {"content": msg.content, "type": msg.type}
+                            {
+                                "content": msg.content,
+                                "type": msg.type,
+                                "status": getattr(msg, "status", None),
+                            }
                         )
                 assert result_messages_list == expected["output"]["messages"]
             else:
@@ -508,12 +518,20 @@ class TestLangGraphAgent:
                 if hasattr(msg, "content"):
                     # Handle BaseMessage objects
                     result_messages_list.append(
-                        {"content": msg.content, "type": msg.type}
+                        {
+                            "content": msg.content,
+                            "type": msg.type,
+                            "status": getattr(msg, "status", None),
+                        }
                     )
                 elif isinstance(msg, dict) and "content" in msg and "type" in msg:
                     # Handle dictionary format
                     result_messages_list.append(
-                        {"content": msg["content"], "type": msg["type"]}
+                        {
+                            "content": msg["content"],
+                            "type": msg["type"],
+                            "status": msg.get("status", None),
+                        }
                     )
             assert result_messages_list == expected["output"]["messages"]
 

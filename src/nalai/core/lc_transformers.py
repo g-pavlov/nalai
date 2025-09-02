@@ -11,6 +11,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_core.messages.tool import ToolMessage
 
+from ..config import ExecutionContext, ToolCallMetadata
 from ..utils.id_generator import generate_message_id, generate_run_id
 from .agent import (
     InterruptChunk,
@@ -33,7 +34,12 @@ StreamingChunkInput = (
 )  # Can be LangGraph event, message, or dict
 
 
-def transform_message(message: MessageInput, run_id: str | None = None) -> Message:
+def transform_message(
+    message: MessageInput,
+    run_id: str | None = None,
+    config: dict | None = None,
+    conversation_id: str | None = None,
+) -> Message:
     """Transform message to core model with consistent ID handling."""
     # Handle dict objects (already in the right format)
     if isinstance(message, dict):
@@ -57,8 +63,20 @@ def transform_message(message: MessageInput, run_id: str | None = None) -> Messa
         "usage": _extract_usage(message),
         "finish_reason": _extract_finish_reason(message),
         "tool_call_id": _safe_getattr(message, "tool_call_id"),
+        "status": _safe_getattr(message, "status"),
     }
 
+    if message_data["type"] == "tool":
+        tool_chunk = _handle_tool_message(message, config, conversation_id)
+        if tool_chunk:
+            message_data["content"] = tool_chunk.content
+            message_data["tool_calls"] = [
+                {
+                    "id": tool_chunk.tool_call_id,
+                    "name": tool_chunk.tool_name,
+                    "args": tool_chunk.args,
+                }
+            ]
     # Pydantic validates and creates the model
     return Message(**message_data)
 
@@ -165,11 +183,11 @@ def transform_streaming_chunk(
                 # Regular message event
                 return _handle_regular_message(message_data, config, conversation_id)
 
-            # Handle single message
-            elif isinstance(event_data, BaseMessage):
-                # Transform to core message model
-                core_message = transform_message(event_data)
-                return MessageChunk(**core_message.model_dump())
+            # # Handle single message
+            # elif isinstance(event_data, BaseMessage):
+            #     # Transform to core message model
+            #     core_message = transform_message(event_data, config, conversation_id)
+            #     return MessageChunk(**core_message.model_dump())
 
     logger.warning("Unrecognized chunk type: %s", type(chunk))
     return None
@@ -271,7 +289,7 @@ def _handle_tool_update(event_data: dict, conversation_id: str) -> ToolChunk | N
         return ToolChunk(
             tool_call_id=tool_data.get("tool_call_id", ""),
             tool_name=tool_data.get("name", ""),
-            status=tool_data.get("status", "running"),
+            status=tool_data.get("status"),
             content=tool_data.get("content", ""),
             conversation_id=conversation_id,
         )
@@ -298,14 +316,12 @@ def _handle_regular_update(
 def _handle_tool_message(
     message: ToolMessage, config: dict, conversation_id: str
 ) -> ToolChunk | None:
-    """Handle ToolMessage events."""
+    """Handle ToolMessage events with execution context enrichment."""
     try:
-        # Extract args and determine content/tool_name
-        args = None
-        tool_name = message.name or ""
+        tc_meta = None
         content = message.content
 
-        # Check for special interrupt response format in content
+        # Check for structured metadata in content. Tool wrappers use this format.
         if hasattr(message, "content") and message.content:
             content_dict = None
 
@@ -320,19 +336,34 @@ def _handle_tool_message(
             elif isinstance(message.content, dict):
                 content_dict = message.content
 
-            # Extract from interrupt response format if found
-            if content_dict and content_dict.get("_is_interrupt_response"):
-                args = content_dict.get("execution_args")
-                tool_name = content_dict.get("tool_name", tool_name)
-                content = content_dict.get("content", content)
+            # Extract from structured metadata format if found
+            if content_dict:
+                content = content_dict.get("tool_response", message.content)
+                # Try to enrich with metadata from execution context first (non-interrupted flows)
+                exec_ctx_dict = content_dict.get("execution_context", {})
+                if exec_ctx_dict.get("args") is not None:
+                    tc_meta = ToolCallMetadata(**exec_ctx_dict)
+                elif exec_ctx_dict.get("tool_calls") is not None:
+                    exec_ctx = ExecutionContext(**exec_ctx_dict)
+                    # Look for execution context structure in content
+                    if exec_ctx.tool_calls:
+                        try:
+                            # Find matching tool call by args
+                            for tc_meta in exec_ctx.tool_calls.values():
+                                tc_meta = tc_meta
+                                break
+                        except Exception as e:
+                            logger.debug(
+                                f"Failed to parse execution context from content: {e}"
+                            )
 
         return ToolChunk(
             id=message.tool_call_id or "",
             tool_call_id=message.tool_call_id or "",
-            tool_name=tool_name,
-            status="success",
+            tool_name=tc_meta.name if tc_meta else "",
+            # status=tc_meta.status if tc_meta else "unknown",
             content=content,
-            args=args,
+            args=tc_meta.args if tc_meta else {},
             conversation_id=conversation_id,
         )
     except Exception as e:
@@ -356,6 +387,31 @@ def _handle_tool_call_message(
     """Handle tool call message event."""
     langgraph_node = config.get("langgraph_node", "")
     tool_calls_chunks = message_data["tool_call_chunks"]
+
+    # Register tool calls in execution context for later enrichment
+    execution_context = config.get("execution_context")
+
+    # Create ExecutionContext if it doesn't exist
+    if execution_context is None:
+        execution_context = ExecutionContext()
+        config["execution_context"] = execution_context
+    elif not isinstance(execution_context, ExecutionContext):
+        # Convert dict to ExecutionContext if needed
+        execution_context = ExecutionContext(**execution_context)
+        config["execution_context"] = execution_context
+
+    # Extract tool calls from message_data and create ToolCallMetadata instances
+    tool_calls = message_data.get("tool_calls", [])
+    for tc in tool_calls:
+        if isinstance(tc, dict) and "id" in tc:
+            tool_call_metadata = ToolCallMetadata(
+                name=tc.get("name", ""),
+                args=tc.get("args", {}),
+                status="pending",
+                node=langgraph_node,
+            )
+            execution_context.tool_calls[tc["id"]] = tool_call_metadata
+
     return ToolCallChunk(
         type="tool_call",
         conversation_id=conversation_id,
