@@ -20,6 +20,7 @@ from ..core.agent import (
     InvocationError,
     ValidationError,
 )
+from .json_serializer import serialize_conversation
 from .runtime_config import create_runtime_config
 from .schemas import (
     ConversationIdPathParam,
@@ -176,18 +177,10 @@ def create_conversations_api(app: FastAPI, agent: Agent) -> None:
             conversation_id, agent_config
         )
 
-        # Core layer already returns all messages for conversation loading
         # Convert to API output format
-        from .message_serializer import convert_messages_to_output
-        output_messages = convert_messages_to_output(messages, conversation_id)
+        response = serialize_conversation(conversation_info, messages)
 
-        return LoadConversationResponse(
-            conversation_id=conversation_info.conversation_id,
-            messages=output_messages,
-            created_at=conversation_info.created_at,
-            last_updated=conversation_info.last_accessed,
-            status=conversation_info.status,
-        )
+        return response
 
     # List conversations endpoint
     @app.get(

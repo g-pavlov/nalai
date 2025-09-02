@@ -9,7 +9,7 @@ from nalai.core.lc_transformers import (
     _extract_usage,
     extract_usage_from_messages,
 )
-from nalai.server.message_serializer import convert_messages_to_output
+from nalai.server.json_serializer import serialize_messages
 from nalai.server.schemas.messages import (
     AssistantOutputMessage,
     HumanOutputMessage,
@@ -181,12 +181,13 @@ class TestMessageSerializer:
             "total_tokens": 70,  # 30 + 40
         }
 
-    def test_convert_messages_to_output_human(self):
-        """Test converting human message to output format."""
+    def test_serialize_messages_human(self):
+        """Test serializing human message to output format."""
 
         class HumanMessage:
             def __init__(self):
                 self.content = "Hello"
+                self.type = "human"
                 self.tool_calls = None
                 self.invalid_tool_calls = None
                 self.response_metadata = None
@@ -197,19 +198,20 @@ class TestMessageSerializer:
         human_message = HumanMessage()
         human_message.__class__.__name__ = "HumanMessage"
 
-        result = convert_messages_to_output(
+        result = serialize_messages(
             [human_message], "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
         )
         assert len(result) == 1
         assert isinstance(result[0], HumanOutputMessage)
         assert result[0].content[0].text == "Hello"
 
-    def test_convert_messages_to_output_ai(self):
-        """Test converting AI message to output format."""
+    def test_serialize_messages_ai(self):
+        """Test serializing AI message to output format."""
 
         class AIMessage:
             def __init__(self):
                 self.content = "Hello there"
+                self.type = "ai"
                 self.tool_calls = None
                 self.invalid_tool_calls = None
                 self.response_metadata = None
@@ -220,25 +222,28 @@ class TestMessageSerializer:
         ai_message = AIMessage()
         ai_message.__class__.__name__ = "AIMessage"
 
-        result = convert_messages_to_output(
+        result = serialize_messages(
             [ai_message], "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
         )
         assert len(result) == 1
         assert isinstance(result[0], AssistantOutputMessage)
         assert result[0].content[0].text == "Hello there"
 
-    def test_convert_messages_to_output_tool(self):
-        """Test converting tool message to output format."""
+    def test_serialize_messages_tool(self):
+        """Test serializing tool message to output format."""
+
+        class ToolCall:
+            def __init__(self, id, name, args):
+                self.id = id
+                self.name = name
+                self.args = args
 
         class AIMessage:
             def __init__(self):
                 self.content = "I'll call a tool"
+                self.type = "ai"
                 self.tool_calls = [
-                    {
-                        "id": "call_123",
-                        "name": "test_tool",
-                        "args": {"param": "value"}
-                    }
+                    ToolCall("call_123", "test_tool", {"param": "value"})
                 ]
                 self.invalid_tool_calls = None
                 self.response_metadata = None
@@ -249,25 +254,23 @@ class TestMessageSerializer:
         class ToolMessage:
             def __init__(self):
                 self.content = "Tool result"
+                self.type = "tool"
                 self.tool_calls = [
-                    {
-                        "id": "call_123",
-                        "name": "test_tool",
-                        "args": {"param": "value"}
-                    }
+                    ToolCall("call_123", "test_tool", {"param": "value"})
                 ]
                 self.invalid_tool_calls = None
                 self.response_metadata = None
                 self.usage = None
                 self.finish_reason = None
                 self.tool_call_id = "call_123"
+                self.status = "completed"
 
         ai_message = AIMessage()
         ai_message.__class__.__name__ = "AIMessage"
         tool_message = ToolMessage()
         tool_message.__class__.__name__ = "ToolMessage"
 
-        result = convert_messages_to_output(
+        result = serialize_messages(
             [ai_message, tool_message], "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
         )
         assert len(result) == 2
@@ -277,12 +280,13 @@ class TestMessageSerializer:
         assert result[1].content[0].text == "Tool result"
         assert result[1].tool_call_id == "call_123"
 
-    def test_convert_messages_to_output_multiple(self):
-        """Test converting multiple messages to output format."""
+    def test_serialize_messages_multiple(self):
+        """Test serializing multiple messages to output format."""
 
         class HumanMessage:
             def __init__(self):
                 self.content = "Hello"
+                self.type = "human"
                 self.tool_calls = None
                 self.invalid_tool_calls = None
                 self.response_metadata = None
@@ -293,6 +297,7 @@ class TestMessageSerializer:
         class AIMessage:
             def __init__(self):
                 self.content = "Hi there"
+                self.type = "ai"
                 self.tool_calls = None
                 self.invalid_tool_calls = None
                 self.response_metadata = None
@@ -306,7 +311,7 @@ class TestMessageSerializer:
         ai_message = AIMessage()
         ai_message.__class__.__name__ = "AIMessage"
 
-        result = convert_messages_to_output(
+        result = serialize_messages(
             [human_message, ai_message], "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
         )
         assert len(result) == 2
@@ -355,6 +360,52 @@ class TestMessageSerializer:
 
         result = extract_usage_from_streaming_chunks([])
         assert result == {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+
+    def test_serialize_error_response(self):
+        """Test serializing error response to output format."""
+        from nalai.server.json_serializer import serialize_error_response
+
+        # Create a test exception
+        test_error = Exception("Test error message")
+        run_id = "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+        conversation_id = "conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+        previous_response_id = "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+
+        result = serialize_error_response(
+            error=test_error,
+            run_id=run_id,
+            conversation_id=conversation_id,
+            previous_response_id=previous_response_id,
+        )
+
+        # Verify the response structure
+        assert result.id == run_id
+        assert result.conversation_id == conversation_id
+        assert result.previous_response_id == previous_response_id
+        assert result.status == "error"
+        assert result.interrupts is None
+        assert result.metadata is not None
+        assert result.metadata.error == "Test error message"
+
+        # Verify the output message
+        assert len(result.output) == 1
+        output_message = result.output[0]
+        assert output_message.id == f"msg_{run_id.replace('run_', '')}"
+        assert output_message.role == "assistant"
+        assert output_message.content[0].text == "Error: Test error message"
+        assert output_message.finish_reason == "stop"
+        assert output_message.usage == {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+
+        # Verify usage
+        assert result.usage == {
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,

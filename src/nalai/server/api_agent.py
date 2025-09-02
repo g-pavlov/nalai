@@ -5,7 +5,6 @@ This module contains the FastAPI route handlers for agent message exchange.
 """
 
 import logging
-from datetime import UTC, datetime
 
 from fastapi import Request
 
@@ -24,13 +23,12 @@ from ..server.schemas.messages import (
     Interrupt,
     MessageRequest,
     MessageResponse,
-    ResponseMetadata,
 )
 from ..utils.id_generator import generate_run_id
 from .api_conversations import SSEStreamingResponse, handle_agent_errors
-from .message_serializer import (
-    convert_messages_to_output,
-    extract_usage_from_core_messages,
+from .json_serializer import (
+    serialize_error_response,
+    serialize_message_response,
 )
 from .runtime_config import create_runtime_config
 from .sse_serializer import (
@@ -282,9 +280,6 @@ async def _handle_json_response(
             messages, conversation_id, agent_config, previous_response_id
         )
 
-        # Get conversation_id from agent response (for new conversations)
-        actual_conversation_id = conversation_info.conversation_id
-
         # Check for interrupts in the conversation_info
         status = "completed"
         interrupts_list = None
@@ -320,22 +315,15 @@ async def _handle_json_response(
                 interrupts_list = interrupt_infos
             status = "interrupted"
 
-        # Create response output with run-scoped IDs
-        output_messages = convert_messages_to_output(result_messages, run_id)
-
-        response_data = {
-            "id": run_id,  # Use run_id as the response ID
-            "conversation_id": actual_conversation_id,
-            "previous_response_id": previous_response_id,
-            "output": output_messages,
-            "created_at": datetime.now(UTC).isoformat(),
-            "status": status,
-            "interrupts": interrupts_list if interrupts_list else None,
-            "metadata": None,
-            "usage": extract_usage_from_core_messages(result_messages),
-        }
-
-        return MessageResponse(**response_data)
+        # Create response using the new serialization function
+        return serialize_message_response(
+            messages=result_messages,
+            run_id=run_id,
+            conversation_info=conversation_info,
+            previous_response_id=previous_response_id,
+            status=status,
+            interrupts_list=interrupts_list,
+        )
 
     except (
         AgentValidationError,
@@ -348,32 +336,14 @@ async def _handle_json_response(
         raise
     except Exception as e:
         logger.error(f"Unexpected agent response error: {e}")
-        # Create error response for unexpected errors
+        # Create error response using the new serialization function
         error_run_id = generate_run_id()
-        # Create a placeholder error message to satisfy the schema requirement
-        error_message = {
-            "id": f"msg_{error_run_id.replace('run_', '')}",
-            "role": "assistant",
-            "content": [{"type": "text", "text": f"Error: {str(e)}"}],
-            "finish_reason": "stop",
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-        }
-
-        response_data = {
-            "id": error_run_id,  # Use run_id as the response ID
-            "conversation_id": conversation_id,
-            "previous_response_id": previous_response_id,
-            "output": [error_message],
-            "created_at": datetime.now(UTC).isoformat(),
-            "status": "error",
-            "interrupts": None,
-            "metadata": ResponseMetadata(error=str(e)),
-            "usage": extract_usage_from_core_messages(
-                []
-            ),  # Empty usage for error responses
-        }
-
-        return MessageResponse(**response_data)
+        return serialize_error_response(
+            error=e,
+            run_id=error_run_id,
+            conversation_id=conversation_id,
+            previous_response_id=previous_response_id,
+        )
 
 
 async def _handle_resume_json_response(
@@ -393,20 +363,15 @@ async def _handle_resume_json_response(
             resume_decision, conversation_id, agent_config
         )
 
-        # Create response output with run-scoped IDs
-        response_data = {
-            "id": run_id,  # Use run_id as the response ID
-            "conversation_id": conversation_info.conversation_id,
-            "previous_response_id": None,  # Resume responses don't branch from previous responses
-            "output": convert_messages_to_output(result_messages, run_id),
-            "created_at": datetime.now(UTC).isoformat(),
-            "status": "completed",
-            "interrupts": None,
-            "metadata": None,
-            "usage": extract_usage_from_core_messages(result_messages),
-        }
-
-        return MessageResponse(**response_data)
+        # Create response using the new serialization function
+        return serialize_message_response(
+            messages=result_messages,
+            run_id=run_id,
+            conversation_info=conversation_info,
+            previous_response_id=None,  # Resume responses don't branch from previous responses
+            status="completed",
+            interrupts_list=None,
+        )
 
     except (
         AgentValidationError,
@@ -419,32 +384,14 @@ async def _handle_resume_json_response(
         raise
     except Exception as e:
         logger.error(f"Unexpected agent resume response error: {e}")
-        # Create error response for unexpected errors
+        # Create error response using the new serialization function
         error_run_id = generate_run_id()
-        # Create a placeholder error message to satisfy the schema requirement
-        error_message = {
-            "id": f"msg_{error_run_id.replace('run_', '')}",
-            "role": "assistant",
-            "content": [{"type": "text", "text": f"Error: {str(e)}"}],
-            "finish_reason": "stop",
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-        }
-
-        response_data = {
-            "id": error_run_id,  # Use run_id as the response ID
-            "conversation_id": conversation_id,
-            "previous_response_id": None,  # Resume error responses don't branch from previous responses
-            "output": [error_message],
-            "created_at": datetime.now(UTC).isoformat(),
-            "status": "error",
-            "interrupts": None,
-            "metadata": ResponseMetadata(error=str(e)),
-            "usage": extract_usage_from_core_messages(
-                []
-            ),  # Empty usage for error responses
-        }
-
-        return MessageResponse(**response_data)
+        return serialize_error_response(
+            error=e,
+            run_id=error_run_id,
+            conversation_id=conversation_id,
+            previous_response_id=None,  # Resume error responses don't branch from previous responses
+        )
 
 
 async def _handle_resume_streaming_response(

@@ -6,19 +6,19 @@ that complies with the schema defined in messages.py.
 """
 
 import logging
-from typing import TYPE_CHECKING
+from datetime import UTC, datetime
 
-from langchain_core.messages import BaseMessage
-
+from ..core.agent import ConversationInfo, Message
+from .schemas.conversations import LoadConversationResponse
 from .schemas.messages import (
     AssistantOutputMessage,
+    Interrupt,
+    MessageResponse,
     OutputMessage,
+    ResponseMetadata,
     TextContent,
     ToolOutputMessage,
 )
-
-if TYPE_CHECKING:
-    from ..core.agent import Message
 
 logger = logging.getLogger("nalai")
 
@@ -63,6 +63,7 @@ def serialize_for_json_response(
     # Create appropriate output message based on type
     if core_message.type == "human":
         from .schemas.messages import HumanOutputMessage
+
         return HumanOutputMessage(
             id=message_id,
             content=content_blocks,
@@ -82,7 +83,7 @@ def serialize_for_json_response(
         # Tool messages have tool_calls populated with execution details
         if not core_message.tool_calls:
             raise ValueError(f"Tool message {core_message.id} has no tool_calls data")
-            
+
         # Get the first (and should be only) tool call
         tool_call = core_message.tool_calls[0]
         tool_name = tool_call.name
@@ -125,39 +126,6 @@ def serialize_messages(
     return response_messages
 
 
-def convert_messages_to_output(
-    messages: list["BaseMessage | Message"], run_id: str
-) -> list[OutputMessage]:
-    """
-    Convert messages to output format for JSON responses.
-
-    This function transforms either LangChain messages or core Message models
-    to the output format expected by the MessageResponse schema.
-
-    Args:
-        messages: List of either LangChain messages or core Message models
-        run_id: Run ID to scope AI and tool messages in this response
-
-    Returns:
-        List of OutputMessage objects for API responses
-    """
-    # Import here to avoid circular imports
-    from ..core.lc_transformers import transform_message
-
-    # Transform to core models if needed
-    core_messages = []
-    for message in messages:
-        if hasattr(message, "type") and message.type:  # Core Message model
-            core_messages.append(message)
-        else:
-            # LangChain message - transform to core model with run_id
-            core_message = transform_message(message, run_id)
-            core_messages.append(core_message)
-
-    # Serialize core models to API response format
-    return serialize_messages(core_messages, run_id)
-
-
 def extract_usage_from_core_messages(messages: list["Message"]) -> dict[str, int]:
     """
     Extract and aggregate usage information from core message models.
@@ -184,3 +152,84 @@ def extract_usage_from_core_messages(messages: list["Message"]) -> dict[str, int
         "completion_tokens": total_completion_tokens,
         "total_tokens": total_tokens,
     }
+
+
+def serialize_conversation(
+    conversation_info: ConversationInfo,
+    messages: list[Message],
+) -> LoadConversationResponse:
+    """Serialize conversation to output format for JSON responses."""
+
+    conversation_id = conversation_info.conversation_id
+    if not conversation_id:
+        raise ValueError("Conversation ID is required")
+
+    output_messages = serialize_messages(messages, conversation_id)
+
+    return LoadConversationResponse(
+        conversation_id=conversation_info.conversation_id,
+        messages=output_messages,
+        created_at=conversation_info.created_at,
+        last_updated=conversation_info.last_accessed,
+        status=conversation_info.status,
+    )
+
+
+def serialize_message_response(
+    messages: list[Message],
+    run_id: str,
+    conversation_info: ConversationInfo,
+    previous_response_id: str | None,
+    status: str,
+    interrupts_list: list[Interrupt] | None,
+) -> MessageResponse:
+    """Serialize message response to output format for JSON responses."""
+
+    # Create response output with run-scoped IDs
+    output_messages = serialize_messages(messages, run_id)
+
+    response_data = {
+        "id": run_id,
+        "conversation_id": conversation_info.conversation_id,
+        "previous_response_id": previous_response_id,
+        "output": output_messages,
+        "created_at": datetime.now(UTC).isoformat(),
+        "status": status,
+        "interrupts": interrupts_list if interrupts_list else None,
+        "metadata": None,
+        "usage": extract_usage_from_core_messages(messages),
+    }
+
+    return MessageResponse(**response_data)
+
+
+def serialize_error_response(
+    error: Exception,
+    run_id: str,
+    conversation_id: str | None,
+    previous_response_id: str | None,
+) -> MessageResponse:
+    """Serialize error response to output format for JSON responses."""
+
+    # Create a placeholder error message to satisfy the schema requirement
+    error_message = {
+        "id": f"msg_{run_id.replace('run_', '')}",
+        "role": "assistant",
+        "content": [{"type": "text", "text": f"Error: {str(error)}"}],
+        "finish_reason": "stop",
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
+
+    response_data = {
+        "id": run_id,
+        "conversation_id": conversation_id,
+        "previous_response_id": previous_response_id,
+        "output": [error_message],
+        "created_at": datetime.now(UTC).isoformat(),
+        "status": "error",
+        "interrupts": None,
+        "metadata": ResponseMetadata(error=str(error)),
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
+
+    return MessageResponse(**response_data)

@@ -71,7 +71,7 @@ class Message(BaseModel):
     tool_call_id: str | None = None  # For tool messages
     status: str | None = Field(
         default=None,
-        description="The status the an executed tool call for tool messages"
+        description="The status the an executed tool call for tool messages",
     )
 
     @field_validator("type")
