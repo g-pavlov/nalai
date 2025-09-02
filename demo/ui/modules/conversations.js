@@ -11,6 +11,8 @@ import { buildApiUrl, API_CONFIG } from './config.js';
 import { getRequestHeaders } from './settings.js';
 import { setCurrentThreadId } from './state.js';
 import { addMessage } from './messages.js';
+import { ResponseStateMachine } from './responses.js';
+import { addToolCallsIndicatorToMessage } from './toolCalls.js';
 
 export async function loadConversation(conversationId, showUserErrors = true) {
     try {
@@ -177,8 +179,8 @@ async function loadConversationMessages(conversation) {
                     // Combine the initial AI response with the final AI response if present
                     const combinedContent = finalAiResponse ? `${textContent}\n\n${finalAiResponse}` : textContent;
                     
-                    // Add the compressed AI response
-                    await addMessage(combinedContent, messageType, {
+                    // Create proper assistant message with ResponseStateMachine for markdown rendering
+                    await createLoadedAssistantMessage(combinedContent, {
                         name: message.name,
                         tool_call_id: message.tool_call_id,
                         toolCalls: compressedToolCalls
@@ -188,7 +190,7 @@ async function loadConversationMessages(conversation) {
                     i = finalIndex;
                 } else {
                     // Regular AI message without tool calls or tool responses
-                    await addMessage(textContent, messageType, {
+                    await createLoadedAssistantMessage(textContent, {
                         name: message.name,
                         tool_call_id: message.tool_call_id,
                         toolCalls: toolCalls
@@ -215,6 +217,57 @@ async function loadConversationMessages(conversation) {
     } catch (error) {
         Logger.error('Failed to load conversation messages', { error });
         throw error;
+    }
+}
+
+/**
+ * Create an assistant message element for loaded conversations with proper markdown rendering
+ * @param {string} content - The message content to render
+ * @param {Object} options - Additional options for the message
+ */
+async function createLoadedAssistantMessage(content, options = {}) {
+    try {
+        // Create the message container
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant-message fade-in';
+        
+        // Add unique message ID for state machine tracking
+        messageDiv.dataset.messageId = `msg_loaded_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Initialize response state machine for this message
+        const stateMachine = new ResponseStateMachine(messageDiv);
+        messageDiv.stateMachine = stateMachine;
+        
+        // Add tool calls indicator if tool calls are provided
+        if (options.toolCalls && options.toolCalls.length > 0) {
+            addToolCallsIndicatorToMessage(
+                messageDiv, 
+                options.toolCalls.length, 
+                options.toolCalls
+            );
+        }
+        
+        // Add the message to the container
+        DOM.chatContainer.appendChild(messageDiv);
+        
+        // Render the content with markdown
+        if (content && content.trim()) {
+            // Use the state machine to render the content with markdown
+            stateMachine.updateContentProgressive(content.trim());
+        }
+        
+        // Scroll to show the new message
+        DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+        
+        Logger.info('Created loaded assistant message with markdown rendering', {
+            messageId: messageDiv.dataset.messageId,
+            contentLength: content.length
+        });
+        
+    } catch (error) {
+        Logger.error('Failed to create loaded assistant message', { error, content });
+        // Fallback to simple text if markdown rendering fails
+        await addMessage(content, 'assistant', options);
     }
 }
 
