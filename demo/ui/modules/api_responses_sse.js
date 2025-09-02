@@ -171,20 +171,4 @@ function parseSSEFields(line) {
     return fields;
 }
 
-/**
- * Route SSE events to state machine
- * @param {Object} eventData - The parsed event data
- */
-export async function routeEventToStateMachine(eventData) {
-    const lastAssistantMessage = document.querySelector('.assistant-message:last-child');
-    
-    if (lastAssistantMessage && lastAssistantMessage.stateMachine && eventData.event) {
-        lastAssistantMessage.stateMachine.handleEvent(eventData.event, eventData);
-    } else {
-        Logger.warn('No state machine found for SSE event processing', { 
-            hasMessage: !!lastAssistantMessage,
-            hasStateMachine: !!(lastAssistantMessage && lastAssistantMessage.stateMachine),
-            hasEvent: !!eventData.event
-        });
-    }
-}
+

@@ -404,6 +404,7 @@ input:checked + .slider:before {
     border-radius: 18px;
     max-width: 70%;
     word-wrap: break-word;
+    overflow-wrap: break-word;
     line-height: 1.4;
     position: relative;
     clear: both;
@@ -426,8 +427,11 @@ input:checked + .slider:before {
     margin-right: auto;
     border-bottom-left-radius: 4px;
     padding: 12px;
-    overflow: hidden;
+    overflow: visible;
     box-shadow: var(--shadow-sm);
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 70%;
 }
 
 /* Response Element Structure Styles */
@@ -438,11 +442,6 @@ input:checked + .slider:before {
     display: none; /* Hidden by default */
 }
 
-.response-content {
-    margin-bottom: 8px;
-    transition: var(--transition);
-    display: block; /* Visible by default */
-}
 
 .response-progress {
     border: none;
@@ -452,6 +451,7 @@ input:checked + .slider:before {
 }
 
 .response-content {
+    display: block; /* Visible by default */
     border: none;
     border-radius: 0;
     overflow: visible;
@@ -459,6 +459,22 @@ input:checked + .slider:before {
     padding: 0;
     line-height: 1.6;
     color: var(--text-primary);
+    margin-bottom: 8px;
+    transition: var(--transition);
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+    word-break: break-word;
+    hyphens: auto;
+}
+
+.response-content.error-content {
+    color: var(--error-color);
+    font-weight: 500;
+    padding: 8px;
+    background: rgba(220, 38, 38, 0.1);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--error-color);
 }
 
 .response-tools {
@@ -936,18 +952,13 @@ input:checked + .slider:before {
     border-left: 4px solid var(--warning-color);
 }
 
-/* Markdown Content Styles */
+/* Markdown Content Styles - Tables */
 .assistant-message table {
     border-collapse: collapse;
-    width: 100%;
     margin: 10px 0;
-}
-
-.assistant-message th,
-.assistant-message td {
-    border: 1px solid var(--border-light);
-    padding: 8px 12px;
-    text-align: left;
+    white-space: nowrap;
+    overflow-x: auto;
+    display: block;
 }
 
 .assistant-message th {
@@ -975,6 +986,133 @@ input:checked + .slider:before {
     border-radius: var(--radius-md);
     overflow-x: auto;
     border: 1px solid var(--border-light);
+    white-space: pre;
+}
+
+/* Table wrapper for horizontal scrolling */
+.assistant-message .table-wrapper {
+    overflow-x: auto;
+    margin: 10px 0;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-light);
+}
+
+/* Add scrollbar styling for better UX */
+.assistant-message .table-wrapper::-webkit-scrollbar,
+.assistant-message pre::-webkit-scrollbar {
+    height: 8px;
+}
+
+.assistant-message .table-wrapper::-webkit-scrollbar-track,
+.assistant-message pre::-webkit-scrollbar-track {
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+}
+
+.assistant-message .table-wrapper::-webkit-scrollbar-thumb,
+.assistant-message pre::-webkit-scrollbar-thumb {
+    background: var(--border-dark);
+    border-radius: 4px;
+}
+
+.assistant-message .table-wrapper::-webkit-scrollbar-thumb:hover,
+.assistant-message pre::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
+.assistant-message .table-wrapper table {
+    margin: 0;
+    border-radius: 0;
+    border-collapse: collapse;
+}
+
+/* Ensure table content is fully visible within wrapper */
+.assistant-message .table-wrapper table th,
+.assistant-message .table-wrapper table td {
+    padding: 8px 12px;
+    border: 1px solid var(--border-light);
+    white-space: nowrap;
+}
+
+/* Ensure tables without wrapper also scroll horizontally */
+.assistant-message table:not(.table-wrapper table) {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+/* Handle extremely wide tables */
+.assistant-message table[style*="width"] {
+    width: auto !important;
+}
+
+/* Force horizontal scrolling for code blocks */
+.assistant-message pre[style*="width"] {
+    width: auto !important;
+}
+
+/* Ensure table wrapper can handle any table width */
+.assistant-message .table-wrapper {
+    overflow-x: auto;
+}
+
+/* Ensure table cells maintain their structure */
+.assistant-message th,
+.assistant-message td {
+    border: 1px solid var(--border-light);
+    padding: 8px 12px;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.assistant-message th {
+    background: var(--bg-tertiary);
+    font-weight: 600;
+}
+
+/* Prevent content wrapping in code blocks and tables */
+.assistant-message pre,
+.assistant-message table {
+    white-space: pre;
+}
+
+/* Ensure all content within messages respects container boundaries */
+.assistant-message img,
+.assistant-message video,
+.assistant-message iframe {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Handle any remaining overflow issues */
+.assistant-message {
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* Additional word wrapping for specific elements */
+.assistant-message blockquote {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+}
+
+.assistant-message h1,
+.assistant-message h2,
+.assistant-message h3,
+.assistant-message h4,
+.assistant-message h5,
+.assistant-message h6 {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+}
+
+/* Ensure markdown content respects container boundaries */
+.assistant-message .markdown-content {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
 }
 
 .assistant-message code {
@@ -983,6 +1121,56 @@ input:checked + .slider:before {
     border-radius: var(--radius-sm);
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
     font-size: 0.9em;
+    word-break: break-all;
+    white-space: pre-wrap;
+}
+
+/* Code blocks (pre elements) should scroll horizontally when needed */
+.assistant-message pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    word-break: normal;
+    white-space: pre;
+}
+
+/* Ensure long text content wraps properly */
+.assistant-message p {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+}
+
+/* Ensure lists wrap properly */
+.assistant-message ul,
+.assistant-message ol {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+}
+
+/* Handle very long URLs and other unbreakable content */
+.assistant-message a {
+    word-break: break-all;
+    overflow-wrap: break-word;
+}
+
+/* Ensure all text content wraps properly */
+.assistant-message * {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* Force word breaking for very long content */
+.assistant-message {
+    word-break: break-word;
+    hyphens: auto;
+}
+
+/* Ensure inline code wraps properly */
+.assistant-message code:not(pre code) {
+    white-space: normal;
+    word-break: break-all;
 }
 
 /* Tool Message Styles */
@@ -1591,6 +1779,45 @@ input:checked + .slider:before {
     opacity: 0.7;
     margin-top: 8px;
     margin-left: 8px;
+}
+
+/* Tool Call Status Badge Styles - Consistent with ErrorHandler */
+.tool-call-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-light);
+}
+
+.tool-call-status-badge.confirmed,
+.tool-call-status-badge.completed,
+.tool-call-status-badge.success,
+.tool-call-status-badge.pending,
+.tool-call-status-badge.building,
+.tool-call-status-badge.ready {
+    background: #d1fae5;
+    color: var(--success-color);
+    border-color: #10b981;
+}
+
+.tool-call-status-badge.error,
+.tool-call-status-badge.rejected {
+    background: #fef2f2;
+    color: #dc2626;
+    border-color: #dc2626;
+}
+
+.status-text {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
 }
 
 .call-model-response {

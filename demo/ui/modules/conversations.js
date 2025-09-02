@@ -150,13 +150,26 @@ async function loadConversationMessages(conversation) {
                     // Create a compressed response with tool calls and their results
                     const compressedToolCalls = toolCalls.map(tc => {
                         const correspondingToolMessage = followingToolMessages.find(tm => tm.tool_call_id === tc.id);
+                        let status = 'pending';
+                        let content = null;
+                        
+                        if (correspondingToolMessage) {
+                            content = extractTextContent(correspondingToolMessage.content);
+                            // Determine status based on content
+                            if (content.toLowerCase().includes('user rejected') || content.toLowerCase().includes('rejected')) {
+                                status = 'rejected';
+                            } else {
+                                status = 'completed';
+                            }
+                        }
+                        
                         return {
                             id: tc.id,
                             name: tc.name,
                             args: tc.args || {},
                             tool_call_id: tc.id,
-                            content: correspondingToolMessage ? extractTextContent(correspondingToolMessage.content) : null,
-                            status: correspondingToolMessage ? 'completed' : 'pending',
+                            content: content,
+                            status: status,
                             source: 'conversation_load'
                         };
                     });

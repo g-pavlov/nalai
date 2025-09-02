@@ -11,7 +11,9 @@ import { buildApiUrl, API_CONFIG } from './config.js';
 import { getCurrentThreadId } from './state.js';
 
 import { cleanupMessageProcessing } from './messages.js';
-import { parseSSEStream, routeEventToStateMachine } from './eventParser.js';
+import { parseSSEStream } from './api_responses_sse.js';
+import { routeEventToStateMachine } from './responses.js';
+import { processCompleteResponseWithStateMachine } from './api_responses_json.js';
 
 export async function handleInterrupt(responseType, args = null) {
     if (!window.currentInterrupt) {
@@ -31,121 +33,22 @@ export async function handleInterrupt(responseType, args = null) {
     // Disable all action buttons and show progress (only for non-edit cases)
     disableInterruptActions();
     
-    // Capture edited tool call arguments if this is an edit submission
-    if (responseType === 'edit' && args && window.currentInterrupt?.value?.action_request?.action) {
-        const actionRequest = window.currentInterrupt.value.action_request;
-        const toolCallId = window.currentInterrupt.value.tool_call_id;
-        Logger.info('Capturing edited tool call arguments', { 
-            toolName: actionRequest.action, 
-            toolCallId: toolCallId,
-            originalArgs: actionRequest.args, 
-            editedArgs: args 
-        });
-        
-        // Tool call tracking is now handled by the state machine
-        Logger.info('Tool call edit captured by state machine');
-    }
+    // Update tool call status in state machine
+    updateToolCallStatusInStateMachine(responseType, args);
     
-    // Tool call status updates are now handled by the state machine
-    Logger.info('Tool call status update handled by state machine');
-
+    // Capture edited tool call arguments if this is an edit submission
+    captureEditedToolCallArguments(responseType, args);
+    
     try {
-        Logger.info('Current thread ID format', { currentThreadId: getCurrentThreadId() });
-        Logger.info('Current interrupt structure', { 
-            currentInterrupt: window.currentInterrupt,
-            interruptValue: window.currentInterrupt?.value,
-            actionRequest: window.currentInterrupt?.value?.action_request
-        });
+        // Validate conversation context
+        validateConversationContext();
         
-        // Use currentThreadId directly since it's already in the correct format
-        const currentThreadId = getCurrentThreadId();
-        Logger.info('Checking conversation ID for resume request', {
-            currentThreadId: currentThreadId,
-            hasThreadId: !!currentThreadId,
-            threadIdType: typeof currentThreadId
-        });
+        // Create tool decision payload
+        const toolDecision = createToolDecisionPayload(responseType, args);
         
-        if (!currentThreadId) {
-            throw new Error('No conversation ID available for resume request');
-        }
+        // Send resume request
+        await sendResumeRequest(toolDecision, responseType, args);
         
-        // Create the tool decision input based on the response type
-        let toolDecision;
-        
-        if (responseType === 'edit') {
-            toolDecision = {
-                type: 'tool_decision',
-                tool_call_id: window.currentInterrupt.value.tool_call_id || 'unknown',
-                decision: 'edit',
-                args: args
-            };
-        } else if (responseType === 'accept') {
-            toolDecision = {
-                type: 'tool_decision',
-                tool_call_id: window.currentInterrupt.value.tool_call_id || 'unknown',
-                decision: 'accept'
-            };
-        } else if (responseType === 'reject') {
-            toolDecision = {
-                type: 'tool_decision',
-                tool_call_id: window.currentInterrupt.value.tool_call_id || 'unknown',
-                decision: 'reject',
-                message: args || 'User rejected the tool call'
-            };
-        } else {
-            // Handle feedback case if needed
-            toolDecision = {
-                type: 'tool_decision',
-                tool_call_id: window.currentInterrupt.value.tool_call_id || 'unknown',
-                decision: 'feedback',
-                message: args || 'User feedback'
-            };
-        }
-
-        const resumePayload = {
-            conversation_id: getCurrentThreadId(),
-            input: [toolDecision],
-            stream: 'full'
-        };
-
-        Logger.info('Sending resume payload', { resumePayload });
-
-        // Log the full request details for debugging
-        Logger.info('Resume request details', {
-            url: buildApiUrl(API_CONFIG.URL_TEMPLATES.MESSAGES),
-            method: 'POST',
-            payload: resumePayload,
-            responseType,
-            args
-        });
-
-        const requestUrl = buildApiUrl(API_CONFIG.URL_TEMPLATES.MESSAGES);
-        const requestOptions = {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'text/event-stream',
-                'Authorization': 'Bearer dev-token'
-            },
-            body: JSON.stringify(resumePayload)
-        };
-        
-        Logger.info('About to send resume request', { 
-            url: requestUrl, 
-            options: requestOptions,
-            headers: requestOptions.headers 
-        });
-        
-        const response = await NetworkManager.fetchWithRetry(requestUrl, requestOptions);
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        await handleResumeStream(response);
-        
-        // Success message is now handled in handleResumeStream after completion
-
     } catch (error) {
         Logger.error('Interrupt handling caught error', { 
             error, 
@@ -160,6 +63,178 @@ export async function handleInterrupt(responseType, args = null) {
     }
 }
 
+/**
+ * Update tool call status in state machine based on user decision
+ */
+function updateToolCallStatusInStateMachine(responseType, args) {
+    const toolCallId = window.currentInterrupt.value.tool_call_id;
+    if (!toolCallId || toolCallId === 'unknown') {
+        return;
+    }
+    
+    // Find the state machine for this message
+    const assistantMessage = document.querySelector('.assistant-message:last-child');
+    if (!assistantMessage?.stateMachine) {
+        Logger.warn('No state machine found for interrupt resume status update');
+        return;
+    }
+    
+    // Map responseType to decision for state machine
+    let decision = responseType;
+    if (responseType === 'reject') {
+        decision = 'ignore'; // Map reject to ignore for consistency
+    }
+    
+    // Update tool call status in state machine
+    assistantMessage.stateMachine.handleInterruptResume(toolCallId, decision, args);
+    Logger.info('Updated tool call status in state machine', {
+        toolCallId,
+        decision,
+        hasArgs: !!args
+    });
+}
+
+/**
+ * Capture edited tool call arguments if this is an edit submission
+ */
+function captureEditedToolCallArguments(responseType, args) {
+    if (responseType === 'edit' && args && window.currentInterrupt?.value?.action_request?.action) {
+        const actionRequest = window.currentInterrupt.value.action_request;
+        const toolCallId = window.currentInterrupt.value.tool_call_id;
+        
+        Logger.info('Capturing edited tool call arguments', { 
+            toolName: actionRequest.action, 
+            toolCallId: toolCallId,
+            originalArgs: actionRequest.args, 
+            editedArgs: args 
+        });
+    }
+}
+
+/**
+ * Validate conversation context before proceeding
+ */
+function validateConversationContext() {
+    Logger.info('Current thread ID format', { currentThreadId: getCurrentThreadId() });
+    Logger.info('Current interrupt structure', { 
+        currentInterrupt: window.currentInterrupt,
+        interruptValue: window.currentInterrupt?.value,
+        actionRequest: window.currentInterrupt?.value?.action_request
+    });
+    
+    const currentThreadId = getCurrentThreadId();
+    Logger.info('Checking conversation ID for resume request', {
+        currentThreadId: currentThreadId,
+        hasThreadId: !!currentThreadId,
+        threadIdType: typeof currentThreadId
+    });
+    
+    if (!currentThreadId) {
+        throw new Error('No conversation ID available for resume request');
+    }
+}
+
+/**
+ * Create tool decision payload based on response type
+ */
+function createToolDecisionPayload(responseType, args) {
+    const toolCallId = window.currentInterrupt.value.tool_call_id || 'unknown';
+    
+    switch (responseType) {
+        case 'edit':
+            return {
+                type: 'tool_decision',
+                tool_call_id: toolCallId,
+                decision: 'edit',
+                args: args
+            };
+        case 'accept':
+            return {
+                type: 'tool_decision',
+                tool_call_id: toolCallId,
+                decision: 'accept'
+            };
+        case 'reject':
+            return {
+                type: 'tool_decision',
+                tool_call_id: toolCallId,
+                decision: 'reject',
+                message: args || 'User rejected the tool call'
+            };
+        default:
+            return {
+                type: 'tool_decision',
+                tool_call_id: toolCallId,
+                decision: 'feedback',
+                message: args || 'User feedback'
+            };
+    }
+}
+
+/**
+ * Send resume request to the API
+ */
+async function sendResumeRequest(toolDecision, responseType, args) {
+    // Get current streaming preference from settings
+    const isStreamingEnabled = DOM.streamingToggle.checked;
+    
+    const resumePayload = {
+        conversation_id: getCurrentThreadId(),
+        input: [toolDecision],
+        stream: isStreamingEnabled ? 'full' : 'off'
+    };
+
+    Logger.info('Sending resume payload', { resumePayload });
+
+    // Log the full request details for debugging
+    Logger.info('Resume request details', {
+        url: buildApiUrl(API_CONFIG.URL_TEMPLATES.MESSAGES),
+        method: 'POST',
+        payload: resumePayload,
+        responseType,
+        args
+    });
+
+    const requestUrl = buildApiUrl(API_CONFIG.URL_TEMPLATES.MESSAGES);
+    const requestOptions = createResumeRequestOptions(resumePayload, isStreamingEnabled);
+    
+    Logger.info('About to send resume request', { 
+        url: requestUrl, 
+        options: requestOptions,
+        headers: requestOptions.headers 
+    });
+    
+    const response = await NetworkManager.fetchWithRetry(requestUrl, requestOptions);
+
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    if (isStreamingEnabled) {
+        await handleResumeStream(response);
+    } else {
+        await handleResumeNonStreaming(response);
+    }
+}
+
+/**
+ * Create request options for resume request
+ */
+function createResumeRequestOptions(resumePayload, isStreamingEnabled) {
+    // Set Accept header based on streaming preference
+    const acceptHeader = isStreamingEnabled ? 'text/event-stream' : 'application/json';
+    
+    return {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': acceptHeader,
+            'Authorization': 'Bearer dev-token'
+        },
+        body: JSON.stringify(resumePayload)
+    };
+}
+
 async function handleResumeStream(response) {
     Logger.info('Starting resume stream processing', { responseStatus: response.status });
 
@@ -170,6 +245,34 @@ async function handleResumeStream(response) {
         handleResumeStreamComplete,
         handleResumeStreamError
     );
+}
+
+async function handleResumeNonStreaming(response) {
+    Logger.info('Starting resume non-streaming processing', { responseStatus: response.status });
+    
+    // Find the existing assistant message element that contains the interrupt dialog
+    const existingAssistantMessage = document.querySelector('.assistant-message:last-child');
+    if (!existingAssistantMessage) {
+        Logger.error('No existing assistant message found for resume');
+        return;
+    }
+    
+    Logger.info('Reusing existing assistant message for resume', { 
+        messageId: existingAssistantMessage.dataset.messageId 
+    });
+    
+    // Clear the interrupt dialog content to make room for the resume response
+    const contentElement = existingAssistantMessage.querySelector('.response-content');
+    if (contentElement) {
+        contentElement.innerHTML = '';
+        Logger.info('Cleared interrupt dialog content for resume response');
+    }
+    
+    // Process the non-streaming response using the existing message element
+    await processCompleteResponseWithStateMachine(response, existingAssistantMessage);
+    
+    // Handle completion
+    handleResumeStreamComplete();
 }
 
 function handleResumeStreamComplete() {

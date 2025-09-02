@@ -6,10 +6,10 @@
 import { DOM } from './dom.js';
 import { Logger } from './logger.js';
 import { ErrorHandler } from './errorHandler.js';
-import { setCurrentThreadId, setProcessing, getProcessingStatus } from './state.js';
+import { setCurrentThreadId, setProcessing } from './state.js';
 import { addToolCallsIndicatorToMessage } from './toolCalls.js';
 
-import { ResponseStateMachine } from './responseStateMachine.js';
+import { ResponseStateMachine } from './responses.js';
 
 export function createAssistantMessageElement() {
             // Reset state for new message
@@ -48,36 +48,7 @@ export function createAssistantMessageElement() {
     return assistantMessageDiv;
 }
 
-export function updateMessageContent(element, content) {
-    // If no element is provided (for resume streams), find the content element in the last assistant message
-    if (!element) {
-        const lastAssistantMessage = DOM.chatContainer.querySelector('.assistant-message:last-child');
-        if (!lastAssistantMessage) {
-            Logger.warn('No assistant message element found for content update');
-            return;
-        }
-        element = lastAssistantMessage.querySelector('.response-content');
-        if (!element) {
-            Logger.warn('No response content container found for content update');
-            return;
-        }
-        Logger.info('Found response content container for resume stream update');
-    }
-    
-    Logger.info('Updating message content', { 
-        contentLength: content?.length || 0,
-        hasElement: !!element,
-        elementClass: element?.className 
-    });
-    
-    try {
-        element.innerHTML = marked.parse(content);
-        DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
-    } catch (error) {
-        ErrorHandler.handleParsingError(error, content, 'Markdown parsing');
-        element.textContent = content; // Fallback to plain text
-    }
-}
+
 
 export function showWelcomeMessage() {
     const welcomeMessage = 'Hello! I\'m nalAI. I can help you with API integration, data processing, and more. What would you like to work on?';

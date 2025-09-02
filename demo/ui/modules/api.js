@@ -13,7 +13,9 @@ import { Validator } from './validator.js';
 import { setupMessageProcessing, cleanupMessageProcessing, handleMessageError } from './messages.js';
 import { createAssistantMessageElement } from './messages.js';
 import { DOM } from './dom.js';
-import { parseSSEStream, routeEventToStateMachine } from './eventParser.js';
+import { parseSSEStream } from './api_responses_sse.js';
+import { routeEventToStateMachine } from './responses.js';
+import { processCompleteResponseWithStateMachine } from './api_responses_json.js';
 
 
 export async function sendMessage() {
@@ -21,7 +23,7 @@ export async function sendMessage() {
         Logger.warn('Message already being processed', { isProcessing: getProcessingStatus() });
         return;
     }
-
+    
     const message = DOM.messageInput.value.trim();
     
     try {
@@ -62,6 +64,12 @@ async function sendApiRequest(message, config) {
     const url = buildApiUrl(API_CONFIG.URL_TEMPLATES.MESSAGES);
     
     const requestPayload = buildRequestPayload(message, config);
+    // Attach conversation_id at send time to keep settings free of conversation concerns
+    const threadId = getCurrentThreadId();
+    if (threadId) {
+        requestPayload.conversation_id = threadId;
+        Logger.info('Attached conversation_id at send time', { conversation_id: threadId });
+    }
     const headers = getRequestHeaders(config.isStreamingEnabled, config.isNoCacheEnabled);
     
     Logger.info('Sending API request', { 
@@ -148,7 +156,7 @@ async function processApiResponse(response, assistantMessageDiv, isStreamingEnab
         if (isStreamingEnabled) {
             await handleStreamingResponseWithStateMachine(response, assistantMessageDiv);
         } else {
-            await handleNonStreamingResponseWithStateMachine(response, assistantMessageDiv);
+            await processCompleteResponseWithStateMachine(response, assistantMessageDiv);
         }
 
     } catch (error) {
@@ -179,27 +187,6 @@ async function handleStreamingResponseWithStateMachine(response, assistantMessag
     );
 }
 
-async function handleNonStreamingResponseWithStateMachine(response, assistantMessageDiv) {
-    try {
-        const responseData = await response.json();
-        
-        Logger.info('Processing non-streaming response with state machine', {
-            hasStateMachine: !!assistantMessageDiv.stateMachine,
-            responseData: JSON.stringify(responseData).substring(0, 200) + '...'
-        });
-        
-        // For non-streaming responses, we can create a single content update
-        if (assistantMessageDiv.stateMachine && responseData.content) {
-            assistantMessageDiv.stateMachine.updateContentProgressive(responseData.content);
-        } else {
-            Logger.warn('No state machine or content found for non-streaming response');
-        }
-        
-    } catch (error) {
-        Logger.error('Error processing non-streaming response', { error });
-        throw error;
-    }
-}
 
 function handleThreadIdResponse(response, conversationIdFromBody = null) {
     // Try to get conversation ID from response header first (for backward compatibility)

@@ -13,6 +13,7 @@
 import { Logger } from './logger.js';
 import { createInterruptUI } from './interrupts.js';
 import { getCurrentThreadId, setCurrentThreadId } from './state.js';
+import { ErrorHandler } from './errorHandler.js';
 
 // Human readable labels for node names (hardcoded mapping as specified)
 const NODE_LABELS = {
@@ -31,6 +32,24 @@ const RESPONSE_ELEMENTS = {
     TOOLS: 'tools'
 };
 
+/**
+ * Route SSE events to state machine
+ * @param {Object} eventData - The parsed event data
+ */
+export async function routeEventToStateMachine(eventData) {
+    const lastAssistantMessage = document.querySelector('.assistant-message:last-child');
+    
+    if (lastAssistantMessage && lastAssistantMessage.stateMachine && eventData.event) {
+        lastAssistantMessage.stateMachine.handleEvent(eventData.event, eventData);
+    } else {
+        Logger.warn('No state machine found for SSE event processing', { 
+            hasMessage: !!lastAssistantMessage,
+            hasStateMachine: !!(lastAssistantMessage && lastAssistantMessage.stateMachine),
+            hasEvent: !!eventData.event
+        });
+    }
+}
+
 export class ResponseStateMachine {
     constructor(assistantMessageDiv) {
         this.assistantMessageDiv = assistantMessageDiv;
@@ -44,6 +63,9 @@ export class ResponseStateMachine {
         Logger.info('Response state machine initialized', { 
             messageId: assistantMessageDiv.dataset.messageId 
         });
+        
+        // Check initial content visibility and show fallback dots if needed
+        this.updateContentVisibility();
     }
 
     /**
@@ -144,6 +166,9 @@ export class ResponseStateMachine {
                 break;
             case 'response.completed':
                 this.handleCompletedEvent(eventData);
+                break;
+            case 'response.error':
+                this.handleErrorEvent(eventData);
                 break;
             default:
                 Logger.warn('❌ Unknown event type in state machine', { eventType });
@@ -323,21 +348,108 @@ export class ResponseStateMachine {
         
         const toolCallId = eventData.tool_call_id;
         const toolName = eventData.tool_name;
-        const status = eventData.status;
+        let status = eventData.status;
         const content = eventData.content;
         const args = eventData.args || {};
         
+        // Check if this tool call was part of an interrupt flow
+        const existingToolCall = this.toolCalls.get(toolCallId);
+        if (existingToolCall && existingToolCall.source === 'interrupt') {
+            // For interrupt-originated tool calls, only override with 'rejected' if that was the user decision
+            if (existingToolCall.status === 'rejected') {
+                status = 'rejected';
+                Logger.info('🔧 Using tracked interrupt rejected status', { 
+                    toolCallId, 
+                    trackedStatus: status,
+                    source: existingToolCall.source
+                });
+            }
+            // For all other cases (pending, confirmed), let the API status flow through
+        } 
+
+        
         // Update tool call with execution results
+        // Preserve original tool call data (name) and only update execution-specific fields
         this.updateToolCall(toolCallId, {
-            name: toolName,
             status: status,
             content: content,
-            args: args,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            args: args, // args may have changed due to interrupt decisions
+            source: 'response.tool' // Track the source of this status update
         });
         
         // Update tools display
         Logger.info('🔄 Updating tools display');
+        this.updateToolsDisplay();
+    }
+
+    /**
+     * Handle interrupt resume decision and update tool call status
+     * @param {string} toolCallId - The tool call ID being resumed
+     * @param {string} decision - The user's decision: 'accept', 'ignore', 'edit', 'respond'
+     * @param {any} args - Additional arguments for the decision
+     */
+    handleInterruptResume(toolCallId, decision, args = null) {
+        Logger.info('🔄 INTERRUPT RESUME DECISION', {
+            toolCallId,
+            decision,
+            hasArgs: !!args,
+            messageId: this.assistantMessageDiv.dataset.messageId
+        });
+
+        let status = null;
+        
+        // Map interrupt decision to tool call status
+        // Only set explicit status for decisions that don't result in tool execution
+        switch (decision) {
+            case 'accept':
+                // Let the API determine the final status when tool executes
+                break;
+            case 'ignore':
+                status = 'rejected'; // User explicitly rejected, override API
+                break;
+            case 'edit':
+                // Let the API determine the final status when tool executes
+                break;
+            case 'respond':
+                // Let the API determine the final status when tool executes
+                break;
+            default:
+                Logger.warn('Unknown interrupt decision', { decision, toolCallId });
+        }
+
+        // Get the existing tool call to preserve its data
+        const existingToolCall = this.toolCalls.get(toolCallId);
+        if (!existingToolCall) {
+            Logger.warn('Tool call not found for interrupt resume', { toolCallId, decision });
+            return;
+        }
+
+        // Update tool call status while preserving all existing data
+        const updateData = {
+            status: status || existingToolCall.status, // Preserve existing status if not explicitly set
+            confirmed: decision === 'accept' || decision === 'ignore' ? decision === 'accept' : undefined,
+            source: 'interrupt',
+            timestamp: new Date().toISOString()
+        };
+        
+        // Ensure we preserve the name and args from the original tool call
+        if (existingToolCall.name) {
+            updateData.name = existingToolCall.name;
+        }
+        if (existingToolCall.args) {
+            updateData.args = existingToolCall.args;
+        }
+        
+        this.updateToolCall(toolCallId, updateData);
+
+        // Update tools display
+        Logger.info('🔄 Updating tools display after interrupt resume', {
+            toolCallId,
+            decision,
+            preservedName: updateData.name,
+            preservedArgs: !!updateData.args
+        });
         this.updateToolsDisplay();
     }
 
@@ -358,6 +470,33 @@ export class ResponseStateMachine {
         
         // Transition to complete state
         this.transitionToState('complete');
+    }
+
+    /**
+     * Handle response.error event
+     */
+    handleErrorEvent(eventData) {
+        Logger.error('❌ ERROR EVENT', { 
+            currentState: this.currentState,
+            error: eventData.error,
+            messageId: this.assistantMessageDiv.dataset.messageId
+        });
+        
+        this.isComplete = true;
+        
+        // Hide progress and tools
+        this.hideProgress();
+        this.hideProgressAndTools();
+        
+        // Use ErrorHandler to show user-friendly error message
+        const errorMessage = eventData.error || 'An error occurred while processing your request';
+        ErrorHandler.showUserError(errorMessage, 'API Response');
+        
+        // Show error message in content as well
+        this.showErrorContent(errorMessage);
+        
+        // Transition to error state
+        this.transitionToState('error');
     }
 
     /**
@@ -476,17 +615,71 @@ export class ResponseStateMachine {
         const content = this.elements[RESPONSE_ELEMENTS.CONTENT];
         const hasContent = this.accumulatedContent && this.accumulatedContent.trim().length > 0;
         
+        // Check if progress indicator is visible
+        const progress = this.elements[RESPONSE_ELEMENTS.PROGRESS];
+        const hasProgress = progress && progress.style.display !== 'none';
+        
+        // Check if interrupt dialog is present
+        const hasInterrupt = this.assistantMessageDiv.querySelector('.interrupt-container');
+        
         if (hasContent) {
             content.style.display = 'block';
+            // Remove fallback dots if they exist
+            this.removeFallbackDots();
         } else {
-            content.style.display = 'none';
+            // No content - check if we should show fallback dots
+            if (!hasProgress && !hasInterrupt) {
+                // No content AND no progress AND no interrupt - show fallback dots
+                this.showFallbackDots();
+                content.style.display = 'block'; // Show content element to display dots
+            } else {
+                // No content but progress or interrupt is visible - hide content
+                content.style.display = 'none';
+                this.removeFallbackDots();
+            }
         }
         
         Logger.info('👁️ Content visibility updated', {
             hasContent: hasContent,
+            hasProgress: hasProgress,
+            hasInterrupt: hasInterrupt,
             contentLength: this.accumulatedContent ? this.accumulatedContent.length : 0,
             messageId: this.assistantMessageDiv.dataset.messageId
         });
+    }
+
+    /**
+     * Show fallback dots when no content and no progress
+     */
+    showFallbackDots() {
+        const content = this.elements[RESPONSE_ELEMENTS.CONTENT];
+        
+        // Only add dots if they don't already exist
+        if (!content.querySelector('.progress-dots')) {
+            const dotsElement = document.createElement('span');
+            dotsElement.className = 'progress-dots';
+            dotsElement.textContent = '...';
+            
+            content.appendChild(dotsElement);
+            Logger.info('🔵 Added fallback dots indicator', {
+                messageId: this.assistantMessageDiv.dataset.messageId
+            });
+        }
+    }
+
+    /**
+     * Remove fallback dots
+     */
+    removeFallbackDots() {
+        const content = this.elements[RESPONSE_ELEMENTS.CONTENT];
+        const existingDots = content.querySelector('.progress-dots');
+        
+        if (existingDots) {
+            existingDots.remove();
+            Logger.info('🔵 Removed fallback dots indicator', {
+                messageId: this.assistantMessageDiv.dataset.messageId
+            });
+        }
     }
 
     /**
@@ -518,6 +711,28 @@ export class ResponseStateMachine {
         Logger.info('📝 Content Updated Progressively with Markdown', {
             newContentLength: newContent.length,
             totalContentLength: this.accumulatedContent.length,
+            messageId: this.assistantMessageDiv.dataset.messageId
+        });
+    }
+
+    /**
+     * Show error content in content element
+     */
+    showErrorContent(errorMessage) {
+        const content = this.elements[RESPONSE_ELEMENTS.CONTENT];
+        
+        // Clear any existing content
+        content.innerHTML = '';
+        
+        // Simple error text display - no HTML recreation
+        content.textContent = `Error: ${errorMessage}`;
+        content.className = 'response-content error-content';
+        
+        // Update content visibility
+        this.updateContentVisibility();
+        
+        Logger.info('❌ Error content displayed', {
+            errorMessage: errorMessage,
             messageId: this.assistantMessageDiv.dataset.messageId
         });
     }
@@ -598,6 +813,9 @@ export class ResponseStateMachine {
         
         // Show content element
         content.style.display = 'block';
+        
+        // Update content visibility to remove fallback dots now that interrupt dialog is shown
+        this.updateContentVisibility();
         
         Logger.info('💬 Interrupt dialog shown in content', {
             messageId: this.assistantMessageDiv.dataset.messageId,
@@ -687,13 +905,15 @@ export class ResponseStateMachine {
                     args: args,
                     status: 'pending',
                     content: null,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    source: 'output_tool_calls_complete' // Track the source
                 });
                 
                 Logger.info('💾 Stored completed tool call', {
                     toolCallId,
                     name: toolName,
-                    args: args
+                    args: args,
+                    source: 'output_tool_calls_complete'
                 });
             });
         }
@@ -705,18 +925,31 @@ export class ResponseStateMachine {
     updateToolCall(toolCallId, data) {
         const existing = this.toolCalls.get(toolCallId);
         if (existing) {
+            // Merge new data with existing data, preserving existing fields
             Object.assign(existing, data);
             Logger.info('🔄 Updated existing tool call', {
                 toolCallId,
-                name: data.name,
-                status: data.status
+                name: data.name || existing.name,
+                status: data.status || existing.status,
+                source: data.source || existing.source
             });
         } else {
-            this.toolCalls.set(toolCallId, data);
+            // Create new tool call with required fields
+            const newToolCall = {
+                id: toolCallId,
+                name: data.name || 'Unknown tool',
+                status: data.status || 'pending',
+                content: data.content || null,
+                args: data.args || {},
+                timestamp: data.timestamp || new Date().toISOString(),
+                source: data.source || 'unknown'
+            };
+            this.toolCalls.set(toolCallId, newToolCall);
             Logger.info('🆕 Created new tool call', {
                 toolCallId,
-                name: data.name,
-                status: data.status
+                name: newToolCall.name,
+                status: newToolCall.status,
+                source: newToolCall.source
             });
         }
     }
@@ -733,18 +966,21 @@ export class ResponseStateMachine {
             return;
         }
         
-        // Create tools indicator button
+        // Create tools indicator button with unique ID
         const toolCallsArray = Array.from(this.toolCalls.values());
+        const toolsPanelId = `tools-panel-${this.assistantMessageDiv.dataset.messageId}`;
         const toolsHTML = `
-            <div class="message-tools-indicator" onclick="this.parentElement.querySelector('.tools-panel')?.classList.toggle('expanded')">
+            <div class="message-tools-indicator" data-tools-panel="${toolsPanelId}">
                 Tools called (${this.toolCalls.size})
             </div>
-            <div class="tools-panel">
+            <div class="tools-panel" id="${toolsPanelId}">
                 ${toolCallsArray.map(toolCall => `
                     <div class="tool-call-item">
                         <div class="tool-call-header">
                             <div class="tool-call-name">${toolCall.name}</div>
-                            <div class="tool-call-status ${toolCall.status}">${toolCall.status}</div>
+                            <div class="tool-call-status-badge ${toolCall.status}">
+                                <span class="status-text">${this.getStatusText(toolCall.status)}</span>
+                            </div>
                         </div>
                         <div class="tool-call-section">
                             <div class="tool-call-section-title">Arguments</div>
@@ -763,6 +999,21 @@ export class ResponseStateMachine {
         
         tools.innerHTML = toolsHTML;
         tools.style.display = 'block';
+        
+        // Add click event handler for tools indicator
+        const toolsIndicator = tools.querySelector('.message-tools-indicator');
+        if (toolsIndicator) {
+            toolsIndicator.addEventListener('click', () => {
+                const toolsPanel = tools.querySelector('.tools-panel');
+                if (toolsPanel) {
+                    toolsPanel.classList.toggle('expanded');
+                    Logger.info('🔄 Tools panel toggled', {
+                        expanded: toolsPanel.classList.contains('expanded'),
+                        messageId: this.assistantMessageDiv.dataset.messageId
+                    });
+                }
+            });
+        }
         
         Logger.info('🔄 Tools display updated with collapsible panel', {
             toolCallsCount: this.toolCalls.size,
@@ -804,6 +1055,29 @@ export class ResponseStateMachine {
     }
 
     /**
+     * Get human-readable status text for tool call status
+     */
+    getStatusText(status) {
+        switch (status) {
+            case 'confirmed':
+                return 'Confirmed';
+            case 'completed':
+            case 'success':
+                return 'Completed';
+            case 'pending':
+                return 'Pending';
+            case 'error':
+                return 'Error';
+            case 'rejected':
+                return 'Rejected';
+            case 'ready':
+                return 'Ready';
+            default:
+                return status.charAt(0).toUpperCase() + status.slice(1);
+        }
+    }
+
+    /**
      * Check if this is the final update before completion
      */
     isFinalUpdateBeforeCompletion(task) {
@@ -835,45 +1109,5 @@ export class ResponseStateMachine {
         this.toolCalls.clear();
         this.accumulatingToolCalls.clear();
         this.isComplete = false;
-    }
-
-    /**
-     * Test function to verify state machine functionality
-     */
-    static testStateMachine() {
-        Logger.info('🧪 STARTING STATE MACHINE TEST');
-        
-        // Create a test message element
-        const testMessage = document.createElement('div');
-        testMessage.className = 'message assistant-message';
-        testMessage.dataset.messageId = 'test_msg_' + Date.now();
-        
-        // Create state machine
-        const stateMachine = new ResponseStateMachine(testMessage);
-        
-        Logger.info('🧪 TEST STEP 1: Update Event');
-        // Test update event
-        stateMachine.handleEvent('response.update', { task: 'load_api_summaries' });
-        console.log('✅ After update event:', stateMachine.getCurrentState());
-        
-        Logger.info('🧪 TEST STEP 2: Tool Calls Delta');
-        // Test tool calls delta
-        stateMachine.handleEvent('response.output_tool_calls.delta', {
-            tool_calls: [{ id: 'tool_1', name: 'test_tool', function_call: { arguments: '{"test": "value"}' } }]
-        });
-        console.log('✅ After tool calls delta:', stateMachine.getCurrentState());
-        
-        Logger.info('🧪 TEST STEP 3: Text Delta');
-        // Test text delta
-        stateMachine.handleEvent('response.output_text.delta', { content: 'Hello, this is a test response.' });
-        console.log('✅ After text delta:', stateMachine.getCurrentState());
-        
-        Logger.info('🧪 TEST STEP 4: Completion');
-        // Test completion
-        stateMachine.handleEvent('response.completed', {});
-        console.log('✅ After completion:', stateMachine.getCurrentState());
-        
-        Logger.info('🧪 STATE MACHINE TEST COMPLETED');
-        return stateMachine;
     }
 }

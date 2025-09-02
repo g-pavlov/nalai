@@ -7,7 +7,6 @@ import { API_CONFIG, MESSAGE_TYPES } from './config.js';
 import { DOM } from './dom.js';
 import { Logger } from './logger.js';
 import { updateJsonFormatStatus } from './dom.js';
-import { getCurrentThreadId } from './state.js';
 
 export function toggleSettings() {
     Logger.info('toggleSettings called');
@@ -63,21 +62,6 @@ export function buildRequestPayload(message, config) {
     const payload = {
         input: message
     };
-
-    // Add conversation_id if continuing an existing conversation
-    const currentThreadId = getCurrentThreadId();
-    if (currentThreadId) {
-        payload.conversation_id = currentThreadId;
-        Logger.info('Including conversation_id in request payload', { 
-            conversation_id: currentThreadId,
-            payload: payload
-        });
-    } else {
-        Logger.info('No conversation_id to include in request payload', { 
-            currentThreadId: currentThreadId,
-            payload: payload
-        });
-    }
 
     // Add streaming configuration
     if (config && config.isStreamingEnabled !== undefined) {

@@ -117,37 +117,16 @@ function createToolsPanel(toolCalls) {
  * @returns {string} - Status string
  */
 function getToolCallStatus(toolCall) {
-    // Handle interrupted flow tool calls
-    if (toolCall.source === 'output_tool_calls_complete' || toolCall.source === 'output_tool_calls_complete_accumulated') {
-        if (toolCall.status === 'pending' || !toolCall.content) {
-            return 'Pending';
-        } else if (toolCall.status === 'completed' || toolCall.content) {
-            return 'Completed';
-        }
-    }
+    // Simple mapping from status to display text
+    const statusMap = {
+        'pending': 'Pending',
+        'completed': 'Completed',
+        'rejected': 'Rejected',
+        'confirmed': 'Confirmed',
+        'error': 'Error'
+    };
     
-    // Handle response.tool events
-    if (toolCall.source === 'response.tool') {
-        if (toolCall.status === 'completed' || toolCall.content) {
-            return 'Completed';
-        } else if (toolCall.status === 'pending') {
-            return 'Pending';
-        } else if (toolCall.status === 'error') {
-            return 'Error';
-        }
-    }
-    
-    // Only track user confirmation status for interrupt flow tool calls
-    if (toolCall.source === 'interrupt') {
-        if (toolCall.confirmed === true) {
-            return 'Confirmed';
-        } else if (toolCall.confirmed === false) {
-            return 'Rejected';
-        }
-    }
-    
-    // For non-interrupt tool calls, show generic status
-    return 'Completed';
+    return statusMap[toolCall.status] || 'Unknown';
 }
 
 /**
@@ -156,37 +135,16 @@ function getToolCallStatus(toolCall) {
  * @returns {string} - CSS class name
  */
 function getToolCallStatusClass(toolCall) {
-    // Handle interrupted flow tool calls
-    if (toolCall.source === 'output_tool_calls_complete' || toolCall.source === 'output_tool_calls_complete_accumulated') {
-        if (toolCall.status === 'pending' || !toolCall.content) {
-            return 'pending';
-        } else if (toolCall.status === 'completed' || toolCall.content) {
-            return 'completed';
-        }
-    }
+    // Simple mapping from status to CSS class
+    const statusClassMap = {
+        'pending': 'pending',
+        'completed': 'completed',
+        'rejected': 'rejected',
+        'confirmed': 'confirmed',
+        'error': 'error'
+    };
     
-    // Handle response.tool events
-    if (toolCall.source === 'response.tool') {
-        if (toolCall.status === 'completed' || toolCall.content) {
-            return 'completed';
-        } else if (toolCall.status === 'pending') {
-            return 'pending';
-        } else if (toolCall.status === 'error') {
-            return 'error';
-        }
-    }
-    
-    // Only track user confirmation status for interrupt flow tool calls
-    if (toolCall.source === 'interrupt') {
-        if (toolCall.confirmed === true) {
-            return 'confirmed';
-        } else if (toolCall.confirmed === false) {
-            return 'rejected';
-        }
-    }
-    
-    // For non-interrupt tool calls, use default styling
-    return 'completed';
+    return statusClassMap[toolCall.status] || 'unknown';
 }
 
 /**
