@@ -57,16 +57,17 @@ def serialize_for_json_response(
             api_tool_calls.append({"id": tc.id, "name": tc.name, "args": tc.args})
 
     # Determine the appropriate message ID based on message type
-    if core_message.type == "human":
-        # Human messages should not be included in responses
-        # They are part of conversation history, not the current response
-        raise ValueError("Human messages should not be serialized for responses")
-    else:
-        # AI and Tool messages: Use run-scoped IDs
-        message_id = f"{run_id}-{message_index}"
+    # All message types use run-scoped IDs
+    message_id = f"{run_id}-{message_index}"
 
     # Create appropriate output message based on type
-    if core_message.type == "ai":
+    if core_message.type == "human":
+        from .schemas.messages import HumanOutputMessage
+        return HumanOutputMessage(
+            id=message_id,
+            content=content_blocks,
+        )
+    elif core_message.type == "ai":
         return AssistantOutputMessage(
             id=message_id,
             content=content_blocks,
@@ -77,28 +78,16 @@ def serialize_for_json_response(
             or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         )
     elif core_message.type == "tool":
-        # CRITICAL: Ensure 1:1 parity with SSE ResponseToolEvent structure
-        # Tool messages must have the same fields as response.tool events
-
         # Extract tool information directly from the core message structure
-        # The data should be in response_metadata or not at all
-        tool_name = None
-        status = None
-        args = None
-
-        for tc in api_tool_calls:
-            if core_message.tool_call_id == tc["id"]:
-                tool_name = tc.get("name")
-                status = core_message.status
-                args = tc.get("args")
-                break
-
-        # If the core message doesn't have the required fields, that's a data issue
-        # Don't try to guess or infer - let the validation fail
-        if not tool_name or not status:
-            logger.warning(
-                f"Tool message missing required fields: tool_name={tool_name}, status={status}"
-            )
+        # Tool messages have tool_calls populated with execution details
+        if not core_message.tool_calls:
+            raise ValueError(f"Tool message {core_message.id} has no tool_calls data")
+            
+        # Get the first (and should be only) tool call
+        tool_call = core_message.tool_calls[0]
+        tool_name = tool_call.name
+        status = core_message.status or "completed"
+        args = tool_call.args
 
         return ToolOutputMessage(
             id=message_id,
@@ -113,24 +102,21 @@ def serialize_for_json_response(
         raise ValueError(f"Unknown message type: {core_message.type}")
 
 
-def serialize_messages_for_json_response(
+def serialize_messages(
     core_messages: list["Message"], run_id: str
 ) -> list[OutputMessage]:
     """
     Convert multiple core messages to JSON API response format.
 
-    This function filters and transforms only the messages that constitute
-    the current response, excluding conversation history.
+    This function performs pure serialization without filtering.
+    Filtering should be done before calling this function.
     """
     response_messages = []
 
     for index, msg in enumerate(core_messages):
         try:
-            # Only include messages that are part of the current response
-            # Skip human messages (conversation history)
-            if msg.type != "human":
-                output_message = serialize_for_json_response(msg, run_id, index)
-                response_messages.append(output_message)
+            output_message = serialize_for_json_response(msg, run_id, index)
+            response_messages.append(output_message)
         except ValueError as e:
             # Log and skip messages that can't be serialized
             logger.warning(f"Skipping message {msg.id}: {e}")
@@ -169,7 +155,7 @@ def convert_messages_to_output(
             core_messages.append(core_message)
 
     # Serialize core models to API response format
-    return serialize_messages_for_json_response(core_messages, run_id)
+    return serialize_messages(core_messages, run_id)
 
 
 def extract_usage_from_core_messages(messages: list["Message"]) -> dict[str, int]:

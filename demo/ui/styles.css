@@ -417,6 +417,10 @@ input:checked + .slider:before {
     margin-left: auto;
     margin-right: 8px;
     border-bottom-right-radius: 4px;
+    padding: 10px 14px;
+    max-width: 70%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }
 
 .assistant-message {

@@ -230,26 +230,52 @@ class TestMessageSerializer:
     def test_convert_messages_to_output_tool(self):
         """Test converting tool message to output format."""
 
+        class AIMessage:
+            def __init__(self):
+                self.content = "I'll call a tool"
+                self.tool_calls = [
+                    {
+                        "id": "call_123",
+                        "name": "test_tool",
+                        "args": {"param": "value"}
+                    }
+                ]
+                self.invalid_tool_calls = None
+                self.response_metadata = None
+                self.usage = None
+                self.finish_reason = None
+                self.tool_call_id = None
+
         class ToolMessage:
             def __init__(self):
                 self.content = "Tool result"
-                self.tool_calls = None
+                self.tool_calls = [
+                    {
+                        "id": "call_123",
+                        "name": "test_tool",
+                        "args": {"param": "value"}
+                    }
+                ]
                 self.invalid_tool_calls = None
                 self.response_metadata = None
                 self.usage = None
                 self.finish_reason = None
                 self.tool_call_id = "call_123"
 
+        ai_message = AIMessage()
+        ai_message.__class__.__name__ = "AIMessage"
         tool_message = ToolMessage()
         tool_message.__class__.__name__ = "ToolMessage"
 
         result = convert_messages_to_output(
-            [tool_message], "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+            [ai_message, tool_message], "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
         )
-        assert len(result) == 1
-        assert isinstance(result[0], ToolOutputMessage)
-        assert result[0].content[0].text == "Tool result"
-        assert result[0].tool_call_id == "call_123"
+        assert len(result) == 2
+        assert isinstance(result[0], AssistantOutputMessage)
+        assert isinstance(result[1], ToolOutputMessage)
+        assert result[0].content[0].text == "I'll call a tool"
+        assert result[1].content[0].text == "Tool result"
+        assert result[1].tool_call_id == "call_123"
 
     def test_convert_messages_to_output_multiple(self):
         """Test converting multiple messages to output format."""

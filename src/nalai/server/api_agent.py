@@ -44,6 +44,9 @@ from .sse_serializer import (
 logger = logging.getLogger("nalai")
 
 
+# ===== Response Handlers =====
+
+
 def validate_streaming_compatibility(stream: str, accept_header: str) -> None:
     """Validate streaming compatibility according to truth matrix."""
     if stream in ["full", "events"] and "text/event-stream" not in accept_header:
