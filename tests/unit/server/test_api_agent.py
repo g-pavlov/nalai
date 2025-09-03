@@ -15,8 +15,14 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
+from nalai.core.types.agent import ConversationInfo
+from nalai.core.types.messages import (
+    AssistantOutputMessage,
+    HumanInputMessage,
+    MessageRequest,
+    TextContent,
+)
 from nalai.server.api_agent import create_agent_api
-from nalai.server.schemas.messages import HumanInputMessage, MessageRequest
 
 
 @pytest.fixture
@@ -52,20 +58,22 @@ class TestAgentResponses:
         app, mock_agent = app_and_agent
 
         # Mock agent response
-        from nalai.core.agent import Message
 
-        mock_message = Message(content="Hello!", type="ai")
-
-        mock_conversation_info = MagicMock(
-            conversation_id="conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
+        mock_message = AssistantOutputMessage(
+            id="msg_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9",
+            content=[TextContent(text="Hello!")],
+            usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         )
-        mock_conversation_info.interrupt_info = (
-            None  # Explicitly set to None to avoid MagicMock issues
+
+        conversation_info = ConversationInfo(
+            conversation_id="conv_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9",
+            status="active",
+            interrupt_info=None,
         )
 
         mock_agent.chat.return_value = (
             [mock_message],  # messages
-            mock_conversation_info,  # conversation_info
+            conversation_info,  # conversation_info
         )
 
         client = TestClient(app)
@@ -108,20 +116,22 @@ class TestAgentResponses:
         app, mock_agent = app_and_agent
 
         # Mock agent response
-        from nalai.core.agent import Message
 
-        mock_message = Message(content="How can I help?", type="ai")
-
-        mock_conversation_info = MagicMock(
-            conversation_id="conv_abc123def456ghi789jkm2n3p4q5r6s7t8u9"
+        mock_message = AssistantOutputMessage(
+            id="msg_abc123def456ghi789jkm2n3p4q5r6s7t8u9",
+            content=[TextContent(text="How can I help?")],
+            usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         )
-        mock_conversation_info.interrupt_info = (
-            None  # Explicitly set to None to avoid MagicMock issues
+
+        conversation_info = ConversationInfo(
+            conversation_id="conv_abc123def456ghi789jkm2n3p4q5r6s7t8u9",
+            status="active",
+            interrupt_info=None,
         )
 
         mock_agent.chat.return_value = (
             [mock_message],  # messages
-            mock_conversation_info,  # conversation_info
+            conversation_info,  # conversation_info
         )
 
         client = TestClient(app)
@@ -164,18 +174,22 @@ class TestAgentResponses:
         app, mock_agent = app_and_agent
 
         # Mock agent response
-        from nalai.core.agent import Message
 
-        mock_message = Message(content="Continuing from previous response", type="ai")
-
-        mock_conversation_info = MagicMock(
-            conversation_id="conv_xyz789abc123def456ghi789jkm2n3p4q5r6s7t8u9"
+        mock_message = AssistantOutputMessage(
+            id="msg_xyz789abc123def456ghi789jkm2n3p4q5r6s7t8u9",
+            content=[TextContent(text="Continuing from previous response")],
+            usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         )
-        mock_conversation_info.interrupt_info = None
+
+        conversation_info = ConversationInfo(
+            conversation_id="conv_xyz789abc123def456ghi789jkm2n3p4q5r6s7t8u9",
+            status="active",
+            interrupt_info=None,
+        )
 
         mock_agent.chat.return_value = (
             [mock_message],  # messages
-            mock_conversation_info,  # conversation_info
+            conversation_info,  # conversation_info
         )
 
         client = TestClient(app)
@@ -239,10 +253,12 @@ class TestAgentResponses:
             yield "Hello"
             yield " World"
 
-        mock_conversation_info = MagicMock(conversation_id="conv_stream")
+        conversation_info = ConversationInfo(
+            conversation_id="conv_stream", status="active", interrupt_info=None
+        )
         mock_agent.chat_streaming.return_value = (
             mock_stream(),  # stream generator
-            mock_conversation_info,  # conversation_info
+            conversation_info,  # conversation_info
         )
 
         client = TestClient(app)
@@ -341,9 +357,9 @@ class TestResponseSchemas:
             "decision": "accept",
         }
         # This should not raise an error
-        from nalai.server.schemas.messages import ToolDecisionInputMessage
+        from nalai.core.types.messages import ToolCallDecision
 
-        ToolDecisionInputMessage(**valid_accept)
+        ToolCallDecision(**valid_accept)
 
         # Valid edit decision with args
         valid_edit = {
@@ -352,11 +368,11 @@ class TestResponseSchemas:
             "decision": "edit",
             "args": {"location": "NYC"},
         }
-        ToolDecisionInputMessage(**valid_edit)
+        ToolCallDecision(**valid_edit)
 
         # Invalid edit decision without args
         with pytest.raises(ValueError, match="Args are required for edit decision"):
-            ToolDecisionInputMessage(
+            ToolCallDecision(
                 type="tool_decision",
                 tool_call_id="call_123",
                 decision="edit",

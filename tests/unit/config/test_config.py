@@ -19,16 +19,13 @@ class TestToolCallMetadata:
         metadata = ToolCallMetadata(
             name="test_tool",
             args={"param1": "value1"},
-            status="pending",
             node="test_node",
         )
 
         assert metadata.name == "test_tool"
         assert metadata.args == {"param1": "value1"}
-        assert metadata.status == "pending"
         assert metadata.node == "test_node"
-        assert metadata.interrupt_decision is None
-        assert metadata.user_edited_args is None
+        assert metadata.original_args is None
 
     def test_tool_call_metadata_defaults(self):
         """Test tool call metadata with default values."""
@@ -36,33 +33,24 @@ class TestToolCallMetadata:
 
         assert metadata.name == "test_tool"
         assert metadata.args == {}
-        assert metadata.status == "pending"
         assert metadata.node is None
-        assert metadata.interrupt_decision is None
-        assert metadata.user_edited_args is None
+        assert metadata.original_args is None
 
-    def test_tool_call_metadata_with_interrupt(self):
-        """Test tool call metadata with interrupt decision."""
+    def test_tool_call_metadata_with_original_args(self):
+        """Test tool call metadata with original args."""
         metadata = ToolCallMetadata(
             name="test_tool",
             args={"param1": "value1"},
-            status="running",
-            interrupt_decision="accept",
-            user_edited_args={"param1": "edited_value"},
+            original_args={"param1": "original_value"},
         )
 
-        assert metadata.interrupt_decision == "accept"
-        assert metadata.user_edited_args == {"param1": "edited_value"}
+        assert metadata.original_args == {"param1": "original_value"}
 
-    def test_invalid_status(self):
-        """Test that invalid status raises validation error."""
+    def test_tool_call_metadata_validation(self):
+        """Test that tool call metadata validates required fields."""
+        # Test that name is required
         with pytest.raises(ValidationError):
-            ToolCallMetadata(name="test_tool", status="invalid_status")
-
-    def test_invalid_interrupt_decision(self):
-        """Test that invalid interrupt decision raises validation error."""
-        with pytest.raises(ValidationError):
-            ToolCallMetadata(name="test_tool", interrupt_decision="invalid_decision")
+            ToolCallMetadata()
 
 
 class TestExecutionContext:
@@ -115,48 +103,46 @@ class TestExecutionContextIntegration:
         assert context.tool_calls["call_123"].name == "http_get"
         assert context.tool_calls["call_123"].args["url"] == "https://api.example.com"
 
-    def test_updating_tool_call_status(self):
-        """Test updating tool call status in execution context."""
+    def test_updating_tool_call_args(self):
+        """Test updating tool call args in execution context."""
         context = ExecutionContext()
 
         # Create initial tool call
         tool_call = ToolCallMetadata(
-            name="http_get", args={"url": "https://api.example.com"}, status="pending"
+            name="http_get", args={"url": "https://api.example.com"}
         )
 
         context.tool_calls["call_123"] = tool_call
 
-        # Update status
-        context.tool_calls["call_123"].status = "running"
+        # Update args
+        context.tool_calls["call_123"].args = {
+            "url": "https://api.example.com",
+            "method": "GET",
+        }
 
-        assert context.tool_calls["call_123"].status == "running"
+        assert context.tool_calls["call_123"].args["method"] == "GET"
 
-    def test_interrupt_flow_integration(self):
-        """Test interrupt flow integration with execution context."""
+    def test_tool_call_args_editing_integration(self):
+        """Test tool call args editing integration with execution context."""
         context = ExecutionContext()
 
         # Initial tool call
         tool_call = ToolCallMetadata(
             name="http_post",
             args={"url": "https://api.example.com", "data": "original"},
-            status="pending",
         )
 
         context.tool_calls["call_456"] = tool_call
 
-        # Simulate user edit decision
-        context.tool_calls["call_456"].interrupt_decision = "edit"
-        context.tool_calls["call_456"].user_edited_args = {
+        # Simulate args editing - store original args and update current args
+        context.tool_calls["call_456"].original_args = {
             "url": "https://api.example.com",
-            "data": "edited",
+            "data": "original",
         }
         context.tool_calls["call_456"].args = {
             "url": "https://api.example.com",
             "data": "edited",
         }
-        context.tool_calls["call_456"].status = "running"
 
-        assert context.tool_calls["call_456"].interrupt_decision == "edit"
-        assert context.tool_calls["call_456"].user_edited_args["data"] == "edited"
+        assert context.tool_calls["call_456"].original_args["data"] == "original"
         assert context.tool_calls["call_456"].args["data"] == "edited"
-        assert context.tool_calls["call_456"].status == "running"

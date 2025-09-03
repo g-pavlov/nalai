@@ -5,13 +5,10 @@ This module contains functions for processing, serializing, and formatting
 events from the agent, including specialized handlers for different event types.
 """
 
-import json
 import logging
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, Field
-
-from ..core.agent import (
+from ..core.types.streaming import (
     InterruptChunk,
     MessageChunk,
     StreamingChunk,
@@ -20,222 +17,19 @@ from ..core.agent import (
     ToolChunk,
     UpdateChunk,
 )
-from ..utils.id_generator import generate_run_id
+from .schemas.sse import (
+    ResponseInterruptEvent,
+    ResponseOutputTextDeltaEvent,
+    ResponseOutputToolCallsCompleteEvent,
+    ResponseOutputToolCallsDeltaEvent,
+    ResponseToolEvent,
+    ResponseUpdateEvent,
+)
 
 logger = logging.getLogger("nalai")
 
 
-def serialize_to_sse(data: dict[str, Any]) -> str:
-    """Serialize data to SSE format."""
-    event_type = data.get("event", None)
-    if event_type:
-        return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
-    else:
-        return f"data: {json.dumps(data)}\n\n"
-
-
-class BaseSSEEvent(BaseModel):
-    """Base event model with common fields for all SSE events."""
-
-    event: str = Field(..., description="Event type identifier")
-    id: str = Field(default_factory=generate_run_id, description="Unique event ID")
-    conversation: str = Field(..., description="Conversation ID")
-
-    def to_sse(self) -> str:
-        """Convert the event to SSE format."""
-        return serialize_to_sse(self.model_dump())
-
-
-class ResponseCreatedEvent(BaseSSEEvent):
-    """Response created event - sent when a new response is initiated."""
-
-    event: Literal["response.created"] = "response.created"
-
-
-class ResponseCompletedEvent(BaseSSEEvent):
-    """Response completed event - sent when a response is fully completed."""
-
-    event: Literal["response.completed"] = "response.completed"
-    usage: dict[str, int] = Field(..., description="Token usage information")
-
-
-class ResponseErrorEvent(BaseSSEEvent):
-    """Response error event - sent when a response encounters an error."""
-
-    event: Literal["response.error"] = "response.error"
-    error: str = Field(..., description="Error message")
-
-
-class ResponseOutputEvent(BaseSSEEvent):
-    """Response output event - sent when output messages are available."""
-
-    event: Literal["response.output"] = "response.output"
-    output: list[dict[str, Any]] = Field(..., description="Output messages")
-
-
-class ResponseOutputTextDeltaEvent(BaseSSEEvent):
-    """Response output text delta event - sent for streaming text content."""
-
-    event: Literal["response.output_text.delta"] = "response.output_text.delta"
-    content: str = Field(..., description="Text content delta")
-    usage: dict[str, Any] | None = Field(None, description="Usage metadata")
-
-    @classmethod
-    def create(
-        cls,
-        conversation_id: str,
-        content: str,
-        usage: dict[str, Any] | None = None,
-        id: str | None = None,
-    ) -> str:
-        """Create a response.output_text.delta event."""
-        event = cls(
-            conversation=conversation_id,
-            content=content,
-            usage=usage,
-            id=id,
-        )
-        return event.to_sse()
-
-
-class ResponseOutputTextCompleteEvent(BaseSSEEvent):
-    """Response output text complete event - sent when text streaming is complete."""
-
-    event: Literal["response.output_text.complete"] = "response.output_text.complete"
-
-
-class ResponseOutputToolCallsDeltaEvent(BaseSSEEvent):
-    """Response output tool calls delta event - sent for streaming tool calls."""
-
-    event: Literal["response.output_tool_calls.delta"] = (
-        "response.output_tool_calls.delta"
-    )
-    tool_calls: list[dict[str, Any]] = Field(..., description="Tool calls")
-
-    @classmethod
-    def create(
-        cls,
-        conversation_id: str,
-        tool_calls: list[dict[str, Any]],
-        id: str | None = None,
-    ) -> str:
-        """Create a response.output_tool_calls.delta event."""
-        event = cls(
-            conversation=conversation_id,
-            tool_calls=tool_calls,
-            id=id,
-        )
-        return event.to_sse()
-
-
-class ResponseOutputToolCallsCompleteEvent(BaseSSEEvent):
-    """Response output tool calls complete event - sent when tool calls streaming is complete."""
-
-    event: Literal["response.output_tool_calls.complete"] = (
-        "response.output_tool_calls.complete"
-    )
-    tool_calls: list[dict[str, Any]] = Field(..., description="Tool calls")
-
-    @classmethod
-    def create(
-        cls,
-        conversation_id: str,
-        tool_calls: list[dict[str, Any]],
-        id: str | None = None,
-    ) -> str:
-        """Create a response.output_tool_calls.complete event."""
-        event = cls(
-            conversation=conversation_id,
-            tool_calls=tool_calls,
-            id=id,
-        )
-        return event.to_sse()
-
-
-class ResponseInterruptEvent(BaseSSEEvent):
-    """Response interrupt event - sent when a response is interrupted."""
-
-    event: Literal["response.interrupt"] = "response.interrupt"
-    interrupts: list[dict[str, Any]] = Field(..., description="Interrupt information")
-
-    @classmethod
-    def create(
-        cls,
-        conversation_id: str,
-        interrupts: list[dict[str, Any]],
-        id: str | None = None,
-    ) -> str:
-        """Create a response.interrupt event."""
-        event = cls(
-            conversation=conversation_id,
-            interrupts=interrupts,
-            id=id,
-        )
-        return event.to_sse()
-
-
-class ResponseUpdateEvent(BaseSSEEvent):
-    """Response update event - sent when a workflow node/task completes."""
-
-    event: Literal["response.update"] = "response.update"
-    task: str = Field(..., description="Task/node that completed")
-    messages: list[dict[str, Any]] | None = Field(
-        None, description="Messages from the task"
-    )
-
-    @classmethod
-    def create(
-        cls,
-        conversation_id: str,
-        task: str,
-        messages: list[dict[str, Any]] | None = None,
-        id: str | None = None,
-    ) -> str:
-        """Create a response.update event."""
-        event = cls(
-            conversation=conversation_id,
-            task=task,
-            messages=messages,
-            id=id,
-        )
-        return event.to_sse()
-
-
-class ResponseToolEvent(BaseSSEEvent):
-    """Response tool event - sent when a tool execution completes."""
-
-    event: Literal["response.tool"] = "response.tool"
-    tool_call_id: str = Field(..., description="Tool call ID")
-    tool_name: str = Field(..., description="Tool name")
-    status: str = Field(..., description="Tool execution status")
-    content: str = Field(..., description="Tool execution result")
-    args: dict[str, Any] | None = Field(
-        None, description="Actual args used for execution"
-    )
-
-    @classmethod
-    def create(
-        cls,
-        conversation_id: str,
-        tool_call_id: str,
-        tool_name: str,
-        status: str,
-        content: str,
-        args: dict[str, Any] | None = None,
-    ) -> str:
-        """Create a response.tool event."""
-        event = cls(
-            conversation=conversation_id,
-            tool_call_id=tool_call_id,
-            tool_name=tool_name,
-            status=status,
-            content=content,
-            args=args,
-        )
-        return event.to_sse()
-
-
-def create_streaming_event_from_chunk(
+def transform_chunk_to_sse(
     chunk: StreamingChunk, conversation_id: str, context: Any, run_id: str
 ) -> str | None:
     """Create SSE event from streaming chunk."""
@@ -302,65 +96,3 @@ def create_streaming_event_from_chunk(
     except Exception as e:
         logger.error(f"Error creating streaming event from chunk: {e}")
         return None
-
-
-def create_response_created_event(conversation_id: str, run_id: str) -> str:
-    """Create response created event."""
-    event = ResponseCreatedEvent(
-        id=run_id,
-        conversation=conversation_id,
-    )
-    return event.to_sse()
-
-
-def create_response_completed_event(
-    conversation_id: str, run_id: str, usage: dict[str, int]
-) -> str:
-    """Create response completed event."""
-    event = ResponseCompletedEvent(
-        id=run_id,
-        conversation=conversation_id,
-        usage=usage,
-    )
-    return event.to_sse()
-
-
-def create_response_error_event(conversation_id: str, run_id: str, error: str) -> str:
-    """Create response error event."""
-    event = ResponseErrorEvent(
-        id=run_id,
-        conversation=conversation_id,
-        error=error,
-    )
-    return event.to_sse()
-
-
-def create_response_output_event(
-    conversation_id: str, run_id: str, output: list[dict[str, Any]]
-) -> str:
-    """Create response output event."""
-    event = ResponseOutputEvent(
-        id=run_id,
-        conversation=conversation_id,
-        output=output,
-    )
-    return event.to_sse()
-
-
-def extract_usage_from_streaming_chunks(chunks: list) -> dict[str, int]:
-    """Extract and aggregate usage information from streaming chunks."""
-    total_prompt_tokens = 0
-    total_completion_tokens = 0
-    total_tokens = 0
-
-    for chunk in chunks:
-        if hasattr(chunk, "usage") and chunk.usage and isinstance(chunk.usage, dict):
-            total_prompt_tokens += chunk.usage.get("prompt_tokens", 0)
-            total_completion_tokens += chunk.usage.get("completion_tokens", 0)
-            total_tokens += chunk.usage.get("total_tokens", 0)
-
-    return {
-        "prompt_tokens": total_prompt_tokens,
-        "completion_tokens": total_completion_tokens,
-        "total_tokens": total_tokens,
-    }

@@ -21,14 +21,14 @@ class TestLCTransformers:
     """Test critical LangChain transformers functionality."""
 
     @pytest.mark.parametrize(
-        "message_type,content,expected_type",
+        "message_type,content,expected_role",
         [
-            ("HumanMessage", "Hello", "human"),
-            ("AIMessage", "Hi there!", "ai"),
+            ("HumanMessage", "Hello", "user"),
+            ("AIMessage", "Hi there!", "assistant"),
             ("ToolMessage", "Tool result", "tool"),
         ],
     )
-    def test_transform_message_types(self, message_type, content, expected_type):
+    def test_transform_message_types(self, message_type, content, expected_role):
         """Test message transformation for different message types."""
         mock_message = Mock()
         mock_message.content = content
@@ -38,15 +38,31 @@ class TestLCTransformers:
         mock_message.tool_calls = []
         mock_message.invalid_tool_calls = []
         mock_message.response_metadata = {}
-        mock_message.usage = {}
         mock_message.finish_reason = None
         mock_message.tool_call_id = None
         mock_message.tool_call_chunks = []
         mock_message.status = None  # Add status field for Message model
 
-        result = transform_message(mock_message)
-        assert result.type == expected_type
-        assert result.content == content
+        # Set type based on message type
+        if message_type == "HumanMessage":
+            mock_message.type = "human"
+        elif message_type == "AIMessage":
+            mock_message.type = "ai"
+            mock_message.usage = {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+            }
+        elif message_type == "ToolMessage":
+            mock_message.type = "tool"
+            mock_message.id = "msg_123"
+            # Add tool data for tool messages
+            mock_message.tool_call_id = "call_123"
+            mock_message.tool_name = "test_tool"
+
+        result = transform_message(mock_message, conversation_id="conv_123")
+        assert result.role == expected_role
+        assert result.content[0].text == content
 
     def test_transform_streaming_chunk_function_exists(self):
         """Test that transform_streaming_chunk function exists."""

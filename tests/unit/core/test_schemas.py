@@ -8,6 +8,7 @@ for all core data structures.
 import os
 import sys
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 # Add src to path for imports
@@ -15,14 +16,16 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from nalai.core.agent import (
-    DEFAULT_MODEL_CONFIG,
-    ConfigSchema,
-    ModelConfig,
+from nalai.core.states import AgentState
+from nalai.core.types.agent import (
     SelectApi,
     SelectedApis,
 )
-from nalai.core.states import AgentState
+from nalai.core.types.runtime_config import (
+    DEFAULT_MODEL_CONFIG,
+    ConfigSchema,
+    ModelConfig,
+)
 
 
 class TestInputSchema:
@@ -140,10 +143,10 @@ class TestModelConfig:
 
     def test_model_config_creation(self):
         """Test ModelConfig creation with valid data."""
-        config = ModelConfig(name="test-model", platform="test-platform")
+        config = ModelConfig(name="test-model", platform="openai")
 
         assert config.name == "test-model"
-        assert config.platform == "test-platform"
+        assert config.platform == "openai"
 
     def test_model_config_validation(self):
         """Test ModelConfig validation."""
@@ -155,17 +158,18 @@ class TestModelConfig:
 
     def test_model_config_empty_strings(self):
         """Test ModelConfig with empty strings."""
-        config = ModelConfig(name="", platform="")
+        # This test should expect validation errors for empty strings
+        from pydantic import ValidationError
 
-        assert config.name == ""
-        assert config.platform == ""
+        with pytest.raises(ValidationError):
+            ModelConfig(name="", platform="")
 
     def test_model_config_special_characters(self):
         """Test ModelConfig with special characters."""
-        config = ModelConfig(name="model-v1.2.3", platform="aws-bedrock")
+        config = ModelConfig(name="model-v1.2.3", platform="aws_bedrock")
 
         assert config.name == "model-v1.2.3"
-        assert config.platform == "aws-bedrock"
+        assert config.platform == "aws_bedrock"
 
 
 class TestConfigSchema:
@@ -173,12 +177,12 @@ class TestConfigSchema:
 
     def test_config_schema_creation(self):
         """Test ConfigSchema creation with valid data."""
-        model_config = ModelConfig(name="test-model", platform="test-platform")
+        model_config = ModelConfig(name="test-model", platform="openai")
         config = ConfigSchema(model=model_config)
 
         assert config.model == model_config
         assert config.model.name == "test-model"
-        assert config.model.platform == "test-platform"
+        assert config.model.platform == "openai"
 
     def test_config_schema_default_model(self):
         """Test ConfigSchema with default model."""

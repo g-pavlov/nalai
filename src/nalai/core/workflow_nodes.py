@@ -22,7 +22,6 @@ from ..services.cache_service import get_cache_service
 from ..services.model_service import ModelService
 from ..tools.http_requests import HttpRequestsToolkit
 from ..utils.chat_history import compress_conversation_history_if_needed
-from .agent import SelectedApis
 from .constants import (
     NODE_CALL_API,
     NODE_CALL_MODEL,
@@ -31,6 +30,7 @@ from .constants import (
     NODE_SELECT_RELEVANT_APIS,
 )
 from .states import AgentState
+from .types.agent import SelectedApis
 
 logger = logging.getLogger(__name__)
 

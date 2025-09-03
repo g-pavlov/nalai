@@ -6,241 +6,12 @@ for core package interactions, separating HTTP concerns from business logic.
 """
 
 from collections.abc import AsyncGenerator
-from typing import Any, Literal, Protocol
+from typing import Protocol
 
-from langchain_core.messages import BaseMessage
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
-# ===== Core Data Models =====
-# These models represent the canonical data structure for messages and streaming chunks
-# They are protocol-independent and contain all necessary data for any output format
-
-
-class ToolCall(BaseModel):
-    """Core representation of a tool call with all necessary data."""
-
-    id: str
-    name: str
-    args: dict[str, Any] = Field(default_factory=dict)
-    type: str | None = None
-
-    @field_validator("id")
-    @classmethod
-    def validate_id(cls, v):
-        """Validate tool call ID format."""
-        from ..utils.id_generator import validate_domain_id_format
-
-        # Accept both tool_ and call_ prefixes
-        if validate_domain_id_format(v, "tool") or validate_domain_id_format(v, "call"):
-            return v
-        raise ValueError("Tool call ID must be either tool_xxx or call_xxx format")
-
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, v):
-        """Validate tool name."""
-        if not v or not v.strip():
-            raise ValueError("Tool name cannot be empty")
-        return v.strip()
-
-    @field_validator("args")
-    @classmethod
-    def validate_args(cls, v):
-        """Validate tool arguments."""
-        if not isinstance(v, dict):
-            raise ValueError("Tool arguments must be a dictionary")
-        return v
-
-    class Config:
-        extra = "allow"  # Allow extra fields during construction
-        validate_assignment = True
-
-
-class Message(BaseModel):
-    """Core representation of a message with all necessary data."""
-
-    content: str
-    type: str = Field(description="human, ai, tool")
-    id: str | None = None
-    tool_calls: list[ToolCall] | None = None
-    tool_call_chunks: list[Any] | None = None
-    invalid_tool_calls: list[Any] | None = None
-    response_metadata: dict[str, Any] | None = None
-    usage: dict[str, int] | None = None
-    finish_reason: str | None = None
-    tool_call_id: str | None = None  # For tool messages
-    status: str | None = Field(
-        default=None,
-        description="The status the an executed tool call for tool messages",
-    )
-
-    @field_validator("type")
-    @classmethod
-    def validate_type(cls, v):
-        """Validate message type."""
-        valid_types = {"human", "ai", "tool"}
-        if v not in valid_types:
-            raise ValueError(f"Message type must be one of {valid_types}")
-        return v
-
-    @field_validator("content")
-    @classmethod
-    def validate_content(cls, v):
-        """Validate message content."""
-        if v is None:
-            raise ValueError("Message content cannot be None")
-        return v
-
-    @field_validator("id")
-    @classmethod
-    def validate_id(cls, v):
-        """Validate message ID format when provided."""
-        if v is not None:
-            from ..utils.id_generator import validate_domain_id_format
-
-            # Accept msg_ prefix format
-            if validate_domain_id_format(v, "msg"):
-                return v
-            # Accept run_ prefix format (both with and without index)
-            elif validate_domain_id_format(v, "run"):
-                return v
-            elif "_" in v and v.count("-") == 1:
-                # Check for run-scoped format: run_xxx-index
-                run_part, index_part = v.split("-", 1)
-                if validate_domain_id_format(run_part, "run") and index_part.isdigit():
-                    return v
-                # Check for conversation-scoped format: conv_xxx-index (for conversation loading)
-                elif (
-                    validate_domain_id_format(run_part, "conv") and index_part.isdigit()
-                ):
-                    return v
-                # Check for msg-scoped format: msg_xxx-index (for backward compatibility)
-                elif (
-                    validate_domain_id_format(run_part, "msg") and index_part.isdigit()
-                ):
-                    return v
-            raise ValueError(
-                "Message ID must be either msg_xxx format, run_xxx format, run_xxx-index format, conv_xxx-index format, or msg_xxx-index format"
-            )
-        return v
-
-    @field_validator("tool_call_id")
-    @classmethod
-    def validate_tool_call_id(cls, v):
-        """Validate tool call ID format when provided."""
-        if v is not None:
-            from ..utils.id_generator import validate_domain_id_format
-
-            # Accept both tool_ and call_ prefixes
-            if validate_domain_id_format(v, "tool") or validate_domain_id_format(
-                v, "call"
-            ):
-                return v
-            raise ValueError("Tool call ID must be either tool_xxx or call_xxx format")
-        return v
-
-    class Config:
-        extra = "allow"  # Allow extra fields during construction
-        validate_assignment = True
-
-
-class BaseStreamingChunk(BaseModel):
-    """Base class for all streaming chunks."""
-
-    type: str
-    conversation_id: str
-
-    class Config:
-        extra = "allow"
-        validate_assignment = True
-
-
-class UpdateChunk(BaseStreamingChunk):
-    """Update chunk for workflow progress events."""
-
-    type: Literal["update"] = "update"
-    task: str  # event_key
-    messages: list["Message"] = Field(default_factory=list)
-
-
-class ToolCallUpdateChunk(BaseStreamingChunk):
-    """Update chunk for workflow progress events."""
-
-    type: Literal["tool_call_update"] = "tool_call_update"
-    task: str  # event_key
-    tool_calls: list[dict[str, Any]] | None = Field(default=None)
-
-
-class MessageChunk(BaseStreamingChunk):
-    """Message chunk for AI message content."""
-
-    type: Literal["message"] = "message"
-    task: str  # langgraph_node
-    content: str
-    id: str
-    metadata: dict[str, Any] | None = None
-    usage: dict[str, Any] | None = None
-
-
-class ToolCallChunk(BaseStreamingChunk):
-    """Tool call chunk for AI tool call events."""
-
-    type: Literal["tool_call"] = "tool_call"
-    task: str  # langgraph_node
-    id: str
-    tool_calls_chunks: list[dict[str, Any]] | None = Field(default=None)
-
-
-class InterruptChunk(BaseStreamingChunk):
-    """Interrupt chunk for human-in-the-loop events."""
-
-    type: Literal["interrupt"] = "interrupt"
-    id: str
-    values: list[dict[str, Any]]  # serialized action request, config, description
-
-
-class ToolChunk(BaseStreamingChunk):
-    """Tool chunk for tool execution results."""
-
-    type: Literal["tool"] = "tool"
-    id: str
-    status: Literal["success", "error", "pending"] = "success"
-    tool_call_id: str
-    content: str
-    tool_name: str
-    args: dict[str, Any] | None = Field(
-        None, description="Actual args used for execution"
-    )
-
-
-# Union type for all chunk types
-StreamingChunk = (
-    UpdateChunk
-    | ToolCallUpdateChunk
-    | MessageChunk
-    | ToolCallChunk
-    | InterruptChunk
-    | ToolChunk
-)
-
-
-class ModelConfig(BaseModel):
-    name: str
-    platform: str
-
-
-# Add this default instance
-DEFAULT_MODEL_CONFIG = ModelConfig(name="gpt-4.1", platform="openai")
-
-
-class ConfigSchema(BaseModel):
-    model: ModelConfig = Field(
-        default=DEFAULT_MODEL_CONFIG,
-        description=(
-            "Configuration for the model to be used. "
-            f"Defaults to {{'name': {DEFAULT_MODEL_CONFIG.name}, 'platform': {DEFAULT_MODEL_CONFIG.platform} }} ."
-        ),
-    )
+from .messages import InputMessage, OutputMessage, ToolCallDecision
+from .streaming import StreamingChunk
 
 
 class SelectApi(BaseModel):
@@ -274,41 +45,6 @@ class ConversationInfo(BaseModel):
     interrupt_info: dict | None = Field(
         None, description="Interrupt information if conversation was interrupted"
     )
-
-
-class Conversation(ConversationInfo):
-    """Full conversation with messages."""
-
-    messages: list[Message] = Field(..., description="Conversation messages")
-
-
-class ResumeDecision(BaseModel):
-    """Resume decision input for interrupted conversations."""
-
-    action: Literal["accept", "reject", "edit", "feedback"] = Field(
-        ..., description="The action to take on the interrupt"
-    )
-    args: Any = Field(
-        None,
-        description="Optional arguments for the action (e.g., edited args for 'edit' action)",
-    )
-    tool_call_id: str = Field(..., description="The tool call ID to act upon")
-
-
-class ConversationIdPathParam(BaseModel):
-    """Path parameter for conversation ID validation."""
-
-    conversation_id: str = Field(..., description="Conversation ID")
-
-    @field_validator("conversation_id")
-    @classmethod
-    def validate_conversation_id(cls, v: str) -> str:
-        """Validate conversation ID format."""
-        from ..utils.id_generator import validate_domain_id_format
-
-        if not validate_domain_id_format(v, "conv"):
-            raise ValueError(f"Invalid conversation ID format: {v}") from None
-        return v
 
 
 # Exceptions
@@ -373,11 +109,11 @@ class Agent(Protocol):
 
     async def chat(
         self,
-        messages: list[BaseMessage],
+        messages: list[InputMessage],
         conversation_id: str | None,
         config: dict,
         previous_response_id: str | None = None,
-    ) -> tuple[list[Message], ConversationInfo]:
+    ) -> tuple[list[OutputMessage], ConversationInfo]:
         """
         Start a new conversation or continue an existing one based on conversation_id.
 
@@ -401,7 +137,7 @@ class Agent(Protocol):
 
     async def chat_streaming(
         self,
-        messages: list[BaseMessage],
+        messages: list[InputMessage],
         conversation_id: str | None,
         config: dict,
         previous_response_id: str | None = None,
@@ -431,7 +167,7 @@ class Agent(Protocol):
         self,
         conversation_id: str,
         config: dict,
-    ) -> tuple[list[Message], ConversationInfo]:
+    ) -> tuple[list[InputMessage | OutputMessage], ConversationInfo]:
         """
         Load conversation state.
 
@@ -492,10 +228,10 @@ class Agent(Protocol):
 
     async def resume_interrupted(
         self,
-        resume_decision: ResumeDecision,
+        resume_decision: ToolCallDecision,
         conversation_id: str,
         config: dict,
-    ) -> tuple[list[Message], ConversationInfo]:
+    ) -> tuple[list[InputMessage | OutputMessage], ConversationInfo]:
         """
         Resume an interrupted conversation.
 
@@ -519,7 +255,7 @@ class Agent(Protocol):
 
     async def resume_interrupted_streaming(
         self,
-        resume_decision: ResumeDecision,
+        resume_decision: ToolCallDecision,
         conversation_id: str,
         config: dict,
     ) -> tuple[AsyncGenerator[StreamingChunk, None], ConversationInfo]:
@@ -549,7 +285,7 @@ class Agent(Protocol):
         conversation_id: str,
         checkpoint_id: str,
         config: dict,
-    ) -> tuple[list[Message], ConversationInfo]:
+    ) -> tuple[list[InputMessage | OutputMessage], ConversationInfo]:
         """
         Resume conversation from a specific checkpoint.
 
@@ -604,7 +340,7 @@ class Agent(Protocol):
         self,
         conversation_id: str,
         checkpoint_id: str,
-        edited_messages: list[BaseMessage],
+        edited_messages: list[InputMessage | OutputMessage],
         config: dict,
     ) -> bool:
         """

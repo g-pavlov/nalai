@@ -464,7 +464,8 @@ function transformInterrupts(interrupts) {
                     tool_call_id: toolCallId,
                     action_request: v.action_request || {},
                     config: v.config || {},
-                    description: v.description || ''
+                    description: v.description || '',
+                    conversation_id: getCurrentThreadId() // Store conversation ID for resume requests
                 });
             }
         } else {
@@ -473,7 +474,8 @@ function transformInterrupts(interrupts) {
                 tool_call_id: toolCallId,
                 action_request: {},
                 config: {},
-                description: ''
+                description: '',
+                conversation_id: getCurrentThreadId() // Store conversation ID for resume requests
             });
         }
     }

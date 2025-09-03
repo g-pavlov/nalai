@@ -93,7 +93,7 @@ def add_human_in_the_loop(
         logger.info(f"Interrupt request: {request}")
         response = interrupt([request])[0]
         logger.info(f"Interrupt response: {response}")
-        action = response.get("action")
+        action = response.get("decision")
 
         if action not in ["accept", "reject", "edit", "feedback"]:
             logger.warning(f"Unexpected interrupt response structure: {response}")

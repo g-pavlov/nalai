@@ -12,22 +12,30 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from ..utils.id_generator import generate_conversation_id, validate_domain_id_format
-from .agent import (
+from ..utils.id_generator import (
+    generate_conversation_id,
+    generate_run_id,
+    validate_domain_id_format,
+)
+from .checkpoints import get_checkpoints
+from .lc_transformers import transform_message, transform_streaming_chunk
+from .types.agent import (
     # Exceptions
     AccessDeniedError,
     Agent,
     ConversationInfo,
     ConversationNotFoundError,
     InvocationError,
-    Message,
     # Internal types
-    ResumeDecision,
     StreamingChunk,
     ValidationError,
 )
-from .checkpoints import get_checkpoints
-from .lc_transformers import transform_message, transform_streaming_chunk
+from .types.messages import InputMessage, OutputMessage, ToolCallDecision
+from .types.streaming import (
+    ResponseCompletedEvent,
+    ResponseCreatedEvent,
+    extract_usage_from_streaming_chunks,
+)
 
 logger = logging.getLogger("nalai")
 
@@ -108,9 +116,7 @@ class LangGraphAgent(Agent):
                 f"Invalid conversation ID format: {conversation_id}"
             ) from None
 
-    def _filter_current_response_messages(
-        self, result_messages: list, input_messages: list
-    ) -> list:
+    def _filter_current_response_messages(self, result_messages: list) -> list:
         """
         Filter messages to only include those from the current response cycle.
 
@@ -295,11 +301,11 @@ class LangGraphAgent(Agent):
 
     async def chat(
         self,
-        messages: list[BaseMessage],
+        messages: list[InputMessage],
         conversation_id: str | None,
         config: dict,
         previous_response_id: str | None = None,
-    ) -> tuple[list[Message], ConversationInfo]:
+    ) -> tuple[list[OutputMessage], ConversationInfo]:
         """Start a new conversation or continue an existing one based on conversation_id."""
         user_id = self._extract_user_id_from_config(config)
 
@@ -326,14 +332,23 @@ class LangGraphAgent(Agent):
 
         # Invoke agent
         try:
-            agent_input = {"messages": messages}
+            # transform to langchain messages
+            lc_messages = [
+                msg.to_langchain_message()
+                if hasattr(msg, "to_langchain_message")
+                else msg
+                for msg in messages
+            ]
+            agent_input = {"messages": lc_messages}
+
             result = await self.agent.ainvoke(agent_input, config=updated_config)
+
         except Exception as e:
             logger.error(f"Agent invocation failed: {e}")
 
             # Check if this is a client error (4xx) that should be bubbled up
             if self._is_client_error(e):
-                from .agent import ClientError
+                from .types.agent import ClientError
 
                 # Extract status code and message from the original error
                 status_code, error_message = self._extract_client_error_info(e)
@@ -344,7 +359,7 @@ class LangGraphAgent(Agent):
                 ) from e
 
             # For server errors (5xx) or unknown errors, use InvocationError
-            from .agent import InvocationError
+            from .types.agent import InvocationError
 
             raise InvocationError(
                 context={"conversation_id": conversation_id}, original_exception=e
@@ -358,15 +373,18 @@ class LangGraphAgent(Agent):
         # CRITICAL FIX: Filter messages to only include those from the current response cycle
         # This prevents sending the entire conversation history in each response
         current_response_messages = self._filter_current_response_messages(
-            result_messages, messages
+            result_messages
         )
-
+        run_id = generate_run_id()
         # Transform to core models
         core_messages = [
             transform_message(
-                message=msg, config=config, conversation_id=conversation_id
+                message=msg,
+                config=config,
+                conversation_id=conversation_id,
+                run_id=f"{run_id}-{i}" if run_id else None,
             )
-            for msg in current_response_messages
+            for i, msg in enumerate(current_response_messages)
         ]
 
         # Check for interrupts in the result
@@ -430,7 +448,7 @@ class LangGraphAgent(Agent):
 
     async def chat_streaming(
         self,
-        messages: list[BaseMessage],
+        messages: list[InputMessage],
         conversation_id: str | None,
         config: dict,
         previous_response_id: str | None = None,
@@ -462,16 +480,45 @@ class LangGraphAgent(Agent):
 
         # Get conversation info
         conversation_info = await self._get_conversation_info(conversation_id, config)
+        run_id = generate_run_id()
 
         # Create streaming generator - pass through all events without filtering
         async def stream_generator():
-            agent_input = {"messages": messages}
+            # transform to langchain messages
+            lc_messages = [
+                msg.to_langchain_message()
+                if hasattr(msg, "to_langchain_message")
+                else msg
+                for msg in messages
+            ]
+            agent_input = {"messages": lc_messages}
+            # Collect messages and usage from the stream
+            collected_messages = []
+
+            response_created_event = ResponseCreatedEvent(
+                conversation_id=conversation_info.conversation_id, run_id=run_id
+            )
+            yield response_created_event
+
             async for chunk in self.agent.astream(
                 agent_input, config, stream_mode=["updates", "messages"]
             ):
-                # Transform chunk to core model - pass through all events
+                # Transform langchain chunk to core model - pass through all events
                 core_chunk = transform_streaming_chunk(chunk, conversation_id)
                 yield core_chunk
+                # Collect messages for usage extraction from the original chunk
+                if hasattr(core_chunk, "usage") and core_chunk.usage:
+                    collected_messages.append(core_chunk)
+
+            # Send completion event with actual usage
+            usage_data = extract_usage_from_streaming_chunks(collected_messages)
+
+            response_completed_event = ResponseCompletedEvent(
+                conversation_id=conversation_info.conversation_id,
+                run_id=run_id,
+                usage=usage_data,
+            )
+            yield response_completed_event
 
         return stream_generator(), conversation_info
 
@@ -540,7 +587,7 @@ class LangGraphAgent(Agent):
         self,
         conversation_id: str,
         config: dict,
-    ) -> tuple[list[Message], ConversationInfo]:
+    ) -> tuple[list[InputMessage | OutputMessage], ConversationInfo]:
         """Load conversation state using checkpoint operations."""
         user_id = self._extract_user_id_from_config(config)
 
@@ -586,7 +633,7 @@ class LangGraphAgent(Agent):
                 transform_message(
                     message=msg, config=config, conversation_id=conversation_id
                 )
-                for msg in messages
+                for i, msg in enumerate(messages)
             ]
 
             # Get conversation info
@@ -652,10 +699,10 @@ class LangGraphAgent(Agent):
 
     async def resume_interrupted(
         self,
-        resume_decision: ResumeDecision,
+        resume_decision: ToolCallDecision,
         conversation_id: str,
         config: dict,
-    ) -> tuple[list[Message], ConversationInfo]:
+    ) -> tuple[list[InputMessage | OutputMessage], ConversationInfo]:
         """Resume an interrupted conversation."""
         user_id = self._extract_user_id_from_config(config)
 
@@ -682,15 +729,19 @@ class LangGraphAgent(Agent):
         # CRITICAL FIX: Filter messages to only include those from the current response cycle
         # This prevents sending the entire conversation history in each response
         current_response_messages = self._filter_current_response_messages(
-            result_messages, []
+            result_messages
         )
 
+        run_id = generate_run_id()
         # Transform to core models
         core_messages = [
             transform_message(
-                message=msg, config=config, conversation_id=conversation_id
+                message=msg,
+                config=config,
+                conversation_id=conversation_id,
+                run_id=f"{run_id}-{i}" if run_id else None,
             )
-            for msg in current_response_messages
+            for i, msg in enumerate(current_response_messages)
         ]
 
         # Get conversation info
@@ -700,7 +751,7 @@ class LangGraphAgent(Agent):
 
     async def resume_interrupted_streaming(
         self,
-        resume_decision: ResumeDecision,
+        resume_decision: ToolCallDecision,
         conversation_id: str,
         config: dict,
     ) -> tuple[AsyncGenerator[StreamingChunk, None], ConversationInfo]:
@@ -712,12 +763,25 @@ class LangGraphAgent(Agent):
             user_id, conversation_id, "access_validation", config
         )
 
+        # Ensure config has proper structure for LangGraph
+        config = self._ensure_config_structure(config, conversation_id)
+
         # Get conversation info
         conversation_info = await self._get_conversation_info(conversation_id, config)
 
         # Create streaming generator using ResumeDecision directly
         async def stream_generator():
+            run_id = generate_run_id()
+
+            response_created_event = ResponseCreatedEvent(
+                conversation_id=conversation_info.conversation_id, run_id=run_id
+            )
+            yield response_created_event
+
+            # Collect messages and usage from the stream
+            collected_messages = []
             resume_command = [resume_decision.model_dump()]
+
             async for chunk in self.agent.astream(
                 Command(resume=resume_command),
                 config,
@@ -726,6 +790,19 @@ class LangGraphAgent(Agent):
                 # Transform chunk to core model - pass through all events
                 core_chunk = transform_streaming_chunk(chunk, conversation_id)
                 yield core_chunk
+                # Collect messages for usage extraction from the original chunk
+                if hasattr(core_chunk, "usage") and core_chunk.usage:
+                    collected_messages.append(core_chunk)
+
+            # Send completion event with actual usage
+            usage_data = extract_usage_from_streaming_chunks(collected_messages)
+
+            response_completed_event = ResponseCompletedEvent(
+                conversation_id=conversation_info.conversation_id,
+                run_id=run_id,
+                usage=usage_data,
+            )
+            yield response_completed_event
 
         return stream_generator(), conversation_info
 
@@ -734,7 +811,7 @@ class LangGraphAgent(Agent):
         conversation_id: str,
         checkpoint_id: str,
         config: dict,
-    ) -> tuple[list[Message], ConversationInfo]:
+    ) -> tuple[list[InputMessage | OutputMessage], ConversationInfo]:
         """
         Resume conversation from a specific checkpoint.
 

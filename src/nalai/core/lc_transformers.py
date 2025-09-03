@@ -8,14 +8,21 @@ to internal data models.
 import logging
 from typing import Any
 
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage
 from langchain_core.messages.tool import ToolMessage
 
 from ..config import ExecutionContext, ToolCallMetadata
 from ..utils.id_generator import generate_message_id, generate_run_id
-from .agent import (
+from .types.messages import (
+    AssistantOutputMessage,
+    BaseOutputMessage,
+    ContentBlock,
+    HumanOutputMessage,
+    TextContent,
+    ToolOutputMessage,
+)
+from .types.streaming import (
     InterruptChunk,
-    Message,
     MessageChunk,
     StreamingChunk,
     ToolCallChunk,
@@ -27,11 +34,32 @@ from .agent import (
 logger = logging.getLogger("nalai")
 
 # Type aliases for better readability
-LangGraphEvent = tuple[str, Any]  # (event_type, event_data)
 MessageInput = BaseMessage | dict  # Can be LangChain message or dict
-StreamingChunkInput = (
-    LangGraphEvent | BaseMessage | dict
-)  # Can be LangGraph event, message, or dict
+StreamingChunkInput = tuple[str, BaseMessage | dict]
+
+
+def content_blocks_from_message(message: BaseMessage) -> list[ContentBlock]:
+    """Create content blocks from message."""
+    if message.content and message.content.strip():
+        return [TextContent(text=message.content)]
+    elif message.type == "ai" and message.tool_calls:
+        return [TextContent(text="I'll help you with that request.")]
+    elif message.type == "tool":
+        return [TextContent(text=message.content or "Tool execution completed.")]
+    else:
+        return [TextContent(text="Message processed.")]
+
+
+def tool_calls_from_message(
+    message: HumanMessage | AIMessage | ToolMessage,
+) -> list[dict]:
+    """Create tool calls from message."""
+    if hasattr(message, "tool_calls") and getattr(message, "tool_calls", None):
+        return [
+            {"id": tc["id"], "name": tc["name"], "args": tc["args"]}
+            for tc in message.tool_calls
+        ]
+    return []
 
 
 def transform_message(
@@ -39,46 +67,99 @@ def transform_message(
     run_id: str | None = None,
     config: dict | None = None,
     conversation_id: str | None = None,
-) -> Message:
+) -> BaseOutputMessage:
     """Transform message to core model with consistent ID handling."""
     # Handle dict objects (already in the right format)
     if isinstance(message, dict):
-        return Message(**message)
+        return BaseOutputMessage(**message)
 
-    # Handle message objects
-    # Extract existing ID
-    message_id = _safe_getattr(message, "id")
+    message_id = run_id
+    if not message_id:
+        # Check if message already has a valid domain-prefixed ID
+        if hasattr(message, "id") and message.id:
+            message_id = _determine_message_id(message, message.id, run_id)
+        else:
+            message_id = _determine_message_id(message, None, run_id)
 
-    # Determine the appropriate ID based on message type and our consistency rules
-    final_message_id = _determine_message_id(message, message_id, run_id)
+    content_blocks = content_blocks_from_message(message)
 
-    message_data = {
-        "content": str(message.content),
-        "type": message.__class__.__name__.lower().replace("message", ""),
-        "id": final_message_id,
-        "tool_calls": _extract_tool_calls(message),
-        "tool_call_chunks": _safe_getattr(message, "tool_call_chunks"),
-        "invalid_tool_calls": _safe_getattr(message, "invalid_tool_calls"),
-        "response_metadata": _safe_getattr(message, "response_metadata"),
-        "usage": _extract_usage(message),
-        "finish_reason": _extract_finish_reason(message),
-        "tool_call_id": _safe_getattr(message, "tool_call_id"),
-        "status": _safe_getattr(message, "status"),
-    }
-
-    if message_data["type"] == "tool":
+    # Create appropriate output message based on type
+    if message.type == "human":
+        return HumanOutputMessage(
+            id=message_id,
+            content=content_blocks,
+        )
+    elif message.type == "ai":
+        finish_reason = _extract_finish_reason(message)
+        usage = _extract_usage(message)
+        # Provide default usage if None to satisfy AssistantOutputMessage validation
+        if usage is None:
+            usage = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            }
+        tool_calls = tool_calls_from_message(message)
+        return AssistantOutputMessage(
+            id=message_id,
+            content=content_blocks,
+            tool_calls=tool_calls,
+            invalid_tool_calls=message.invalid_tool_calls,
+            finish_reason=finish_reason,
+            usage=usage,
+        )
+    elif message.type == "tool":
         tool_chunk = _handle_tool_message(message, config, conversation_id)
-        if tool_chunk:
-            message_data["content"] = tool_chunk.content
-            message_data["tool_calls"] = [
-                {
-                    "id": tool_chunk.tool_call_id,
-                    "name": tool_chunk.tool_name,
-                    "args": tool_chunk.args,
-                }
-            ]
-    # Pydantic validates and creates the model
-    return Message(**message_data)
+        if not tool_chunk:
+            raise ValueError(f"Tool message {message.id} has no tool data")
+
+        return ToolOutputMessage(
+            id=message_id,
+            content=content_blocks,
+            tool_call_id=tool_chunk.tool_call_id,
+            tool_name=tool_chunk.tool_name,
+            status=message.status,
+            args=tool_chunk.args,
+        )
+    else:
+        # Fallback for unknown message types
+        raise ValueError(f"Unknown message type: {message.type}")
+
+
+def _extract_run_index(run_id: str) -> tuple[str, int | None]:
+    """
+    Extract the optional index from a run ID in format run--<uuid>-<index>.
+
+    Args:
+        run_id: Run ID string to parse
+
+    Returns:
+        Tuple of (base_run_id, index) where index is None if not present
+    """
+    if not run_id or not isinstance(run_id, str):
+        return run_id, None
+
+    if not run_id.startswith("run--"):
+        return run_id, None
+
+    # Split by dashes to handle run--<uuid>-<index> format
+    parts = run_id.split("-")
+    if len(parts) >= 4:  # run--uuid-index format
+        try:
+            index = int(parts[-1])
+            base_run_id = "-".join(parts[:-1])  # run--uuid
+            return base_run_id, index
+        except ValueError:
+            # Last part is not a number, so no index
+            return run_id, None
+    else:
+        # No index present
+        return run_id, None
+
+
+def _has_index(run_id: str) -> bool:
+    """Check if a run_id already contains an index suffix."""
+    return run_id.count("-") >= 2 and run_id.split("-")[-1].isdigit()
 
 
 def _determine_message_id(
@@ -107,17 +188,34 @@ def _determine_message_id(
             return generate_message_id()
 
     elif message_type in ["ai", "tool"]:
+        index = None
+        # Extract index from existing message ID if present
+        _, index = _extract_run_index(message.id)
+
         # AI and Tool messages: Always use run_ prefix for consistency
         if run_id:
-            # Use run_id directly - it should already be in the correct format
-            return run_id
+            if index is not None and not _has_index(run_id):
+                # Append extracted index to provided run_id
+                return f"{run_id}-{index}"
+            else:
+                # Use run_id as-is (either has index or no index needed)
+                return run_id
         else:
             # No run_id provided, generate a run_ ID to maintain consistency
-            return generate_run_id()
+            if index is not None:
+                # Preserve the extracted index with new run_id
+                new_run_id = generate_run_id()
+                return f"{new_run_id}-{index}"
+            else:
+                # No index to preserve, just generate new run_id
+                return generate_run_id()
 
     else:
         # Unknown message type, generate msg_ ID
         return generate_message_id()
+
+
+# ----------- Streaming ------------
 
 
 def transform_streaming_chunk(
@@ -183,17 +281,11 @@ def transform_streaming_chunk(
                 # Regular message event
                 return _handle_regular_message(message_data, config, conversation_id)
 
-            # # Handle single message
-            # elif isinstance(event_data, BaseMessage):
-            #     # Transform to core message model
-            #     core_message = transform_message(event_data, config, conversation_id)
-            #     return MessageChunk(**core_message.model_dump())
-
     logger.warning("Unrecognized chunk type: %s", type(chunk))
     return None
 
 
-def _is_langgraph_event(chunk: Any) -> bool:
+def _is_langgraph_event(chunk: StreamingChunkInput) -> bool:
     """Check if chunk is a LangGraph event tuple."""
     return isinstance(chunk, tuple) and len(chunk) == 2
 
@@ -227,6 +319,16 @@ def _is_interrupt_update_event(event_data: dict) -> bool:
     """Check if event data is an interrupt update event."""
     event_key = next(iter(event_data.keys()))
     return event_key == "__interrupt__"
+
+
+def _is_final_update_event(event_data: dict) -> bool:
+    """Check if event data is a tool update event."""
+    event_value = next(iter(event_data.values()))
+    return (
+        isinstance(event_value, dict)
+        and "finish_reason" in event_value
+        and event_value["finish_reason"] == "stop"
+    )
 
 
 def _handle_tool_call_update(

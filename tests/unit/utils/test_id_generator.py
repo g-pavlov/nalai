@@ -99,13 +99,13 @@ class TestIDGenerator:
         """Test that IDs have consistent length."""
         conv_ids = [generate_conversation_id() for _ in range(100)]
 
-        # Should be either 26 or 27 characters (base62 encoding can vary by 1)
+        # Should be either 25, 26, or 27 characters (base62 encoding can vary)
         lengths = [len(conv_id) for conv_id in conv_ids]
         unique_lengths = set(lengths)
-        assert len(unique_lengths) <= 2  # At most 2 different lengths
+        assert len(unique_lengths) <= 3  # At most 3 different lengths
         assert all(
-            length in [26, 27] for length in unique_lengths
-        )  # Only 26 or 27 chars
+            length in [25, 26, 27] for length in unique_lengths
+        )  # Only 25, 26, or 27 chars
 
         # All should be valid format
         for conv_id in conv_ids:

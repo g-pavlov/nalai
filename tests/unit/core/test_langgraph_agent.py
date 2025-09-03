@@ -9,15 +9,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import yaml
 
-from nalai.core.agent import (
+from nalai.core.langgraph_agent import LangGraphAgent
+from nalai.core.types.agent import (
     AccessDeniedError,
     ConversationNotFoundError,
     InvocationError,
-    ResumeDecision,
     ValidationError,
 )
-from nalai.core.langgraph_agent import LangGraphAgent
-from nalai.server.schemas.messages import MessageRequest
+from nalai.core.types.messages import MessageRequest
 
 
 def load_test_cases():
@@ -125,7 +124,7 @@ class TestLangGraphAgent:
             messages = [{"content": "Hello", "type": "human"}]
 
         # Convert to new MessageRequest format
-        from nalai.server.schemas.messages import HumanInputMessage
+        from nalai.core.types.messages import HumanInputMessage
 
         # Convert messages to proper InputMessage format
         input_messages = []
@@ -148,9 +147,19 @@ class TestLangGraphAgent:
         expected_messages = []
         for msg in expected["output"]["messages"]:
             if msg["type"] == "human":
-                expected_messages.append(HumanMessage(content=msg["content"]))
+                expected_messages.append(
+                    HumanMessage(
+                        content=msg["content"],
+                        id="msg_test_123",  # Provide required ID
+                    )
+                )
             elif msg["type"] == "ai":
-                expected_messages.append(AIMessage(content=msg["content"]))
+                expected_messages.append(
+                    AIMessage(
+                        content=msg["content"],
+                        id="msg_test_123",  # Provide required ID
+                    )
+                )
         mock_agent.ainvoke.return_value = {"messages": expected_messages}
 
         # Act
@@ -164,10 +173,34 @@ class TestLangGraphAgent:
         result_messages_list = []
         for msg in result_messages:
             if hasattr(msg, "content"):
+                # Handle both BaseMessage and OutputMessage objects
+                if hasattr(msg, "type"):
+                    msg_type = msg.type
+                elif hasattr(msg, "role"):
+                    # Convert role to type for comparison
+                    if msg.role == "user":
+                        msg_type = "human"
+                    elif msg.role == "assistant":
+                        msg_type = "ai"  # Convert assistant role to ai type for test compatibility
+                    else:
+                        msg_type = msg.role
+                else:
+                    msg_type = "unknown"
+
+                # Extract content from content blocks if needed
+                if isinstance(msg.content, list) and len(msg.content) > 0:
+                    content = (
+                        msg.content[0].text
+                        if hasattr(msg.content[0], "text")
+                        else str(msg.content[0])
+                    )
+                else:
+                    content = str(msg.content) if msg.content else ""
+
                 result_messages_list.append(
                     {
-                        "content": msg.content,
-                        "type": msg.type,
+                        "content": content,
+                        "type": msg_type,
                         "status": getattr(msg, "status", None),
                     }
                 )
@@ -206,7 +239,7 @@ class TestLangGraphAgent:
             messages = [{"content": "Hello", "type": "human"}]
 
         # Convert to new MessageRequest format
-        from nalai.server.schemas.messages import HumanInputMessage
+        from nalai.core.types.messages import HumanInputMessage
 
         # Convert messages to proper InputMessage format
         input_messages = []
@@ -235,9 +268,19 @@ class TestLangGraphAgent:
             expected_messages = []
             for msg in expected["output"]["messages"]:
                 if msg["type"] == "human":
-                    expected_messages.append(HumanMessage(content=msg["content"]))
+                    expected_messages.append(
+                        HumanMessage(
+                            content=msg["content"],
+                            id="msg_test_123",  # Provide required ID
+                        )
+                    )
                 elif msg["type"] == "ai":
-                    expected_messages.append(AIMessage(content=msg["content"]))
+                    expected_messages.append(
+                        AIMessage(
+                            content=msg["content"],
+                            id="msg_test_123",  # Provide required ID
+                        )
+                    )
             mock_agent.ainvoke.return_value = {"messages": expected_messages}
 
         # Apply patches for this test
@@ -252,10 +295,34 @@ class TestLangGraphAgent:
                 result_messages_list = []
                 for msg in result_messages:
                     if hasattr(msg, "content"):
+                        # Handle both BaseMessage and OutputMessage objects
+                        if hasattr(msg, "type"):
+                            msg_type = msg.type
+                        elif hasattr(msg, "role"):
+                            # Convert role to type for comparison
+                            if msg.role == "user":
+                                msg_type = "human"
+                            elif msg.role == "assistant":
+                                msg_type = "ai"  # Convert assistant role to ai type for test compatibility
+                            else:
+                                msg_type = msg.role
+                        else:
+                            msg_type = "unknown"
+
+                        # Extract content from content blocks if needed
+                        if isinstance(msg.content, list) and len(msg.content) > 0:
+                            content = (
+                                msg.content[0].text
+                                if hasattr(msg.content[0], "text")
+                                else str(msg.content[0])
+                            )
+                        else:
+                            content = str(msg.content) if msg.content else ""
+
                         result_messages_list.append(
                             {
-                                "content": msg.content,
-                                "type": msg.type,
+                                "content": content,
+                                "type": msg_type,
                                 "status": getattr(msg, "status", None),
                             }
                         )
@@ -310,11 +377,20 @@ class TestLangGraphAgent:
             mock_messages = []
             for msg_data in expected.get("messages", []):
                 if msg_data["type"] == "human":
-                    mock_msg = HumanMessage(content=msg_data["content"])
+                    mock_msg = HumanMessage(
+                        content=msg_data["content"],
+                        id="msg_test_123",  # Provide required ID
+                    )
                 elif msg_data["type"] == "ai":
-                    mock_msg = AIMessage(content=msg_data["content"])
+                    mock_msg = AIMessage(
+                        content=msg_data["content"],
+                        id="msg_test_123",  # Provide required ID
+                    )
                 else:
-                    mock_msg = HumanMessage(content=msg_data["content"])  # fallback
+                    mock_msg = HumanMessage(
+                        content=msg_data["content"],
+                        id="msg_test_123",  # Provide required ID
+                    )  # fallback
                 mock_messages.append(mock_msg)
 
             checkpoint_state = {
@@ -472,9 +548,9 @@ class TestLangGraphAgent:
         input_data = test_case["input"]
         expected = test_case["expected"]
 
-        # Convert test data to match current ResumeDecisionRequest format
+        # Convert test data to match current format
         request_data = input_data["request"]
-        # Convert old format to new ResumeDecisionRequest format
+        # Convert old format to new format
         decision_value = request_data["input"]["decision"]
         if decision_value == "approve":
             decision_value = "accept"  # Convert approve -> accept
@@ -488,9 +564,30 @@ class TestLangGraphAgent:
             }
         }
 
-        # Mock agent response
+        # Mock agent response with proper LangChain message objects
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        mock_messages = []
+        for msg_data in expected["output"]["messages"]:
+            if msg_data["type"] == "ai":
+                mock_msg = AIMessage(
+                    content=msg_data["content"],
+                    id="msg_test_123",  # Provide required ID
+                )
+            elif msg_data["type"] == "human":
+                mock_msg = HumanMessage(
+                    content=msg_data["content"],
+                    id="msg_test_123",  # Provide required ID
+                )
+            else:
+                mock_msg = AIMessage(
+                    content=msg_data["content"],
+                    id="msg_test_123",  # Provide required ID
+                )
+            mock_messages.append(mock_msg)
+
         mock_agent.ainvoke.return_value = {
-            "messages": expected["output"]["messages"],
+            "messages": mock_messages,
             "selected_apis": expected["output"]["selected_apis"],
             "cache_miss": expected["output"]["cache_miss"],
         }
@@ -498,10 +595,17 @@ class TestLangGraphAgent:
         # Apply patches for this test
         with patch.object(langgraph_agent.agent, "ainvoke", mock_agent.ainvoke):
             # Act
-            resume_decision = ResumeDecision(
-                action=decision_value,
-                args=request_data["input"].get("message"),
-                tool_call_id="test-tool-call-id",
+            from nalai.core.types.messages import ToolCallDecision
+
+            resume_decision = ToolCallDecision(
+                decision=decision_value,
+                args=request_data["input"].get("message")
+                if decision_value == "edit"
+                else None,
+                message=request_data["input"].get("message")
+                if decision_value in ["feedback", "reject"]
+                else None,
+                tool_call_id="call_123",
             )
             (
                 result_messages,
@@ -516,11 +620,34 @@ class TestLangGraphAgent:
             result_messages_list = []
             for msg in result_messages:
                 if hasattr(msg, "content"):
-                    # Handle BaseMessage objects
+                    # Handle both BaseMessage and OutputMessage objects
+                    if hasattr(msg, "type"):
+                        msg_type = msg.type
+                    elif hasattr(msg, "role"):
+                        # Convert role to type for comparison
+                        if msg.role == "user":
+                            msg_type = "human"
+                        elif msg.role == "assistant":
+                            msg_type = "ai"  # Convert assistant role to ai type for test compatibility
+                        else:
+                            msg_type = msg.role
+                    else:
+                        msg_type = "unknown"
+
+                    # Extract content from content blocks if needed
+                    if isinstance(msg.content, list) and len(msg.content) > 0:
+                        content = (
+                            msg.content[0].text
+                            if hasattr(msg.content[0], "text")
+                            else str(msg.content[0])
+                        )
+                    else:
+                        content = str(msg.content) if msg.content else ""
+
                     result_messages_list.append(
                         {
-                            "content": msg.content,
-                            "type": msg.type,
+                            "content": content,
+                            "type": msg_type,
                             "status": getattr(msg, "status", None),
                         }
                     )
@@ -541,7 +668,7 @@ class TestLangGraphAgent:
     ):
         """Test streaming conversation functionality."""
         # Arrange
-        from nalai.server.schemas.messages import HumanInputMessage
+        from nalai.core.types.messages import HumanInputMessage
 
         request = MessageRequest(
             input=[HumanInputMessage(content="Hello")],
@@ -590,7 +717,7 @@ class TestLangGraphAgent:
     ):
         """Test handling of agent invocation errors."""
         # Arrange
-        from nalai.server.schemas.messages import HumanInputMessage
+        from nalai.core.types.messages import HumanInputMessage
 
         request = MessageRequest(
             input=[HumanInputMessage(content="Hello")],

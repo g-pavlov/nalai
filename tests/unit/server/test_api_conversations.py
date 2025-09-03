@@ -122,7 +122,7 @@ class TestHelperFunctions:
         self, error_class, error_message, expected_status, expected_detail
     ):
         """Should handle all agent error types correctly."""
-        from nalai.core.agent import (
+        from nalai.core.types.agent import (
             AccessDeniedError,
             ConversationNotFoundError,
             InvocationError,
@@ -205,11 +205,21 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent to return tuple (messages, conversation_info) as expected by the interface
-        from nalai.core.agent import Message
+        from nalai.core.types.messages import (
+            AssistantOutputMessage,
+            HumanOutputMessage,
+            TextContent,
+        )
 
         mock_messages = [
-            Message(content="Hello", type="human", id="msg_2wkvcCeR82dP3rohyhutYa"),
-            Message(content="Hi there!", type="ai", id="msg_3xkwcCeR82dP3rohyhutYb"),
+            HumanOutputMessage(
+                id="msg_2wkvcCeR82dP3rohyhutYa", content=[TextContent(text="Hello")]
+            ),
+            AssistantOutputMessage(
+                id="msg_3xkwcCeR82dP3rohyhutYb",
+                content=[TextContent(text="Hi there!")],
+                usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            ),
         ]
         mock_conversation_info = MagicMock()
         mock_conversation_info.conversation_id = (
@@ -287,22 +297,29 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent with tool calls
-        from nalai.core.agent import Message, ToolCall
+        from nalai.core.types.messages import (
+            AssistantOutputMessage,
+            HumanOutputMessage,
+            TextContent,
+            ToolCall,
+        )
 
         mock_messages = [
-            Message(content="Hello", type="human", id="msg_2wkvcCeR82dP3rohyhutYa"),
-            Message(
-                content="I'll check the weather for you.",
-                type="ai",
+            HumanOutputMessage(
+                id="msg_2wkvcCeR82dP3rohyhutYa", content=[TextContent(text="Hello")]
+            ),
+            AssistantOutputMessage(
                 id="msg_3xkwcCeR82dP3rohyhutYb",
+                content=[TextContent(text="I'll check the weather for you.")],
                 tool_calls=[
                     ToolCall(
                         id="call_123",
                         name="get_weather",
                         args={"location": "Seattle"},
-                        type="function",
+                        type="tool_call",
                     )
                 ],
+                usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
             ),
         ]
         mock_conversation_info = MagicMock()
@@ -358,14 +375,20 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent with interrupt - agent stores interrupt in conversation_info
-        from nalai.core.agent import Message
+        from nalai.core.types.messages import (
+            AssistantOutputMessage,
+            HumanOutputMessage,
+            TextContent,
+        )
 
         mock_messages = [
-            Message(content="Hello", type="human", id="msg_2wkvcCeR82dP3rohyhutYa"),
-            Message(
-                content="I'll check the weather for you.",
-                type="ai",
+            HumanOutputMessage(
+                id="msg_2wkvcCeR82dP3rohyhutYa", content=[TextContent(text="Hello")]
+            ),
+            AssistantOutputMessage(
                 id="msg_3xkwcCeR82dP3rohyhutYb",
+                content=[TextContent(text="I'll check the weather for you.")],
+                usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
             ),
         ]
 
@@ -432,25 +455,13 @@ class TestAgentAPI:
             "stream": "off",
         }
 
-        response = client.post(
-            "/api/v1/messages", json=payload, headers={"Accept": "application/json"}
-        )
+        # Since graceful error handling was removed, generic exceptions bubble up
+        with pytest.raises(Exception) as exc_info:
+            client.post(
+                "/api/v1/messages", json=payload, headers={"Accept": "application/json"}
+            )
 
-        assert (
-            response.status_code == 200
-        )  # Error responses are still 200 with error status
-        response_data = response.json()
-
-        # Test error handling
-        assert response_data["status"] == "error"
-        assert response_data["interrupts"] is None
-        assert response_data["metadata"] is not None
-        assert "error" in response_data["metadata"]
-        assert response_data["metadata"]["error"] == "Test error"
-        # Error responses now include a proper error message in output
-        assert len(response_data["output"]) == 1
-        assert response_data["output"][0]["role"] == "assistant"
-        assert "Error: Test error" in response_data["output"][0]["content"][0]["text"]
+        assert str(exc_info.value) == "Test error"
 
     @patch("nalai.server.runtime_config.get_user_context")
     def test_agent_responses_metadata_structure(
@@ -474,14 +485,19 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent with metadata
-        from nalai.core.agent import Message
+        from nalai.core.types.messages import (
+            AssistantOutputMessage,
+            HumanOutputMessage,
+            TextContent,
+        )
 
         mock_messages = [
-            Message(content="Hello", type="human", id="msg_2wkvcCeR82dP3rohyhutYa"),
-            Message(
-                content="Hi there!",
-                type="ai",
+            HumanOutputMessage(
+                id="msg_2wkvcCeR82dP3rohyhutYa", content=[TextContent(text="Hello")]
+            ),
+            AssistantOutputMessage(
                 id="msg_3xkwcCeR82dP3rohyhutYb",
+                content=[TextContent(text="Hi there!")],
                 finish_reason="stop",
                 usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
             ),
@@ -583,19 +599,19 @@ class TestAgentAPI:
 
         # Create the appropriate error type
         if error_type == "AccessDeniedError":
-            from nalai.core.agent import AccessDeniedError
+            from nalai.core.types.agent import AccessDeniedError
 
             error = AccessDeniedError(error_message)
         elif error_type == "ConversationNotFoundError":
-            from nalai.core.agent import ConversationNotFoundError
+            from nalai.core.types.agent import ConversationNotFoundError
 
             error = ConversationNotFoundError(error_message)
         elif error_type == "InvocationError":
-            from nalai.core.agent import InvocationError
+            from nalai.core.types.agent import InvocationError
 
             error = InvocationError(error_message)
         elif error_type == "ValidationError":
-            from nalai.core.agent import ValidationError
+            from nalai.core.types.agent import ValidationError
 
             error = ValidationError(error_message)
         elif error_type == "DatabaseError":
@@ -619,10 +635,6 @@ class TestAgentAPI:
             "stream": "off",
         }
 
-        response = client.post(
-            "/api/v1/messages", json=payload, headers={"Accept": "application/json"}
-        )
-
         # Agent-specific errors should return proper HTTP status codes
         if error_type in [
             "AccessDeniedError",
@@ -631,6 +643,9 @@ class TestAgentAPI:
             "ValidationError",
         ]:
             # These should return HTTP error status codes, not 200
+            response = client.post(
+                "/api/v1/messages", json=payload, headers={"Accept": "application/json"}
+            )
             expected_status = {
                 "AccessDeniedError": 403,
                 "ConversationNotFoundError": 404,
@@ -647,20 +662,15 @@ class TestAgentAPI:
             else:
                 assert expected_error_in_metadata in response_data["detail"]
         else:
-            # Other errors (infrastructure, generic) should still return 200 with error status
-            assert response.status_code == 200
-            response_data = response.json()
+            # Other errors (infrastructure, generic) bubble up since graceful error handling was removed
+            with pytest.raises(Exception) as exc_info:
+                client.post(
+                    "/api/v1/messages",
+                    json=payload,
+                    headers={"Accept": "application/json"},
+                )
 
-            # Test error handling
-            assert response_data["status"] == "error"
-            assert response_data["interrupts"] is None
-            assert response_data["metadata"] is not None
-            assert "error" in response_data["metadata"]
-            assert expected_error_in_metadata in response_data["metadata"]["error"]
-            # Error responses now include a proper error message in output
-            assert len(response_data["output"]) == 1
-            assert response_data["output"][0]["role"] == "assistant"
-            assert "Error:" in response_data["output"][0]["content"][0]["text"]
+            assert expected_error_in_metadata in str(exc_info.value)
 
     @pytest.mark.parametrize(
         "agent_error,expected_error_message",
@@ -701,23 +711,23 @@ class TestAgentAPI:
 
         # Create the appropriate agent error
         if agent_error == "AccessDeniedError":
-            from nalai.core.agent import AccessDeniedError
+            from nalai.core.types.agent import AccessDeniedError
 
             error = AccessDeniedError(expected_error_message)
         elif agent_error == "ConversationNotFoundError":
-            from nalai.core.agent import ConversationNotFoundError
+            from nalai.core.types.agent import ConversationNotFoundError
 
             error = ConversationNotFoundError(expected_error_message)
         elif agent_error == "InvocationError":
-            from nalai.core.agent import InvocationError
+            from nalai.core.types.agent import InvocationError
 
             error = InvocationError(expected_error_message)
         elif agent_error == "ValidationError":
-            from nalai.core.agent import ValidationError
+            from nalai.core.types.agent import ValidationError
 
             error = ValidationError(expected_error_message)
         elif agent_error == "ClientError":
-            from nalai.core.agent import ClientError
+            from nalai.core.types.agent import ClientError
 
             error = ClientError(expected_error_message, http_status=400)
 
@@ -797,14 +807,19 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent to return tuple (messages, conversation_info) as expected by the interface
-        from nalai.core.agent import Message
+        from nalai.core.types.messages import (
+            AssistantOutputMessage,
+            HumanOutputMessage,
+            TextContent,
+        )
 
         mock_messages = [
-            Message(content="Hello", type="human", id="msg_2wkvcCeR82dP3rohyhutYa"),
-            Message(
-                content="Hi there!",
-                type="ai",
+            HumanOutputMessage(
+                id="msg_2wkvcCeR82dP3rohyhutYa", content=[TextContent(text="Hello")]
+            ),
+            AssistantOutputMessage(
                 id="msg_3wkvcCeR82dP3rohyhutYa",
+                content=[TextContent(text="Hi there!")],
                 usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
             ),
         ]
@@ -867,9 +882,9 @@ class TestAgentAPI:
         call_args = mock_agent.chat.call_args
         messages = call_args[0][0]  # First argument is messages
         assert len(messages) == 1
-        from langchain_core.messages import HumanMessage
+        from nalai.core.types.messages import HumanInputMessage
 
-        assert isinstance(messages[0], HumanMessage)
+        assert isinstance(messages[0], HumanInputMessage)
         assert messages[0].content == "Hello, how are you?"
 
 
@@ -1017,25 +1032,30 @@ class TestLoadConversation:
         if agent_behavior == "success":
             # Mock successful conversation
             # Create proper Message objects for the test
-            from nalai.core.agent import Message
+            from nalai.core.types.messages import (
+                AssistantOutputMessage,
+                HumanOutputMessage,
+                TextContent,
+                ToolOutputMessage,
+            )
 
             mock_messages = [
-                Message(content="Hello", type="human", id="msg_2wkvcCeR82dP3rohyhutYa"),
-                Message(
-                    content="Hi there!",
-                    type="ai",
+                HumanOutputMessage(
+                    id="msg_2wkvcCeR82dP3rohyhutYa", content=[TextContent(text="Hello")]
+                ),
+                AssistantOutputMessage(
                     id="msg_3wkvcCeR82dP3rohyhutYa",
+                    content=[TextContent(text="Hi there!")],
                     usage={
                         "prompt_tokens": 10,
                         "completion_tokens": 5,
                         "total_tokens": 15,
                     },
                 ),
-                Message(
-                    content="API response",
-                    type="tool",
-                    tool_call_id="call_123",
+                ToolOutputMessage(
                     id="msg_4wkvcCeR82dP3rohyhutYa",
+                    content=[TextContent(text="API response")],
+                    tool_call_id="call_123",
                 ),
             ]
 
@@ -1051,14 +1071,14 @@ class TestLoadConversation:
             )
 
         elif agent_behavior == "access_denied":
-            from nalai.core.agent import AccessDeniedError
+            from nalai.core.types.agent import AccessDeniedError
 
             mock_agent.load_conversation.side_effect = AccessDeniedError(
                 "Access denied"
             )
 
         elif agent_behavior == "not_found":
-            from nalai.core.agent import ConversationNotFoundError
+            from nalai.core.types.agent import ConversationNotFoundError
 
             mock_agent.load_conversation.side_effect = ConversationNotFoundError(
                 "Conversation not found"
@@ -1148,7 +1168,7 @@ class TestListConversations:
             mock_agent.list_conversations.return_value = [mock_summary1, mock_summary2]
 
         elif agent_behavior == "unauthorized":
-            from nalai.core.agent import AccessDeniedError
+            from nalai.core.types.agent import AccessDeniedError
 
             mock_agent.list_conversations.side_effect = AccessDeniedError(
                 "Authentication required"
@@ -1245,7 +1265,7 @@ class TestDeleteConversation:
         if agent_behavior == "success":
             mock_agent.delete_conversation.return_value = True
         elif agent_behavior == "access_denied":
-            from nalai.core.agent import AccessDeniedError
+            from nalai.core.types.agent import AccessDeniedError
 
             mock_agent.delete_conversation.side_effect = AccessDeniedError(
                 "Access denied to conversation"
@@ -1253,7 +1273,7 @@ class TestDeleteConversation:
         elif agent_behavior == "not_found":
             mock_agent.delete_conversation.return_value = False
         elif agent_behavior == "unauthorized":
-            from nalai.core.agent import AccessDeniedError
+            from nalai.core.types.agent import AccessDeniedError
 
             mock_agent.delete_conversation.side_effect = AccessDeniedError(
                 "Authentication required"

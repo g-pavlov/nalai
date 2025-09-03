@@ -196,26 +196,26 @@ export class ResponseStateMachine {
         
         // Handle conversation ID from event data if present
         Logger.info('Checking conversation ID extraction', {
-            hasConversation: !!eventData.conversation,
-            conversationId: eventData.conversation,
+            hasConversation: !!eventData.conversation_id,
+            conversationId: eventData.conversation_id,
             currentThreadId: getCurrentThreadId(),
-            willUpdate: eventData.conversation && eventData.conversation !== getCurrentThreadId()
+            willUpdate: eventData.conversation_id && eventData.conversation_id !== getCurrentThreadId()
         });
         
-        if (eventData.conversation && eventData.conversation !== getCurrentThreadId()) {
+        if (eventData.conversation_id && eventData.conversation_id !== getCurrentThreadId()) {
             // Validate that it's a proper domain-prefixed ID
-            if (/^conv_[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{10,}$/i.test(eventData.conversation)) {
-                setCurrentThreadId(eventData.conversation);
+            if (/^conv_[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{10,}$/i.test(eventData.conversation_id)) {
+                setCurrentThreadId(eventData.conversation_id);
                 Logger.info('New conversation thread started from response.created event', { 
-                    conversationId: eventData.conversation,
+                    conversationId: eventData.conversation_id,
                     currentThreadIdAfterSet: getCurrentThreadId()
                 });
             } else {
-                Logger.warn('Invalid conversation ID format in response.created event', { conversationId: eventData.conversation });
+                Logger.warn('Invalid conversation ID format in response.created event', { conversationId: eventData.conversation_id });
             }
-        } else if (eventData.conversation) {
+        } else if (eventData.conversation_id) {
             Logger.info('Conversation ID already set or same as current', {
-                conversationId: eventData.conversation,
+                conversationId: eventData.conversation_id,
                 currentThreadId: getCurrentThreadId()
             });
         } else {
@@ -805,7 +805,8 @@ export class ResponseStateMachine {
                 tool_call_id: toolCallId,
                 action_request: actionRequest,
                 config: config,
-                description: description
+                description: description,
+                conversation_id: getCurrentThreadId() // Store conversation ID for resume requests
             },
             resumable: true, // SSE interrupts are always resumable
             ns: 'interrupt'

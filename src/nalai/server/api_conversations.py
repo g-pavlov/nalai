@@ -13,14 +13,13 @@ from fastapi.responses import StreamingResponse
 
 from ..config import settings
 from ..core import Agent
-from ..core.agent import (
+from ..core.types.agent import (
     AccessDeniedError,
     ClientError,
     ConversationNotFoundError,
     InvocationError,
     ValidationError,
 )
-from .json_serializer import serialize_conversation
 from .runtime_config import create_runtime_config
 from .schemas import (
     ConversationIdPathParam,
@@ -177,8 +176,13 @@ def create_conversations_api(app: FastAPI, agent: Agent) -> None:
             conversation_id, agent_config
         )
 
-        # Convert to API output format
-        response = serialize_conversation(conversation_info, messages)
+        response = LoadConversationResponse(
+            conversation_id=conversation_info.conversation_id,
+            messages=messages,
+            created_at=conversation_info.created_at,
+            last_updated=conversation_info.last_accessed,
+            status=conversation_info.status,
+        )
 
         return response
 
