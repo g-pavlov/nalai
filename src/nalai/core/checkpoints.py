@@ -224,10 +224,14 @@ class Checkpoints:
                 # Fallback: try to clear the state by overwriting with empty state
                 try:
                     await self.checkpointer.aput(config, {}, {}, {})
-                    logger.debug(f"Cleared conversation state for thread_id: {thread_id}")
+                    logger.debug(
+                        f"Cleared conversation state for thread_id: {thread_id}"
+                    )
                     return 1
                 except Exception as fallback_e:
-                    logger.error(f"Could not clear conversation state either: {fallback_e}")
+                    logger.error(
+                        f"Could not clear conversation state either: {fallback_e}"
+                    )
                     return 0
 
         except Exception as e:

@@ -176,7 +176,7 @@ function createConversationElement(conversation) {
             <span class="conversation-item-date" title="Last accessed">${lastAccessedDate}</span>
         </div>
         <div class="conversation-item-actions">
-            <button class="conversation-delete-btn" onclick="window.deleteConversationFromElement('${conversation.conversation_id}', '${escapeHtml(title)}')" title="Delete conversation">
+            <button class="conversation-delete-btn" onclick="window.deleteConversationFromElement('${conversation.conversation_id}', '${escapeHtml(title)}', event)" title="Delete conversation">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="3,6 5,6 21,6"></polyline>
                     <path d="M19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path>
@@ -309,9 +309,11 @@ window.selectConversationFromElement = async function(conversationId) {
     }
 };
 
-window.deleteConversationFromElement = async function(conversationId, conversationTitle) {
+window.deleteConversationFromElement = async function(conversationId, conversationTitle, event) {
     // Prevent event bubbling to avoid triggering the select function
-    event.stopPropagation();
+    if (event) {
+        event.stopPropagation();
+    }
     await deleteConversation(conversationId, conversationTitle);
 };
 
