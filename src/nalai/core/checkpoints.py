@@ -132,7 +132,12 @@ class Checkpoints:
             Checkpoint state or None if not found
         """
         try:
-            return await self.checkpointer.aget(config)
+            state = await self.checkpointer.aget(config)
+            if state:
+                logger.debug(
+                    f"Retrieved conversation state with metadata: {state.get('metadata', {})}"
+                )
+            return state
         except Exception as e:
             logger.error(f"Failed to get conversation state: {e}")
             raise CheckpointingBackendError(
@@ -172,7 +177,21 @@ class Checkpoints:
         """
         try:
             checkpoint_config = self._add_checkpoint_id(config, checkpoint_id)
-            await self.checkpointer.aput(checkpoint_config, state, metadata={})
+
+            # Get existing checkpoint to preserve metadata
+            existing_checkpoint = await self.get_by_id(config, checkpoint_id)
+            existing_metadata = (
+                existing_checkpoint.get("metadata", {}) if existing_checkpoint else {}
+            )
+
+            # Update last_accessed timestamp
+            current_timestamp = self._get_timestamp()
+            if existing_metadata:
+                existing_metadata["last_accessed"] = current_timestamp
+
+            await self.checkpointer.aput(
+                checkpoint_config, state, existing_metadata, {}
+            )
             logger.debug(f"Updated checkpoint {checkpoint_id}")
             return True
         except Exception as e:
@@ -195,15 +214,21 @@ class Checkpoints:
             # Extract thread_id from config
             thread_id = config.get("configurable", {}).get("thread_id", "")
 
-            # For MemorySaver, we can't actually delete checkpoints, but we can clear the state
-            # by overwriting it with an empty state
+            # Use MemorySaver's delete_thread method to actually remove the conversation
             try:
-                await self.checkpointer.aput(config, {}, metadata={})
-                logger.debug(f"Cleared conversation state for thread_id: {thread_id}")
+                await self.checkpointer.adelete_thread(thread_id)
+                logger.debug(f"Deleted conversation thread: {thread_id}")
                 return 1
             except Exception as e:
-                logger.warning(f"Could not clear conversation state: {e}")
-                return 1
+                logger.warning(f"Could not delete conversation thread: {e}")
+                # Fallback: try to clear the state by overwriting with empty state
+                try:
+                    await self.checkpointer.aput(config, {}, {}, {})
+                    logger.debug(f"Cleared conversation state for thread_id: {thread_id}")
+                    return 1
+                except Exception as fallback_e:
+                    logger.error(f"Could not clear conversation state either: {fallback_e}")
+                    return 0
 
         except Exception as e:
             logger.error(f"Failed to delete checkpoints: {e}")
@@ -221,8 +246,28 @@ class Checkpoints:
             Checkpoint ID
         """
         try:
-            checkpoint_id = await self.checkpointer.aput(config, state, metadata={})
-            logger.debug(f"Created/updated checkpoint {checkpoint_id}")
+            # Check if this is a new conversation or an update
+            existing_state = await self.get(config)
+            current_timestamp = self._get_timestamp()
+
+            # Prepare metadata with timestamps
+            metadata = {}
+            if existing_state is None:
+                # New conversation - set created_at
+                metadata["created_at"] = current_timestamp
+                metadata["last_accessed"] = current_timestamp
+            else:
+                # Existing conversation - preserve created_at, update last_accessed
+                existing_metadata = existing_state.get("metadata", {})
+                metadata["created_at"] = existing_metadata.get(
+                    "created_at", current_timestamp
+                )
+                metadata["last_accessed"] = current_timestamp
+
+            checkpoint_id = await self.checkpointer.aput(config, state, metadata, {})
+            logger.debug(
+                f"Created/updated checkpoint {checkpoint_id} with metadata: {metadata}"
+            )
             return checkpoint_id
         except Exception as e:
             logger.error(f"Failed to create/update checkpoint: {e}")
@@ -445,16 +490,38 @@ class Checkpoints:
                     "checkpoint_count": 0,
                 }
 
-            # Extract metadata from state
-            metadata = state.get("metadata", {})
+            # Extract data from state - use built-in timestamp instead of custom metadata
+            builtin_timestamp = state.get("ts")  # MemorySaver's built-in timestamp
             channel_values = state.get("channel_values", {})
             messages = channel_values.get("messages", [])
+
+            # Convert timestamp format from +00:00 to Z format for API compatibility
+            formatted_timestamp = None
+            if builtin_timestamp:
+                try:
+                    from datetime import datetime
+
+                    # Parse the ISO timestamp from MemorySaver
+                    dt = datetime.fromisoformat(
+                        builtin_timestamp.replace("Z", "+00:00")
+                    )
+                    # Format to API-compatible format: YYYY-MM-DDTHH:MM:SS.mmmZ
+                    formatted_timestamp = dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                except (ValueError, AttributeError) as e:
+                    logger.warning(
+                        f"Failed to parse timestamp {builtin_timestamp}: {e}"
+                    )
+                    formatted_timestamp = None
+
+            logger.debug(
+                f"get_conversation_metadata for {conversation_id}: builtin_timestamp={builtin_timestamp}, formatted={formatted_timestamp}"
+            )
 
             return {
                 "conversation_id": conversation_id,
                 "user_id": user_id,
-                "created_at": metadata.get("created_at"),
-                "last_accessed": metadata.get("last_accessed"),
+                "created_at": formatted_timestamp,  # Use formatted timestamp as created_at
+                "last_accessed": formatted_timestamp,  # Use formatted timestamp as last_accessed
                 "message_count": len(messages),
                 "checkpoint_count": len(await self.list(config)),
             }
