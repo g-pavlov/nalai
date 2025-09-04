@@ -349,9 +349,9 @@ install-git-hooks:
 	@echo "Installing git hooks for automatic tag pushing and dependency validation..."
 	@mkdir -p .git/hooks
 	
-	# Pre-push hook for version tags
+	# Pre-push hook for code quality, dependency validation, and version tags
 	@echo '#!/bin/bash' > .git/hooks/pre-push
-	@echo '# Pre-push hook to automatically push version tags' >> .git/hooks/pre-push
+	@echo '# Pre-push hook to validate code quality, dependencies, and push version tags' >> .git/hooks/pre-push
 	@echo '' >> .git/hooks/pre-push
 	@echo '# Check if we'\''re pushing tags directly to avoid infinite loop' >> .git/hooks/pre-push
 	@echo 'if [[ "$$1" == *"refs/tags/"* ]]; then' >> .git/hooks/pre-push
@@ -362,6 +362,27 @@ install-git-hooks:
 	@echo 'if [ "$$GIT_PUSHING_TAGS" = "1" ]; then' >> .git/hooks/pre-push
 	@echo '    exit 0' >> .git/hooks/pre-push
 	@echo 'fi' >> .git/hooks/pre-push
+	@echo '' >> .git/hooks/pre-push
+	@echo '# Ensure dependencies are installed and lock file is up to date' >> .git/hooks/pre-push
+	@echo 'make install' >> .git/hooks/pre-push
+	@echo '' >> .git/hooks/pre-push
+	@echo '# Run code quality checks (format + lint)' >> .git/hooks/pre-push
+	@echo 'echo "🔧 Running code quality checks..."' >> .git/hooks/pre-push
+	@echo 'if ! make lint >/dev/null 2>&1; then' >> .git/hooks/pre-push
+	@echo '    echo "❌ Code quality issues found"' >> .git/hooks/pre-push
+	@echo '    echo "Run '\''make lint'\'' to see details"' >> .git/hooks/pre-push
+	@echo '    exit 1' >> .git/hooks/pre-push
+	@echo 'fi' >> .git/hooks/pre-push
+	@echo '' >> .git/hooks/pre-push
+	@echo '# Check dependency categorization' >> .git/hooks/pre-push
+	@echo 'echo "📦 Validating dependencies..."' >> .git/hooks/pre-push
+	@echo 'if ! poetry run python scripts/lint_dependencies.py >/dev/null 2>&1; then' >> .git/hooks/pre-push
+	@echo '    echo "❌ Dependency categorization issues found"' >> .git/hooks/pre-push
+	@echo '    echo "Run '\''make validate-deps'\'' to see details"' >> .git/hooks/pre-push
+	@echo '    exit 1' >> .git/hooks/pre-push
+	@echo 'fi' >> .git/hooks/pre-push
+	@echo '' >> .git/hooks/pre-push
+	@echo 'echo "✅ Pre-push checks passed"' >> .git/hooks/pre-push
 	@echo '' >> .git/hooks/pre-push
 	@echo '# Get all local version tags that are not on remote' >> .git/hooks/pre-push
 	@echo 'local_tags=$$(git tag --list | grep -E "^[0-9]+\.[0-9]+\.[0-9]+$$" | while read tag; do' >> .git/hooks/pre-push
@@ -377,35 +398,8 @@ install-git-hooks:
 	@echo 'fi' >> .git/hooks/pre-push
 	@chmod +x .git/hooks/pre-push
 	
-	# Pre-commit hook for code quality and dependency validation
-	@echo '#!/bin/bash' > .git/hooks/pre-commit
-	@echo '# Pre-commit hook to validate code quality and dependencies' >> .git/hooks/pre-commit
-	@echo '' >> .git/hooks/pre-commit
-	@echo '# Ensure dependencies are installed and lock file is up to date' >> .git/hooks/pre-commit
-	@echo 'make install' >> .git/hooks/pre-commit
-	@echo '' >> .git/hooks/pre-commit
-	@echo '# Run code quality checks (format + lint)' >> .git/hooks/pre-commit
-	@echo 'echo "🔧 Running code quality checks..."' >> .git/hooks/pre-commit
-	@echo 'if ! make lint >/dev/null 2>&1; then' >> .git/hooks/pre-commit
-	@echo '    echo "❌ Code quality issues found"' >> .git/hooks/pre-commit
-	@echo '    echo "Run '\''make lint'\'' to see details"' >> .git/hooks/pre-commit
-	@echo '    exit 1' >> .git/hooks/pre-commit
-	@echo 'fi' >> .git/hooks/pre-commit
-	@echo '' >> .git/hooks/pre-commit
-	@echo '# Check dependency categorization' >> .git/hooks/pre-commit
-	@echo 'echo "📦 Validating dependencies..."' >> .git/hooks/pre-commit
-	@echo 'if ! poetry run python scripts/lint_dependencies.py >/dev/null 2>&1; then' >> .git/hooks/pre-commit
-	@echo '    echo "❌ Dependency categorization issues found"' >> .git/hooks/pre-commit
-	@echo '    echo "Run '\''make validate-deps'\'' to see details"' >> .git/hooks/pre-commit
-	@echo '    exit 1' >> .git/hooks/pre-commit
-	@echo 'fi' >> .git/hooks/pre-commit
-	@echo '' >> .git/hooks/pre-commit
-	@echo 'echo "✅ Pre-commit checks passed"' >> .git/hooks/pre-commit
-	@chmod +x .git/hooks/pre-commit
-	
 	@echo "Git hooks installed successfully!"
-	@echo "Now when you run 'git push', version tags will be pushed automatically."
-	@echo "When you commit, code quality and dependencies will be validated automatically."
+	@echo "Now when you run 'git push', code quality and dependencies will be validated, and version tags will be pushed automatically."
 
 # Help
 # ====
