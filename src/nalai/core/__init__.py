@@ -5,93 +5,93 @@ This module contains the main agent class, workflow definitions,
 core data schemas, and agent interface.
 """
 
-from langchain_core.messages import BaseMessage
-
-from .checkpoints import get_checkpoints
-from .langgraph_agent import LangGraphAgent
-from .states import (
-    AgentState,
-    InputSchema,
-    OutputSchema,
-)
-from .types.agent import (
+from .agent import (
     AccessDeniedError,
     Agent,
     ClientError,
     ConversationInfo,
     ConversationNotFoundError,
-    # Exceptions
     Error,
     InvocationError,
-    # Internal types
-    SelectApi,
-    SelectedApis,
-    StreamingChunk,
     ValidationError,
 )
-from .types.messages import (
+from .factory import create_agent
+from .internal.lc_agent import create_user_scoped_conversation_id
+from .messages import (
+    AssistantOutputMessage,
+    ContentBlock,
+    HumanInputMessage,
+    HumanOutputMessage,
     InputMessage,
     OutputMessage,
+    TextContent,
     ToolCall,
     ToolCallDecision,
 )
-from .types.runtime_config import ConfigSchema, ModelConfig
-from .workflow import create_and_compile_workflow
-from .workflow_nodes import WorkflowNodes
-
-
-# Factory function for easy agent creation
-def create_agent() -> Agent:
-    """Create and return an agent.
-
-    Returns:
-        Agent: Agent for business operations
-    """
-    # Create the compiled workflow with singleton memory store for checkpointing
-    from ..services.checkpointing_service import get_checkpointing_service
-
-    workflow_nodes = WorkflowNodes()
-    checkpointing_service = get_checkpointing_service()
-    memory_store = checkpointing_service.get_checkpointer()
-    workflow = create_and_compile_workflow(workflow_nodes, memory_store=memory_store)
-
-    # Create and return the agent API
-    return LangGraphAgent(
-        workflow_graph=workflow,
-    )
-
+from .runtime_config import ConfigSchema, ModelConfig
+from .services import (
+    APIService,
+    AuditService,
+    CacheService,
+    CheckpointingService,
+    ModelService,
+)
+from .streaming import (
+    Event,
+    InterruptChunk,
+    MessageChunk,
+    ResponseCompletedEvent,
+    ResponseCreatedEvent,
+    ResponseErrorEvent,
+    StreamingChunk,
+    ToolCallChunk,
+    ToolCallUpdateChunk,
+    ToolChunk,
+    UpdateChunk,
+)
 
 __all__ = [
-    "WorkflowNodes",
-    "create_and_compile_workflow",
-    "create_agent",  # Factory function
-    "AgentState",
-    "ConfigSchema",
-    "InputSchema",
-    "ModelConfig",
-    "OutputSchema",
-    "SelectApi",
-    "SelectedApis",
-    # Core data models
-    "InputMessage",
-    "OutputMessage",
-    "StreamingChunk",
-    "ToolCall",
-    "ToolCallDecision",
-    # Agent interface
+    "create_agent",
     "Agent",
-    "LangGraphAgent",
-    # Checkpoints interface
-    "get_checkpoints",
-    # LangChain message types
-    "BaseMessage",
-    # Internal types
+    # Runtime agent config types
+    "ModelConfig",
+    "ConfigSchema",
+    # I/O types
+    "ContentBlock",
+    "TextContent",
+    "InputMessage",
+    "HumanInputMessage",
+    "ToolCallDecision",
+    "OutputMessage",
     "ConversationInfo",
-    # Exceptions
+    "ToolCall",
+    "HumanOutputMessage",
+    "AssistantOutputMessage",
+    # Streaming I/O types
+    "Event",
+    "ResponseCreatedEvent",
+    "ResponseCompletedEvent",
+    "ResponseErrorEvent",
+    "StreamingChunk",
+    "InterruptChunk",
+    "MessageChunk",
+    "ToolCallChunk",
+    "ToolCallUpdateChunk",
+    "ToolChunk",
+    "UpdateChunk",
+    # Error types
     "Error",
     "AccessDeniedError",
     "ClientError",
     "ConversationNotFoundError",
     "ValidationError",
     "InvocationError",
+    # Service interfaces
+    "CheckpointingService",
+    "CacheService",
+    "ModelService",
+    "APIService",
+    "AuditService",
+    # Utilities
+    "create_user_scoped_conversation_id",
 ]

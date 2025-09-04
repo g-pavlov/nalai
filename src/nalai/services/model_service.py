@@ -16,6 +16,7 @@ from langchain_core.runnables import RunnableConfig
 from pydantic import ValidationError
 
 from ..config import BaseRuntimeConfiguration, settings
+from ..core.services import ModelService as ModelServiceProtocol
 from .rate_limiting.factory import create_model_rate_limiter
 
 AWS_BEDROCK_PLATFORM = "aws_bedrock"
@@ -26,7 +27,7 @@ CLAUDE_SONNET_3_5 = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
 logger = logging.getLogger(__name__)
 
 
-class ModelService:
+class ModelManager(ModelServiceProtocol):
     """Service for AI model operations and configuration management.
     Provides unified interface for model initialization, configuration
     extraction, and context window management across different providers.
@@ -139,7 +140,7 @@ class ModelService:
             **provider_kwargs,
         )
 
-        context_window_size = ModelService.get_model_context_window_size(
+        context_window_size = ModelManager.get_model_context_window_size(
             model_platform, model_name=model_id
         )
         initialized_model.metadata = {
@@ -229,13 +230,12 @@ class ModelService:
 
     @staticmethod
     def get_model_id_from_config(config: RunnableConfig):
-        model_config = ModelService.get_model_config(config)
+        model_config = ModelManager.get_model_config(config)
         model_id = model_config.get("name", settings.default_model_id)
         return model_id
 
-    @staticmethod
-    def get_model_from_config(config: RunnableConfig, **kwargs: Any):
-        model_config = ModelService.get_model_config(config)
+    def get_model_from_config(self, config: RunnableConfig, **kwargs: Any):
+        model_config = ModelManager.get_model_config(config)
         # Use environment variables as defaults instead of hardcoded values
         model_name = model_config.get("name", settings.default_model_id)
         model_provider = model_config.get("platform", settings.default_model_platform)
@@ -244,7 +244,7 @@ class ModelService:
         if "temperature" not in kwargs:
             kwargs["temperature"] = 0
 
-        model = ModelService.initialize_chat_model(
+        model = ModelManager.initialize_chat_model(
             model_id=model_name, model_provider=model_provider, **kwargs
         )
         return model

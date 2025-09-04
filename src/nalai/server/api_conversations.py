@@ -12,9 +12,9 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from ..config import settings
-from ..core import Agent
-from ..core.types.agent import (
+from ..core import (
     AccessDeniedError,
+    Agent,
     ClientError,
     ConversationNotFoundError,
     InvocationError,

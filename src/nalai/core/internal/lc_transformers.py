@@ -11,9 +11,9 @@ from typing import Any
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage
 from langchain_core.messages.tool import ToolMessage
 
-from ..config import ExecutionContext, ToolCallMetadata
-from ..utils.id_generator import generate_message_id, generate_run_id
-from .types.messages import (
+from ...config import ExecutionContext, ToolCallMetadata
+from ...utils.id_generator import generate_message_id, generate_run_id
+from ..messages import (
     AssistantOutputMessage,
     BaseOutputMessage,
     ContentBlock,
@@ -21,7 +21,7 @@ from .types.messages import (
     TextContent,
     ToolOutputMessage,
 )
-from .types.streaming import (
+from ..streaming import (
     InterruptChunk,
     MessageChunk,
     StreamingChunk,
@@ -658,7 +658,7 @@ def _is_domain_prefixed_format(id_str: str) -> bool:
 
     domain, base62_part = id_str.split("_", 1)
 
-    from ..utils.id_generator import DomainPrefix
+    from ...utils.id_generator import DomainPrefix
 
     if domain not in DomainPrefix.__args__:  # type: ignore
         return False
@@ -666,7 +666,7 @@ def _is_domain_prefixed_format(id_str: str) -> bool:
     if not base62_part:
         return False
 
-    from ..utils.id_generator import BASE62_ALPHABET
+    from ...utils.id_generator import BASE62_ALPHABET
 
     for char in base62_part:
         if char not in BASE62_ALPHABET:

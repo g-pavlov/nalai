@@ -7,7 +7,8 @@ with interrupt capabilities.
 
 from unittest.mock import MagicMock, patch
 
-from nalai.core.interrupts import add_human_in_the_loop
+# Internal types for unit testing
+from nalai.core.internal.interrupts import add_human_in_the_loop
 
 
 class TestInterrupts:
@@ -22,7 +23,9 @@ class TestInterrupts:
         mock_tool.args_schema = {}
 
         # Mock the create_tool function to return the mock directly
-        with patch("nalai.core.interrupts.create_tool", return_value=mock_tool):
+        with patch(
+            "nalai.core.internal.interrupts.create_tool", return_value=mock_tool
+        ):
             # Call function
             result = add_human_in_the_loop(mock_tool)
 
@@ -48,7 +51,9 @@ class TestInterrupts:
         }
 
         # Mock the create_tool function to return the mock directly
-        with patch("nalai.core.interrupts.create_tool", return_value=mock_tool):
+        with patch(
+            "nalai.core.internal.interrupts.create_tool", return_value=mock_tool
+        ):
             # Call function
             result = add_human_in_the_loop(mock_tool, interrupt_config=custom_config)
 
@@ -72,7 +77,9 @@ class TestInterrupts:
         mock_tool.description = "A test function for testing interrupts."
         mock_tool.args_schema = {}
 
-        with patch("nalai.core.interrupts.create_tool", return_value=mock_tool):
+        with patch(
+            "nalai.core.internal.interrupts.create_tool", return_value=mock_tool
+        ):
             # Call function
             result = add_human_in_the_loop(test_function)
 
@@ -90,7 +97,9 @@ class TestInterrupts:
         mock_tool.args_schema = {}
 
         # Mock the create_tool function to return the mock directly
-        with patch("nalai.core.interrupts.create_tool", return_value=mock_tool):
+        with patch(
+            "nalai.core.internal.interrupts.create_tool", return_value=mock_tool
+        ):
             # Call function without interrupt_config
             result = add_human_in_the_loop(mock_tool)
 
@@ -113,7 +122,9 @@ class TestInterrupts:
         }
 
         # Mock the create_tool function to return the mock directly
-        with patch("nalai.core.interrupts.create_tool", return_value=mock_tool):
+        with patch(
+            "nalai.core.internal.interrupts.create_tool", return_value=mock_tool
+        ):
             # Call function with custom config
             result = add_human_in_the_loop(mock_tool, interrupt_config=custom_config)
 
@@ -129,7 +140,9 @@ class TestInterrupts:
         mock_tool.args_schema = {"type": "object", "properties": {}}
 
         # Mock the create_tool function to return the mock directly
-        with patch("nalai.core.interrupts.create_tool", return_value=mock_tool):
+        with patch(
+            "nalai.core.internal.interrupts.create_tool", return_value=mock_tool
+        ):
             # Call function
             result = add_human_in_the_loop(mock_tool)
 

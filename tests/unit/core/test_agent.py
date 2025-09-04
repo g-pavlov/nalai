@@ -6,17 +6,17 @@ Tests the data models and exception hierarchy in the agent module.
 
 import pytest
 
-from nalai.core.types.agent import (
+from nalai.core import (
     AccessDeniedError,
     ClientError,
     ConversationInfo,
     ConversationNotFoundError,
-    Error,
     InvocationError,
-    SelectApi,
-    SelectedApis,
     ValidationError,
 )
+
+# Internal types for unit testing
+from nalai.core.agent import Error, SelectApi, SelectedApis
 
 
 class TestAgentModels:
@@ -120,3 +120,95 @@ class TestAgentExceptions:
         error = InvocationError("Agent failed", original_exception=original)
         assert error.original_exception == original
         assert error.error_code == "AGENT_ERROR"
+
+
+class TestSelectApi:
+    """Test suite for SelectApi."""
+
+    def test_select_api_creation(self):
+        """Test SelectApi creation with valid data."""
+        api = SelectApi(api_title="User API", api_version="1.0")
+
+        assert api.api_title == "User API"
+        assert api.api_version == "1.0"
+
+    def test_select_api_field_descriptions(self):
+        """Test that SelectApi has proper field descriptions."""
+        # Check that fields have descriptions
+        title_field = SelectApi.model_fields["api_title"]
+        version_field = SelectApi.model_fields["api_version"]
+
+        assert title_field.description is not None
+        assert version_field.description is not None
+        assert "title" in title_field.description
+        assert "version" in version_field.description
+
+    def test_select_api_validation(self):
+        """Test SelectApi validation."""
+        # Should not raise any errors
+        api = SelectApi(api_title="Product API", api_version="2.1")
+
+        assert api.api_title == "Product API"
+        assert api.api_version == "2.1"
+
+    def test_select_api_empty_strings(self):
+        """Test SelectApi with empty strings."""
+        api = SelectApi(api_title="", api_version="")
+
+        assert api.api_title == ""
+        assert api.api_version == ""
+
+    def test_select_api_special_characters(self):
+        """Test SelectApi with special characters."""
+        api = SelectApi(api_title="API-v1.2.3", api_version="beta-1.0")
+
+        assert api.api_title == "API-v1.2.3"
+        assert api.api_version == "beta-1.0"
+
+
+class TestSelectedApis:
+    """Test suite for SelectedApis."""
+
+    def test_selected_apis_creation(self):
+        """Test SelectedApis creation with valid data."""
+        apis = [
+            SelectApi(api_title="User API", api_version="1.0"),
+            SelectApi(api_title="Product API", api_version="2.1"),
+        ]
+
+        selected_apis = SelectedApis(selected_apis=apis)
+
+        assert len(selected_apis.selected_apis) == 2
+        assert selected_apis.selected_apis[0].api_title == "User API"
+        assert selected_apis.selected_apis[1].api_title == "Product API"
+
+    def test_selected_apis_empty_list(self):
+        """Test SelectedApis with empty list."""
+        selected_apis = SelectedApis(selected_apis=[])
+
+        assert len(selected_apis.selected_apis) == 0
+
+    def test_selected_apis_default_factory(self):
+        """Test SelectedApis default factory."""
+        selected_apis = SelectedApis()
+
+        assert len(selected_apis.selected_apis) == 0
+        assert selected_apis.selected_apis == []
+
+    def test_selected_apis_field_description(self):
+        """Test that SelectedApis has proper field description."""
+        # Check that the field has a description
+        field = SelectedApis.model_fields["selected_apis"]
+
+        assert field.description is not None
+        assert "selected" in field.description.lower()
+        assert "apis" in field.description.lower()
+
+    def test_selected_apis_validation(self):
+        """Test SelectedApis validation."""
+        # Should not raise any errors
+        apis = [SelectApi(api_title="Test API", api_version="1.0")]
+        selected_apis = SelectedApis(selected_apis=apis)
+
+        assert len(selected_apis.selected_apis) == 1
+        assert selected_apis.selected_apis[0].api_title == "Test API"

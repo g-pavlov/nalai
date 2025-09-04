@@ -19,7 +19,7 @@ sys.path.insert(
 
 from nalai.services.audit_service import (
     AuditBackend,
-    AuditService,
+    AuditTrail,
     ExternalAuditBackend,
     InMemoryAuditBackend,
     get_audit_service,
@@ -300,13 +300,13 @@ class TestExternalAuditBackend:
             await backend.get_events()
 
 
-class TestAuditService:
+class TestAuditTrail:
     """Test cases for audit service."""
 
     @pytest.fixture
     def audit_service(self):
         """Create audit service instance."""
-        return AuditService(backend="memory")
+        return AuditTrail(backend="memory")
 
     @pytest.mark.asyncio
     async def test_log_access_event(self, audit_service):
@@ -364,7 +364,7 @@ class TestAuditService:
     def test_unsupported_backend(self):
         """Test initialization with unsupported backend."""
         with pytest.raises(ValueError, match="Unsupported audit backend"):
-            AuditService(backend="unsupported")
+            AuditTrail(backend="unsupported")
 
     def test_external_backend_not_implemented(self):
         """Test that external backend raises NotImplementedError."""
@@ -372,10 +372,10 @@ class TestAuditService:
             mock_settings.audit_external_url = "http://audit-service:8080"
 
             with pytest.raises(NotImplementedError):
-                AuditService(backend="external")
+                AuditTrail(backend="external")
 
 
-class TestAuditServiceGlobal:
+class TestAuditTrailGlobal:
     """Test cases for global audit service functions."""
 
     @pytest.fixture
@@ -394,11 +394,11 @@ class TestAuditServiceGlobal:
         service2 = get_audit_service()
 
         assert service1 is service2
-        assert isinstance(service1, AuditService)
+        assert isinstance(service1, AuditTrail)
 
     def test_set_audit_service(self, mock_settings):
         """Test set_audit_service."""
-        custom_service = AuditService(backend="memory")
+        custom_service = AuditTrail(backend="memory")
         set_audit_service(custom_service)
 
         service = get_audit_service()
@@ -424,13 +424,13 @@ class TestAuditServiceGlobal:
         assert events[0].action == action
 
 
-class TestAuditServiceIntegration:
+class TestAuditTrailIntegration:
     """Integration tests for audit service."""
 
     @pytest.mark.asyncio
     async def test_audit_trail_completeness(self):
         """Test that audit trail captures all required information."""
-        audit_service = AuditService(backend="memory")
+        audit_service = AuditTrail(backend="memory")
 
         user_id = "user-123"
         resource = "thread:thread-456"
@@ -463,7 +463,7 @@ class TestAuditServiceIntegration:
     @pytest.mark.asyncio
     async def test_audit_trail_isolation(self):
         """Test that audit trails are properly isolated between users."""
-        audit_service = AuditService(backend="memory")
+        audit_service = AuditTrail(backend="memory")
 
         user1_id = "user-123"
         user2_id = "user-789"
@@ -491,7 +491,7 @@ class TestAuditServiceIntegration:
     @pytest.mark.asyncio
     async def test_audit_trail_ordering(self):
         """Test that audit events are properly ordered by timestamp."""
-        audit_service = AuditService(backend="memory")
+        audit_service = AuditTrail(backend="memory")
 
         user_id = "user-123"
 
@@ -518,7 +518,7 @@ class TestAuditServiceIntegration:
     @pytest.mark.asyncio
     async def test_audit_trail_performance(self):
         """Test audit service performance with many events."""
-        audit_service = AuditService(backend="memory")
+        audit_service = AuditTrail(backend="memory")
 
         user_id = "user-123"
 
@@ -541,7 +541,7 @@ class TestAuditServiceIntegration:
     @pytest.mark.asyncio
     async def test_audit_trail_metadata_handling(self):
         """Test that audit service properly handles various metadata types."""
-        audit_service = AuditService(backend="memory")
+        audit_service = AuditTrail(backend="memory")
 
         user_id = "user-123"
         resource = "thread:thread-456"

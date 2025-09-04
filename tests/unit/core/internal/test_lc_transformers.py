@@ -9,7 +9,9 @@ from unittest.mock import MagicMock, Mock
 import pytest
 
 from nalai.config import ExecutionContext, ToolCallMetadata
-from nalai.core.lc_transformers import (
+
+# Internal types for unit testing
+from nalai.core.internal.lc_transformers import (
     _handle_tool_call_message,
     _handle_tool_message,
     transform_message,

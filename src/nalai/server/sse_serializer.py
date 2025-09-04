@@ -8,7 +8,7 @@ events from the agent, including specialized handlers for different event types.
 import logging
 from typing import Any
 
-from ..core.types.streaming import (
+from ..core import (
     InterruptChunk,
     MessageChunk,
     StreamingChunk,

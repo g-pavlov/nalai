@@ -7,7 +7,7 @@ This package contains all API input/output schemas organized by HTTP resources:
 - common: Shared types and constants used across resources
 """
 
-from .base import ConversationIdPathParam, ModelConfig
+from .base import ConversationIdPathParam
 from .conversations import (
     ConversationResponse,
     ConversationSummary,
@@ -19,7 +19,6 @@ from .health import HealthzResponse
 __all__ = [
     # Base schemas
     "ConversationIdPathParam",
-    "ModelConfig",
     # Conversation resource schemas
     "ConversationResponse",
     "ConversationSummary",

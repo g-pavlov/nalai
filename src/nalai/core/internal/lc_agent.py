@@ -7,19 +7,18 @@ handling conversation management, access control, and agent invocation.
 
 import logging
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from ..utils.id_generator import (
+from ...utils.id_generator import (
     generate_conversation_id,
     generate_run_id,
     validate_domain_id_format,
 )
-from .checkpoints import get_checkpoints
-from .lc_transformers import transform_message, transform_streaming_chunk
-from .types.agent import (
+from ..agent import (
     # Exceptions
     AccessDeniedError,
     Agent,
@@ -30,12 +29,14 @@ from .types.agent import (
     StreamingChunk,
     ValidationError,
 )
-from .types.messages import InputMessage, OutputMessage, ToolCallDecision
-from .types.streaming import (
+from ..messages import InputMessage, OutputMessage, ToolCallDecision
+from ..streaming import (
     ResponseCompletedEvent,
     ResponseCreatedEvent,
     extract_usage_from_streaming_chunks,
 )
+from .checkpoints import get_checkpoints
+from .lc_transformers import transform_message, transform_streaming_chunk
 
 logger = logging.getLogger("nalai")
 
@@ -51,10 +52,12 @@ class LangGraphAgent(Agent):
     def __init__(
         self,
         workflow_graph: CompiledStateGraph,
+        audit_service: Any,
     ):
         """Initialize the agent API."""
         self.agent = workflow_graph
         self.checkpoints = get_checkpoints()
+        self.audit_service = audit_service
 
     def _extract_user_id_from_config(self, config: dict) -> str:
         """Extract user_id from LangGraph config."""
@@ -181,10 +184,7 @@ class LangGraphAgent(Agent):
         try:
             audit_context = self._extract_audit_context(config)
 
-            # Use generic audit utility for easy future refactoring
-            from ..services.audit_utils import log_conversation_access_event
-
-            await log_conversation_access_event(
+            await self.audit_service.log_conversation_access_event(
                 user_id=user_id,
                 conversation_id=conversation_id,
                 action=action,
@@ -348,7 +348,7 @@ class LangGraphAgent(Agent):
 
             # Check if this is a client error (4xx) that should be bubbled up
             if self._is_client_error(e):
-                from .types.agent import ClientError
+                from ..agent import ClientError
 
                 # Extract status code and message from the original error
                 status_code, error_message = self._extract_client_error_info(e)
@@ -359,7 +359,7 @@ class LangGraphAgent(Agent):
                 ) from e
 
             # For server errors (5xx) or unknown errors, use InvocationError
-            from .types.agent import InvocationError
+            from ..agent import InvocationError
 
             raise InvocationError(
                 context={"conversation_id": conversation_id}, original_exception=e

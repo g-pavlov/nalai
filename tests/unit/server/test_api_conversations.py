@@ -122,7 +122,7 @@ class TestHelperFunctions:
         self, error_class, error_message, expected_status, expected_detail
     ):
         """Should handle all agent error types correctly."""
-        from nalai.core.types.agent import (
+        from nalai.core.agent import (
             AccessDeniedError,
             ConversationNotFoundError,
             InvocationError,
@@ -205,7 +205,7 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent to return tuple (messages, conversation_info) as expected by the interface
-        from nalai.core.types.messages import (
+        from nalai.core.messages import (
             AssistantOutputMessage,
             HumanOutputMessage,
             TextContent,
@@ -297,7 +297,7 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent with tool calls
-        from nalai.core.types.messages import (
+        from nalai.core.messages import (
             AssistantOutputMessage,
             HumanOutputMessage,
             TextContent,
@@ -375,7 +375,7 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent with interrupt - agent stores interrupt in conversation_info
-        from nalai.core.types.messages import (
+        from nalai.core.messages import (
             AssistantOutputMessage,
             HumanOutputMessage,
             TextContent,
@@ -485,7 +485,7 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent with metadata
-        from nalai.core.types.messages import (
+        from nalai.core.messages import (
             AssistantOutputMessage,
             HumanOutputMessage,
             TextContent,
@@ -599,19 +599,19 @@ class TestAgentAPI:
 
         # Create the appropriate error type
         if error_type == "AccessDeniedError":
-            from nalai.core.types.agent import AccessDeniedError
+            from nalai.core.agent import AccessDeniedError
 
             error = AccessDeniedError(error_message)
         elif error_type == "ConversationNotFoundError":
-            from nalai.core.types.agent import ConversationNotFoundError
+            from nalai.core.agent import ConversationNotFoundError
 
             error = ConversationNotFoundError(error_message)
         elif error_type == "InvocationError":
-            from nalai.core.types.agent import InvocationError
+            from nalai.core.agent import InvocationError
 
             error = InvocationError(error_message)
         elif error_type == "ValidationError":
-            from nalai.core.types.agent import ValidationError
+            from nalai.core.agent import ValidationError
 
             error = ValidationError(error_message)
         elif error_type == "DatabaseError":
@@ -711,23 +711,23 @@ class TestAgentAPI:
 
         # Create the appropriate agent error
         if agent_error == "AccessDeniedError":
-            from nalai.core.types.agent import AccessDeniedError
+            from nalai.core.agent import AccessDeniedError
 
             error = AccessDeniedError(expected_error_message)
         elif agent_error == "ConversationNotFoundError":
-            from nalai.core.types.agent import ConversationNotFoundError
+            from nalai.core.agent import ConversationNotFoundError
 
             error = ConversationNotFoundError(expected_error_message)
         elif agent_error == "InvocationError":
-            from nalai.core.types.agent import InvocationError
+            from nalai.core.agent import InvocationError
 
             error = InvocationError(expected_error_message)
         elif agent_error == "ValidationError":
-            from nalai.core.types.agent import ValidationError
+            from nalai.core.agent import ValidationError
 
             error = ValidationError(expected_error_message)
         elif agent_error == "ClientError":
-            from nalai.core.types.agent import ClientError
+            from nalai.core.agent import ClientError
 
             error = ClientError(expected_error_message, http_status=400)
 
@@ -807,7 +807,7 @@ class TestAgentAPI:
         mock_get_user_context.return_value = mock_user_context
 
         # Mock agent to return tuple (messages, conversation_info) as expected by the interface
-        from nalai.core.types.messages import (
+        from nalai.core.messages import (
             AssistantOutputMessage,
             HumanOutputMessage,
             TextContent,
@@ -882,7 +882,7 @@ class TestAgentAPI:
         call_args = mock_agent.chat.call_args
         messages = call_args[0][0]  # First argument is messages
         assert len(messages) == 1
-        from nalai.core.types.messages import HumanInputMessage
+        from nalai.core.messages import HumanInputMessage
 
         assert isinstance(messages[0], HumanInputMessage)
         assert messages[0].content == "Hello, how are you?"
@@ -987,7 +987,7 @@ class TestLoadConversation:
         ],
     )
     @patch("nalai.server.runtime_config.get_user_context")
-    @patch("nalai.core.checkpoints.get_checkpoints")
+    @patch("nalai.core.internal.checkpoints.get_checkpoints")
     @patch("nalai.services.checkpointing_service.get_checkpointer")
     @patch("nalai.server.runtime_config.create_runtime_config")
     def test_load_conversation_scenarios(
@@ -1032,7 +1032,7 @@ class TestLoadConversation:
         if agent_behavior == "success":
             # Mock successful conversation
             # Create proper Message objects for the test
-            from nalai.core.types.messages import (
+            from nalai.core.messages import (
                 AssistantOutputMessage,
                 HumanOutputMessage,
                 TextContent,
@@ -1071,14 +1071,14 @@ class TestLoadConversation:
             )
 
         elif agent_behavior == "access_denied":
-            from nalai.core.types.agent import AccessDeniedError
+            from nalai.core.agent import AccessDeniedError
 
             mock_agent.load_conversation.side_effect = AccessDeniedError(
                 "Access denied"
             )
 
         elif agent_behavior == "not_found":
-            from nalai.core.types.agent import ConversationNotFoundError
+            from nalai.core.agent import ConversationNotFoundError
 
             mock_agent.load_conversation.side_effect = ConversationNotFoundError(
                 "Conversation not found"
@@ -1120,7 +1120,7 @@ class TestListConversations:
         ],
     )
     @patch("nalai.server.runtime_config.get_user_context")
-    @patch("nalai.core.checkpoints.get_checkpoints")
+    @patch("nalai.core.internal.checkpoints.get_checkpoints")
     @patch("nalai.services.checkpointing_service.get_checkpointer")
     def test_list_conversations_scenarios(
         self,
@@ -1168,7 +1168,7 @@ class TestListConversations:
             mock_agent.list_conversations.return_value = [mock_summary1, mock_summary2]
 
         elif agent_behavior == "unauthorized":
-            from nalai.core.types.agent import AccessDeniedError
+            from nalai.core.agent import AccessDeniedError
 
             mock_agent.list_conversations.side_effect = AccessDeniedError(
                 "Authentication required"
@@ -1240,7 +1240,7 @@ class TestDeleteConversation:
         ],
     )
     @patch("nalai.server.runtime_config.get_user_context")
-    @patch("nalai.core.checkpoints.get_checkpoints")
+    @patch("nalai.core.internal.checkpoints.get_checkpoints")
     @patch("nalai.services.checkpointing_service.get_checkpointer")
     def test_delete_conversation_scenarios(
         self,
@@ -1265,7 +1265,7 @@ class TestDeleteConversation:
         if agent_behavior == "success":
             mock_agent.delete_conversation.return_value = True
         elif agent_behavior == "access_denied":
-            from nalai.core.types.agent import AccessDeniedError
+            from nalai.core.agent import AccessDeniedError
 
             mock_agent.delete_conversation.side_effect = AccessDeniedError(
                 "Access denied to conversation"
@@ -1273,7 +1273,7 @@ class TestDeleteConversation:
         elif agent_behavior == "not_found":
             mock_agent.delete_conversation.return_value = False
         elif agent_behavior == "unauthorized":
-            from nalai.core.types.agent import AccessDeniedError
+            from nalai.core.agent import AccessDeniedError
 
             mock_agent.delete_conversation.side_effect = AccessDeniedError(
                 "Authentication required"

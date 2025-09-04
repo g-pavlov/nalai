@@ -2,7 +2,7 @@
 LangChain cache integration for enhanced caching with similarity search and user isolation.
 
 This module provides a LangChain-compatible cache implementation that uses the existing
-CacheService as a backend, focusing only on the integration bridge to LangChain.
+Cache as a backend, focusing only on the integration bridge to LangChain.
 """
 
 import logging
@@ -13,7 +13,7 @@ from langchain_core.messages import BaseMessage, HumanMessage
 
 from ..config import settings
 from ..utils.id_generator import generate_message_id
-from .cache_service import CacheService, get_cache_service
+from .cache_service import Cache, get_cache_service
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class EnhancedLangChainCache(BaseCache):
     """
     Enhanced LangChain cache with similarity search and user isolation.
 
-    Uses the existing CacheService as a backend, providing:
+    Uses the existing Cache as a backend, providing:
     - Token-based similarity search for semantic matching
     - User-scoped cache isolation
     - Configurable tool call caching
@@ -31,7 +31,7 @@ class EnhancedLangChainCache(BaseCache):
 
     def __init__(
         self,
-        cache_service: CacheService | None = None,
+        cache_service: Cache | None = None,
         similarity_threshold: float | None = None,
         similarity_enabled: bool | None = None,
         cache_tool_calls: bool | None = None,
@@ -40,7 +40,7 @@ class EnhancedLangChainCache(BaseCache):
         Initialize the enhanced LangChain cache.
 
         Args:
-            cache_service: CacheService instance to use as backend (uses global if None)
+            cache_service: Cache instance to use as backend (uses global if None)
             similarity_threshold: Override similarity threshold
             similarity_enabled: Override similarity enabled setting
             cache_tool_calls: Override tool calls caching setting
@@ -95,7 +95,7 @@ class EnhancedLangChainCache(BaseCache):
         self, prompt: str | list[BaseMessage]
     ) -> list[BaseMessage]:
         """
-        Convert prompt to list of messages for CacheService.
+        Convert prompt to list of messages for Cache.
 
         Args:
             prompt: The input prompt
@@ -145,7 +145,7 @@ class EnhancedLangChainCache(BaseCache):
             # Extract user ID from metadata
             user_id = self._extract_user_id_from_metadata(metadata)
 
-            # Convert to messages for CacheService
+            # Convert to messages for Cache
             messages = self._convert_to_messages(prompt)
 
             # 1. Try exact match first
@@ -244,7 +244,7 @@ class EnhancedLangChainCache(BaseCache):
             # Extract user ID from metadata
             user_id = self._extract_user_id_from_metadata(metadata)
 
-            # Convert to messages for CacheService
+            # Convert to messages for Cache
             messages = self._convert_to_messages(prompt)
 
             # Convert response to string if it's a message list
@@ -401,7 +401,7 @@ class EnhancedLangChainCache(BaseCache):
 
 # Factory function for easy integration
 def create_enhanced_langchain_cache(
-    cache_service: CacheService | None = None,
+    cache_service: Cache | None = None,
     similarity_threshold: float | None = None,
     similarity_enabled: bool | None = None,
     cache_tool_calls: bool | None = None,
@@ -410,7 +410,7 @@ def create_enhanced_langchain_cache(
     Create an enhanced LangChain cache instance.
 
     Args:
-        cache_service: CacheService instance to use as backend
+        cache_service: Cache instance to use as backend
         similarity_threshold: Override similarity threshold
         similarity_enabled: Override similarity enabled setting
         cache_tool_calls: Override tool calls caching setting

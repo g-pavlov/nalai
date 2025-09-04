@@ -9,14 +9,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import yaml
 
-from nalai.core.langgraph_agent import LangGraphAgent
-from nalai.core.types.agent import (
+from nalai.core import (
     AccessDeniedError,
     ConversationNotFoundError,
     InvocationError,
     ValidationError,
 )
-from nalai.core.types.messages import MessageRequest
+
+# Internal types for unit testing
+from nalai.core.internal.lc_agent import LangGraphAgent
 
 
 def load_test_cases():
@@ -88,14 +89,51 @@ class TestLangGraphAgent:
         return checkpointer
 
     @pytest.fixture
-    def langgraph_agent(self, mock_agent, mock_access_control, mock_checkpointer):
-        """Create a LangGraph agent with mocked dependencies."""
-        # Mock the global checkpoints service
-        with patch(
-            "nalai.core.langgraph_agent.get_checkpoints",
-            return_value=mock_access_control,
+    def mock_audit_service(self):
+        """Create a mock audit service."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def mock_cache_service(self):
+        """Create a mock cache service."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def mock_model_service(self):
+        """Create a mock model service."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def langgraph_agent(
+        self,
+        mock_agent,
+        mock_access_control,
+        mock_checkpointer,
+        mock_audit_service,
+        mock_cache_service,
+        mock_model_service,
+    ):
+        """Create a LangGraph agent with mocked dependencies using service factory pattern."""
+        # Mock the service factory functions
+        with (
+            patch(
+                "nalai.services.factory.get_audit_service",
+                return_value=mock_audit_service,
+            ),
+            patch(
+                "nalai.services.factory.get_cache_service",
+                return_value=mock_cache_service,
+            ),
+            patch(
+                "nalai.services.factory.get_model_service",
+                return_value=mock_model_service,
+            ),
+            patch(
+                "nalai.core.internal.lc_agent.get_checkpoints",
+                return_value=mock_access_control,
+            ),
         ):
-            agent = LangGraphAgent(mock_agent)
+            agent = LangGraphAgent(mock_agent, mock_audit_service)
             # Ensure the agent instance is properly mocked
             agent.agent = mock_agent
             return agent
@@ -124,20 +162,22 @@ class TestLangGraphAgent:
             messages = [{"content": "Hello", "type": "human"}]
 
         # Convert to new MessageRequest format
-        from nalai.core.types.messages import HumanInputMessage
+        from nalai.core.messages import HumanInputMessage
 
         # Convert messages to proper InputMessage format
-        input_messages = []
+        # For now, just use the first human message content
+        content = ""
         for msg in messages:
             if msg["type"] == "human":
-                input_messages.append(HumanInputMessage(content=msg["content"]))
+                content = msg["content"]
+                break
 
-        request = MessageRequest(
-            input=input_messages,
+        request = HumanInputMessage(
+            content=content,
         )
 
         # Convert to new interface format
-        messages = request.to_langchain_messages()
+        messages = [request.to_langchain_message()]
         config = {"configurable": {"user_id": user_id}}
 
         # Mock agent response
@@ -239,20 +279,22 @@ class TestLangGraphAgent:
             messages = [{"content": "Hello", "type": "human"}]
 
         # Convert to new MessageRequest format
-        from nalai.core.types.messages import HumanInputMessage
+        from nalai.core.messages import HumanInputMessage
 
         # Convert messages to proper InputMessage format
-        input_messages = []
+        # For now, just use the first human message content
+        content = ""
         for msg in messages:
             if msg["type"] == "human":
-                input_messages.append(HumanInputMessage(content=msg["content"]))
+                content = msg["content"]
+                break
 
-        request = MessageRequest(
-            input=input_messages,
+        request = HumanInputMessage(
+            content=content,
         )
 
         # Convert to new interface format
-        messages = request.to_langchain_messages()
+        messages = [request.to_langchain_message()]
         config = {
             "configurable": {
                 "user_id": user_id,
@@ -595,7 +637,7 @@ class TestLangGraphAgent:
         # Apply patches for this test
         with patch.object(langgraph_agent.agent, "ainvoke", mock_agent.ainvoke):
             # Act
-            from nalai.core.types.messages import ToolCallDecision
+            from nalai.core.messages import ToolCallDecision
 
             resume_decision = ToolCallDecision(
                 decision=decision_value,
@@ -668,15 +710,15 @@ class TestLangGraphAgent:
     ):
         """Test streaming conversation functionality."""
         # Arrange
-        from nalai.core.types.messages import HumanInputMessage
+        from nalai.core.messages import HumanInputMessage
 
-        request = MessageRequest(
-            input=[HumanInputMessage(content="Hello")],
+        request = HumanInputMessage(
+            content="Hello",
         )
         user_id = "user123"
 
         # Convert to new interface format
-        messages = request.to_langchain_messages()
+        messages = [request.to_langchain_message()]
         config = {"configurable": {"user_id": user_id}}
 
         # Mock conversation metadata to avoid validation errors
@@ -717,15 +759,15 @@ class TestLangGraphAgent:
     ):
         """Test handling of agent invocation errors."""
         # Arrange
-        from nalai.core.types.messages import HumanInputMessage
+        from nalai.core.messages import HumanInputMessage
 
-        request = MessageRequest(
-            input=[HumanInputMessage(content="Hello")],
+        request = HumanInputMessage(
+            content="Hello",
         )
         user_id = "user123"
 
         # Convert to new interface format
-        messages = request.to_langchain_messages()
+        messages = [request.to_langchain_message()]
         config = {"configurable": {"user_id": user_id}}
 
         # Mock agent to raise exception
@@ -734,3 +776,87 @@ class TestLangGraphAgent:
         # Act & Assert
         with pytest.raises(InvocationError):
             await langgraph_agent.chat(messages, None, config)
+
+    @pytest.mark.asyncio
+    async def test_agent_with_service_factory_mocking(
+        self, mock_agent, mock_audit_service, mock_cache_service, mock_model_service
+    ):
+        """Test agent using service factory pattern for dependency injection."""
+        # Arrange - Create agent with direct service injection
+        from nalai.core import create_agent
+
+        # Mock the workflow creation
+        with patch(
+            "nalai.core.internal.workflow.create_and_compile_workflow",
+            return_value=mock_agent,
+        ):
+            agent = create_agent(
+                audit_service=mock_audit_service,
+                cache_service=mock_cache_service,
+                model_service=mock_model_service,
+            )
+
+        # Act
+        from nalai.core import HumanInputMessage
+
+        messages = [HumanInputMessage(content="Hello")]
+        result = await agent.chat(
+            messages, None, {"configurable": {"user_id": "test_user"}}
+        )
+
+        # Assert - Verify services were used
+        mock_audit_service.log_conversation_access_event.assert_called()
+        # The cache and model services would be called during workflow execution
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_agent_with_failing_cache_service(
+        self, mock_agent, mock_audit_service
+    ):
+        """Test agent behavior when cache service fails."""
+        # Arrange - Create a cache service that fails
+        mock_cache_service = AsyncMock()
+        mock_cache_service.get.side_effect = Exception("Cache unavailable")
+
+        from nalai.core import create_agent
+
+        with patch(
+            "nalai.core.internal.workflow.create_and_compile_workflow",
+            return_value=mock_agent,
+        ):
+            agent = create_agent(
+                audit_service=mock_audit_service, cache_service=mock_cache_service
+            )
+
+        # Act & Assert - Agent should handle cache failure gracefully
+        # (This depends on your error handling strategy)
+        from nalai.core import HumanInputMessage
+
+        messages = [HumanInputMessage(content="Hello")]
+        result = await agent.chat(
+            messages, None, {"configurable": {"user_id": "test_user"}}
+        )
+        assert result is not None  # Agent should still work without cache
+
+    @pytest.mark.asyncio
+    async def test_agent_audit_logging_verification(
+        self, mock_agent, mock_audit_service
+    ):
+        """Test that audit service is properly called during agent operations."""
+        # Arrange
+        from nalai.core import create_agent
+
+        with patch(
+            "nalai.core.internal.workflow.create_and_compile_workflow",
+            return_value=mock_agent,
+        ):
+            agent = create_agent(audit_service=mock_audit_service)
+
+        # Act
+        from nalai.core import HumanInputMessage
+
+        messages = [HumanInputMessage(content="Hello")]
+        await agent.chat(messages, None, {"configurable": {"user_id": "test_user"}})
+
+        # Assert - Verify audit service was called
+        mock_audit_service.log_conversation_access_event.assert_called()

@@ -10,23 +10,47 @@ from collections.abc import AsyncGenerator
 from fastapi import Request
 
 from ..config import settings
-from ..core.types.agent import Agent, ClientError
-from ..core.types.messages import (
+from ..core import (
+    Agent,
+    ClientError,
     HumanInputMessage,
     InputMessage,
-    MessageRequest,
-    MessageResponse,
+    StreamingChunk,
     ToolCallDecision,
 )
-from ..core.types.streaming import Event, StreamingChunk
+from ..core import (
+    Event as CoreEvent,  # Core events: ResponseCreatedEvent | ResponseCompletedEvent | ResponseErrorEvent
+)
 from ..utils.id_generator import generate_run_id
 from .api_conversations import SSEStreamingResponse, handle_agent_errors
 from .json_serializer import (
     serialize_message_response,
 )
 from .runtime_config import create_runtime_config
-from .schemas.sse import serialize_to_sse
+from .schemas.messages import MessageRequest, MessageResponse
+from .schemas.sse import (
+    ResponseInterruptEvent,
+    ResponseOutputTextDeltaEvent,
+    ResponseOutputToolCallsCompleteEvent,
+    ResponseOutputToolCallsDeltaEvent,
+    ResponseToolEvent,
+    ResponseUpdateEvent,
+    serialize_to_sse,
+)
 from .sse_serializer import transform_chunk_to_sse
+
+# Union type for all SSE events
+SSEEvent = (
+    ResponseInterruptEvent
+    | ResponseOutputTextDeltaEvent
+    | ResponseOutputToolCallsCompleteEvent
+    | ResponseOutputToolCallsDeltaEvent
+    | ResponseToolEvent
+    | ResponseUpdateEvent
+)
+
+# Combined union of both core events and SSE events
+Event = CoreEvent | SSEEvent
 
 logger = logging.getLogger("nalai")
 

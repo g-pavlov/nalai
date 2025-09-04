@@ -15,11 +15,10 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from nalai.core.types.agent import ConversationInfo
-from nalai.core.types.messages import (
+from nalai.core.agent import ConversationInfo
+from nalai.core.messages import (
     AssistantOutputMessage,
     HumanInputMessage,
-    MessageRequest,
     TextContent,
 )
 from nalai.server.api_agent import create_agent_api
@@ -357,7 +356,7 @@ class TestResponseSchemas:
             "decision": "accept",
         }
         # This should not raise an error
-        from nalai.core.types.messages import ToolCallDecision
+        from nalai.core.messages import ToolCallDecision
 
         ToolCallDecision(**valid_accept)
 
@@ -380,19 +379,12 @@ class TestResponseSchemas:
             )
 
     def test_response_request_validation(self):
-        """Test MessageRequest validation."""
+        """Test HumanInputMessage validation."""
         # Valid request
-        valid_request = {
-            "input": [{"role": "user", "content": [{"type": "text", "text": "Hello"}]}],
-            "stream": "off",
-            "store": True,
-        }
-
-        request = MessageRequest(**valid_request)
-        assert request.stream == "off"
-        assert request.store is True
-        assert len(request.input) == 1
+        request = HumanInputMessage(content="Hello")
+        assert request.content == "Hello"
+        assert request.role == "user"
 
         # Invalid request - empty input
         with pytest.raises(ValueError):  # Pydantic validation error
-            MessageRequest(input=[], stream=False, store=True)
+            HumanInputMessage(content="")

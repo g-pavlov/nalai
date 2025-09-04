@@ -10,7 +10,7 @@ import logging
 from fastapi import HTTPException, Request
 
 from ..config import BaseRuntimeConfiguration, settings
-from ..core.langgraph_agent import create_user_scoped_conversation_id
+from ..core import create_user_scoped_conversation_id
 from ..server.middleware import get_user_context
 
 logger = logging.getLogger("nalai")

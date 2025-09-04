@@ -5,7 +5,7 @@ Tests for LangChain cache integration with async support.
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
-from src.nalai.services.cache_service import CacheService
+from src.nalai.services.cache_service import Cache
 from src.nalai.services.langchain_cache import (
     EnhancedLangChainCache,
     create_enhanced_langchain_cache,
@@ -19,7 +19,7 @@ class TestEnhancedLangChainCache:
     async def test_async_lookup_and_update(self):
         """Test async lookup and update operations."""
         # Create cache service
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
 
@@ -45,7 +45,7 @@ class TestEnhancedLangChainCache:
     @pytest.mark.asyncio
     async def test_user_isolation_in_langchain_cache(self):
         """Test that LangChain cache respects user isolation."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
         langchain_cache = EnhancedLangChainCache(cache_service=cache_service)
@@ -72,7 +72,7 @@ class TestEnhancedLangChainCache:
 
     def test_sync_wrapper_compatibility(self):
         """Test that sync methods still work for backward compatibility."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
         langchain_cache = EnhancedLangChainCache(cache_service=cache_service)
@@ -100,7 +100,7 @@ class TestEnhancedLangChainCache:
     @pytest.mark.asyncio
     async def test_async_stats(self):
         """Test async stats retrieval."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
         langchain_cache = EnhancedLangChainCache(cache_service=cache_service)
@@ -121,7 +121,7 @@ class TestEnhancedLangChainCache:
     @pytest.mark.asyncio
     async def test_async_clear(self):
         """Test async clear operations."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
         langchain_cache = EnhancedLangChainCache(cache_service=cache_service)

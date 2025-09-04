@@ -13,8 +13,8 @@ from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 
-from ..config import BaseRuntimeConfiguration
-from ..services.api_docs_service import APIService
+from ...config import BaseRuntimeConfiguration
+from ...services.factory import get_api_service
 from .constants import (
     NODE_CALL_API,
     NODE_CALL_MODEL,
@@ -67,11 +67,14 @@ def create_and_compile_workflow(
         NODE_CHECK_CACHE, workflow_nodes.check_cache_with_similarity
     )
     workflow_graph.set_entry_point(NODE_CHECK_CACHE)
-    workflow_graph.add_node(NODE_LOAD_API_SUMMARIES, APIService.load_api_summaries)
+    api_service = get_api_service()
+    workflow_graph.add_node(NODE_LOAD_API_SUMMARIES, api_service.load_api_summaries)
     workflow_graph.add_node(
         NODE_SELECT_RELEVANT_APIS, workflow_nodes.select_relevant_apis
     )
-    workflow_graph.add_node(NODE_LOAD_API_SPECS, APIService.load_openapi_specifications)
+    workflow_graph.add_node(
+        NODE_LOAD_API_SPECS, api_service.load_openapi_specifications
+    )
     workflow_graph.add_node(NODE_CALL_MODEL, workflow_nodes.generate_model_response)
     workflow_graph.add_node(NODE_CALL_API, available_tools[NODE_CALL_API])
 

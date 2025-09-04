@@ -11,10 +11,8 @@ from typing import Any
 
 from langchain_core.messages import BaseMessage
 
-from ..services.checkpointing_service import (
-    CheckpointingBackendError,
-    get_checkpointing_service,
-)
+from ...services.checkpointing_service import CheckpointingBackendError
+from ...services.factory import get_checkpointing_service
 
 logger = logging.getLogger(__name__)
 

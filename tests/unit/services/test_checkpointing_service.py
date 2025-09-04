@@ -17,8 +17,8 @@ sys.path.insert(
 )
 
 from nalai.services.checkpointing_service import (
+    Checkpointer,
     CheckpointingBackend,
-    CheckpointingService,
     FileCheckpointingBackend,
     MemoryCheckpointingBackend,
     PostgresCheckpointingBackend,
@@ -149,13 +149,13 @@ class TestRedisCheckpointingBackend:
         assert "description" in stats
 
 
-class TestCheckpointingService:
+class TestCheckpointer:
     """Test cases for checkpointing service."""
 
     @pytest.fixture
     def checkpointing_service(self):
         """Create checkpointing service instance."""
-        return CheckpointingService(backend="memory")
+        return Checkpointer(backend="memory")
 
     def test_get_checkpointer_memory(self, checkpointing_service):
         """Test getting memory checkpointer through service."""
@@ -177,7 +177,7 @@ class TestCheckpointingService:
     def test_get_checkpointer_file(self, checkpointing_service):
         """Test getting file checkpointer through service."""
         # Create file service
-        file_service = CheckpointingService(
+        file_service = Checkpointer(
             backend="file", config={"file_path": "./test_checkpoints"}
         )
         checkpointer = file_service.get_checkpointer()
@@ -189,7 +189,7 @@ class TestCheckpointingService:
     def test_get_checkpointer_postgres(self, checkpointing_service):
         """Test getting PostgreSQL checkpointer through service."""
         # Create postgres service
-        postgres_service = CheckpointingService(
+        postgres_service = Checkpointer(
             backend="postgres", config={"connection_string": "postgresql://test"}
         )
         checkpointer = postgres_service.get_checkpointer()
@@ -201,7 +201,7 @@ class TestCheckpointingService:
     def test_get_checkpointer_redis(self, checkpointing_service):
         """Test getting Redis checkpointer through service."""
         # Create redis service
-        redis_service = CheckpointingService(
+        redis_service = Checkpointer(
             backend="redis", config={"redis_url": "redis://localhost:6379"}
         )
         checkpointer = redis_service.get_checkpointer()
@@ -213,22 +213,22 @@ class TestCheckpointingService:
     def test_unsupported_backend(self):
         """Test initialization with unsupported backend."""
         with pytest.raises(ValueError, match="Unsupported checkpointing backend"):
-            CheckpointingService(backend="unsupported")
+            Checkpointer(backend="unsupported")
 
     def test_postgres_missing_connection_string(self):
         """Test PostgreSQL initialization without connection string."""
         with pytest.raises(
             ValueError, match="PostgreSQL connection string not configured"
         ):
-            CheckpointingService(backend="postgres")
+            Checkpointer(backend="postgres")
 
     def test_redis_missing_url(self):
         """Test Redis initialization without URL."""
         with pytest.raises(ValueError, match="Redis URL not configured"):
-            CheckpointingService(backend="redis")
+            Checkpointer(backend="redis")
 
 
-class TestCheckpointingServiceGlobal:
+class TestCheckpointerGlobal:
     """Test cases for global checkpointing service functions."""
 
     @pytest.fixture
@@ -250,11 +250,11 @@ class TestCheckpointingServiceGlobal:
         service2 = get_checkpointing_service()
 
         assert service1 is service2
-        assert isinstance(service1, CheckpointingService)
+        assert isinstance(service1, Checkpointer)
 
     def test_set_checkpointing_service(self, mock_settings):
         """Test set_checkpointing_service."""
-        custom_service = CheckpointingService(backend="memory")
+        custom_service = Checkpointer(backend="memory")
         set_checkpointing_service(custom_service)
 
         service = get_checkpointing_service()
@@ -272,12 +272,12 @@ class TestCheckpointingServiceGlobal:
         assert hasattr(checkpointer, "put")
 
 
-class TestCheckpointingServiceIntegration:
+class TestCheckpointerIntegration:
     """Integration tests for checkpointing service."""
 
     def test_memory_backend_integration(self):
         """Test memory backend integration with LangGraph."""
-        checkpointing_service = CheckpointingService(backend="memory")
+        checkpointing_service = Checkpointer(backend="memory")
 
         checkpointer = checkpointing_service.get_checkpointer()
 
@@ -292,7 +292,7 @@ class TestCheckpointingServiceIntegration:
 
     def test_file_backend_integration(self):
         """Test file backend integration with LangGraph."""
-        checkpointing_service = CheckpointingService(
+        checkpointing_service = Checkpointer(
             backend="file", config={"file_path": "./test_checkpoints"}
         )
 
@@ -316,7 +316,7 @@ class TestCheckpointingServiceIntegration:
 
         for backend_type, config in backends:
             try:
-                checkpointing_service = CheckpointingService(
+                checkpointing_service = Checkpointer(
                     backend=backend_type, config=config
                 )
 
@@ -342,7 +342,7 @@ class TestCheckpointingServiceIntegration:
 
         for backend_type, config in backends:
             try:
-                checkpointing_service = CheckpointingService(
+                checkpointing_service = Checkpointer(
                     backend=backend_type, config=config
                 )
 
@@ -361,7 +361,7 @@ class TestCheckpointingServiceIntegration:
 
     def test_langgraph_config_integration(self):
         """Test integration with LangGraph configuration."""
-        checkpointing_service = CheckpointingService(backend="memory")
+        checkpointing_service = Checkpointer(backend="memory")
 
         checkpointer = checkpointing_service.get_checkpointer()
 

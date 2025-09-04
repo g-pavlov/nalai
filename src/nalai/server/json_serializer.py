@@ -8,14 +8,12 @@ that complies with the schema defined in messages.py.
 import logging
 from datetime import UTC, datetime
 
-from ..core.types.agent import ConversationInfo
-from ..core.types.messages import (
-    BaseOutputMessage,
+from ..core import (
+    ConversationInfo,
     InputMessage,
-    Interrupt,
-    MessageResponse,
     OutputMessage,
 )
+from ..server.schemas.messages import Interrupt, MessageResponse
 from ..utils.id_generator import generate_run_id
 
 logger = logging.getLogger("nalai")
@@ -85,7 +83,7 @@ def _extract_interrupts(conversation_info: ConversationInfo) -> list[Interrupt]:
 
 
 def serialize_message_response(
-    messages: list[BaseOutputMessage],
+    messages: list[OutputMessage],
     conversation_info: ConversationInfo,
     previous_response_id: str | None,
     status: str,

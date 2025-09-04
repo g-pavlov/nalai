@@ -18,6 +18,7 @@ from langgraph.checkpoint.memory import MemorySaver
 # Note: Other checkpointers (PostgresSaver, RedisSaver) are not available in this version
 # They will fall back to MemorySaver when requested
 from ..config import settings
+from ..core.services import CheckpointingService as CheckpointingServiceProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +230,7 @@ class RedisCheckpointingBackend(CheckpointingBackend):
         return 0
 
 
-class CheckpointingService:
+class Checkpointer(CheckpointingServiceProtocol):
     """Checkpointing service with backend abstraction and enhanced error handling."""
 
     def __init__(self, backend: str = "memory", config: dict[str, Any] | None = None):
@@ -330,10 +331,10 @@ class CheckpointingService:
 
 
 # Global checkpointing service instance
-_checkpointing_service: CheckpointingService | None = None
+_checkpointing_service: Checkpointer | None = None
 
 
-def get_checkpointing_service() -> CheckpointingService:
+def get_checkpointing_service() -> Checkpointer:
     """Get the global checkpointing service instance."""
     global _checkpointing_service
     if _checkpointing_service is None:
@@ -343,11 +344,11 @@ def get_checkpointing_service() -> CheckpointingService:
             "connection_string": settings.checkpointing_postgres_url,
             "redis_url": settings.checkpointing_redis_url,
         }
-        _checkpointing_service = CheckpointingService(backend=backend, config=config)
+        _checkpointing_service = Checkpointer(backend=backend, config=config)
     return _checkpointing_service
 
 
-def set_checkpointing_service(checkpointing_service: CheckpointingService) -> None:
+def set_checkpointing_service(checkpointing_service: Checkpointer) -> None:
     """Set the global checkpointing service instance."""
     global _checkpointing_service
     _checkpointing_service = checkpointing_service

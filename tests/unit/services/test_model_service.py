@@ -1,5 +1,5 @@
 """
-Unit tests for ModelService functionality.
+Unit tests for ModelManager functionality.
 
 Tests cover model initialization, configuration extraction, context window
 management, and message content extraction across different providers.
@@ -20,7 +20,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "src")
 )
 
-from nalai.services.model_service import ModelService
+from nalai.services.model_service import ModelManager
 
 
 @pytest.fixture
@@ -41,8 +41,8 @@ def mock_config():
     )
 
 
-class TestModelService:
-    """Test suite for ModelService class."""
+class TestModelManager:
+    """Test suite for ModelManager class."""
 
     @pytest.mark.parametrize(
         "test_case", ["string_content", "dict_content", "list_content", "mixed_content"]
@@ -57,7 +57,7 @@ class TestModelService:
         mock_message = MagicMock(spec=BaseMessage)
         mock_message.content = case_data["input"]["content"]
 
-        result = ModelService.extract_message_content(mock_message)
+        result = ModelManager.extract_message_content(mock_message)
         assert result == case_data["expected"]
 
     @pytest.mark.parametrize(
@@ -72,7 +72,7 @@ class TestModelService:
             if c["name"] == test_case
         )
 
-        result = ModelService.get_model_context_window_size(
+        result = ModelManager.get_model_context_window_size(
             case_data["input"]["model_platform"], case_data["input"]["model_name"]
         )
         assert result == case_data["expected"]
@@ -125,7 +125,7 @@ class TestModelService:
 
                 mock_import.side_effect = mock_import_side_effect
 
-                result = ModelService.initialize_chat_model(
+                result = ModelManager.initialize_chat_model(
                     case_data["input"]["model_id"],
                     case_data["input"]["model_provider"],
                     configurable_fields=case_data["input"].get("configurable_fields"),
@@ -142,7 +142,7 @@ class TestModelService:
 
         # Test Ollama specific behavior
         elif case_data["input"]["model_provider"] == "ollama":
-            result = ModelService.initialize_chat_model(
+            result = ModelManager.initialize_chat_model(
                 case_data["input"]["model_id"], case_data["input"]["model_provider"]
             )
 
@@ -162,7 +162,7 @@ class TestModelService:
 
         # Test generic provider behavior
         else:
-            result = ModelService.initialize_chat_model(
+            result = ModelManager.initialize_chat_model(
                 case_data["input"]["model_id"], case_data["input"]["model_provider"]
             )
 
@@ -180,7 +180,7 @@ class TestModelService:
 
     def test_get_model_config(self, mock_config):
         """Test model configuration extraction from RunnableConfig."""
-        result = ModelService.get_model_config(mock_config)
+        result = ModelManager.get_model_config(mock_config)
 
         assert result is not None
         assert result.get("name") == "test-model"
@@ -188,11 +188,11 @@ class TestModelService:
 
     def test_get_model_id_from_config(self, mock_config):
         """Test model ID extraction from RunnableConfig."""
-        result = ModelService.get_model_id_from_config(mock_config)
+        result = ModelManager.get_model_id_from_config(mock_config)
         assert result == "test-model"
 
-    @patch("nalai.services.model_service.ModelService.get_model_config")
-    @patch("nalai.services.model_service.ModelService.initialize_chat_model")
+    @patch("nalai.services.model_service.ModelManager.get_model_config")
+    @patch("nalai.services.model_service.ModelManager.initialize_chat_model")
     def test_get_model_from_config(
         self, mock_initialize_model, mock_get_config, mock_config
     ):
@@ -203,7 +203,8 @@ class TestModelService:
         mock_model = MagicMock(spec=BaseChatModel)
         mock_initialize_model.return_value = mock_model
 
-        result = ModelService.get_model_from_config(mock_config, temperature=0.7)
+        model_manager = ModelManager()
+        result = model_manager.get_model_from_config(mock_config, temperature=0.7)
 
         mock_get_config.assert_called_once_with(mock_config)
         mock_initialize_model.assert_called_once_with(
@@ -216,12 +217,12 @@ class TestModelService:
         # Test with None content
         mock_message = MagicMock(spec=BaseMessage)
         mock_message.content = None
-        result = ModelService.extract_message_content(mock_message)
+        result = ModelManager.extract_message_content(mock_message)
         assert result == ""
 
         # Test with empty string content
         mock_message.content = ""
-        result = ModelService.extract_message_content(mock_message)
+        result = ModelManager.extract_message_content(mock_message)
         assert result == ""
 
         # Test with complex nested content
@@ -231,21 +232,21 @@ class TestModelService:
             {"text": "world", "type": "text"},
             {"type": "image", "url": "test.jpg"},
         ]
-        result = ModelService.extract_message_content(mock_message)
+        result = ModelManager.extract_message_content(mock_message)
         assert result == "Hello world"
 
     def test_context_window_size_edge_cases(self):
         """Test context window size with edge cases."""
         # Test with None values
-        result = ModelService.get_model_context_window_size(None, None)
+        result = ModelManager.get_model_context_window_size(None, None)
         assert result == 32000  # Default value
 
         # Test with empty strings
-        result = ModelService.get_model_context_window_size("", "")
+        result = ModelManager.get_model_context_window_size("", "")
         assert result == 32000  # Default value
 
         # Test with unknown model
-        result = ModelService.get_model_context_window_size("unknown", "unknown-model")
+        result = ModelManager.get_model_context_window_size("unknown", "unknown-model")
         assert result == 32000  # Default value
 
     @patch("nalai.services.model_service.settings")
@@ -280,7 +281,7 @@ class TestModelService:
 
             mock_import.side_effect = mock_import_side_effect
 
-            ModelService.initialize_chat_model("test-model", "aws_bedrock")
+            ModelManager.initialize_chat_model("test-model", "aws_bedrock")
 
             mock_create_limiter.assert_called_once_with("aws_bedrock", "test-model")
             mock_init_model.assert_called_once()
@@ -322,7 +323,7 @@ class TestModelService:
 
             mock_import.side_effect = mock_import_side_effect
 
-            result = ModelService.initialize_chat_model("test-model", "aws_bedrock")
+            result = ModelManager.initialize_chat_model("test-model", "aws_bedrock")
 
             # Verify metadata structure
             assert "context_window" in result.metadata

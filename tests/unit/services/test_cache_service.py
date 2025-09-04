@@ -15,15 +15,15 @@ from unittest.mock import patch
 import pytest
 from langchain_core.messages import HumanMessage
 
-from nalai.services.cache_service import CacheService
+from nalai.services.cache_service import Cache
 
 
-class TestEnhancedCacheService:
+class TestEnhancedCache:
     """Test enhanced cache service functionality."""
 
     def test_user_isolation(self):
         """Test that cache entries are isolated by user."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
 
@@ -53,7 +53,7 @@ class TestEnhancedCacheService:
 
     def test_tool_call_caching_configurable(self):
         """Test that tool call caching is configurable."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
 
@@ -77,7 +77,7 @@ class TestEnhancedCacheService:
 
     def test_similarity_search_user_isolation(self):
         """Test that similarity search respects user isolation."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
 
@@ -111,7 +111,7 @@ class TestEnhancedCacheService:
 
     def test_similarity_search_disabled(self):
         """Test that similarity search can be disabled."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
 
@@ -129,7 +129,7 @@ class TestEnhancedCacheService:
 
     def test_configurable_similarity_threshold(self):
         """Test that similarity threshold is configurable."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
 
@@ -155,7 +155,7 @@ class TestEnhancedCacheService:
 
     def test_cache_stats_with_user_breakdown(self):
         """Test that cache stats include user breakdown."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
 
@@ -180,7 +180,7 @@ class TestEnhancedCacheService:
 
     def test_clear_user_cache(self):
         """Test clearing cache for a specific user."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
 
@@ -210,7 +210,7 @@ class TestEnhancedCacheService:
 
     def test_cache_entry_with_user_data(self):
         """Test that cache entries store user data correctly."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
 
@@ -227,7 +227,7 @@ class TestEnhancedCacheService:
 
     def test_performance_optimization(self):
         """Test that cache operations are optimized for performance."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 1000, "ttl_seconds": 3600}
         )
 
@@ -265,7 +265,7 @@ class TestEnhancedCacheService:
         self, user_id, cached_messages, search_message, expected_hit
     ):
         """Test that similarity search respects user isolation."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
 
@@ -291,7 +291,7 @@ class TestEnhancedCacheService:
 
     def test_similarity_search_performance_under_load(self):
         """Test that similarity search performs well under load."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 1000, "ttl_seconds": 3600}
         )
 
@@ -723,7 +723,7 @@ class TestTokenSimilarityMatcher:
 
     def test_similarity_threshold_behavior_corpus_aware(self):
         """Test that similarity threshold correctly filters results based on actual corpus."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
 
@@ -774,7 +774,7 @@ class TestTokenSimilarityMatcher:
 
     def test_antonym_detection_corpus_aware(self):
         """Test that antonym detection works correctly with the actual corpus."""
-        cache_service = CacheService(
+        cache_service = Cache(
             backend="memory", config={"max_size": 10, "ttl_seconds": 3600}
         )
 

@@ -16,12 +16,12 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableConfig
 from langgraph.constants import END
 
-from ..config import settings
-from ..prompts.prompts import format_template_with_variables, load_prompt_template
-from ..services.cache_service import get_cache_service
-from ..services.model_service import ModelService
-from ..tools.http_requests import HttpRequestsToolkit
-from ..utils.chat_history import compress_conversation_history_if_needed
+from ...config import settings
+from ...prompts.prompts import format_template_with_variables, load_prompt_template
+from ...services.factory import get_cache_service, get_model_service
+from ...tools.http_requests import HttpRequestsToolkit
+from ...utils.chat_history import compress_conversation_history_if_needed
+from ..agent import SelectedApis
 from .constants import (
     NODE_CALL_API,
     NODE_CALL_MODEL,
@@ -30,7 +30,6 @@ from .constants import (
     NODE_SELECT_RELEVANT_APIS,
 )
 from .states import AgentState
-from .types.agent import SelectedApis
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +59,8 @@ class WorkflowNodes:
         Returns:
             tuple: (prompt_template, model) for AI interaction
         """
-        model_id = ModelService.get_model_id_from_config(config)
+        model_service = get_model_service()
+        model_id = model_service.get_model_id_from_config(config)
         system_prompt_str = load_prompt_template(model_id, variant)
         # Always format the system prompt, even if no variables are present
         # Use the first allowed URL as the primary example, but mention all allowed URLs
@@ -78,7 +78,7 @@ class WorkflowNodes:
                 MessagesPlaceholder(variable_name="messages"),
             ]
         )
-        model = ModelService.get_model_from_config(config, **kwargs)
+        model = model_service.get_model_from_config(config, **kwargs)
         return prompt, model
 
     def select_relevant_apis(

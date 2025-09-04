@@ -75,3 +75,9 @@ class ConfigSchema(BaseModel):
             f"Defaults to {{'name': {DEFAULT_MODEL_CONFIG.name}, 'platform': {DEFAULT_MODEL_CONFIG.platform} }} ."
         ),
     )
+
+
+__all__ = [
+    "ModelConfig",
+    "ConfigSchema",
+]

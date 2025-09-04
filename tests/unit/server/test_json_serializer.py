@@ -6,13 +6,13 @@ from unittest.mock import Mock
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from nalai.core.lc_transformers import (
+from nalai.core.internal.lc_transformers import (
     _extract_finish_reason,
     _extract_usage,
     extract_usage_from_messages,
     transform_message,
 )
-from nalai.core.types.messages import (
+from nalai.core.messages import (
     AssistantOutputMessage,
     HumanOutputMessage,
     ToolOutputMessage,
@@ -277,7 +277,7 @@ class TestMessageSerializer:
 
     def test_extract_usage_from_streaming_chunks(self):
         """Test extracting usage from streaming chunks."""
-        from nalai.core.types.streaming import extract_usage_from_streaming_chunks
+        from nalai.core.streaming import extract_usage_from_streaming_chunks
 
         # Create mock streaming chunks with usage data
         class MockChunk1:
@@ -311,7 +311,7 @@ class TestMessageSerializer:
 
     def test_extract_usage_from_streaming_chunks_empty(self):
         """Test extracting usage from empty streaming chunks list."""
-        from nalai.core.types.streaming import extract_usage_from_streaming_chunks
+        from nalai.core.streaming import extract_usage_from_streaming_chunks
 
         result = extract_usage_from_streaming_chunks([])
         assert result == {

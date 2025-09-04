@@ -12,15 +12,15 @@ from typing import Any
 import yaml
 
 from ..config import settings
+from ..core.services import APIService as APIServiceProtocol
 
 logger = logging.getLogger(__name__)
 
 
-class APIService:
+class OpenAPIManager(APIServiceProtocol):
     """Service for managing API operations."""
 
-    @staticmethod
-    def load_api_summaries(state: dict[str, Any]) -> dict[str, Any]:
+    def load_api_summaries(self, state: dict[str, Any]) -> dict[str, Any]:
         """
         Load API summaries from the configured data path.
         """
@@ -39,8 +39,7 @@ class APIService:
             state["api_summaries"] = api_summaries
             return state
 
-    @staticmethod
-    def load_openapi_specifications(state: dict[str, Any]) -> dict[str, Any]:
+    def load_openapi_specifications(self, state: dict[str, Any]) -> dict[str, Any]:
         """
         Load OpenAPI specifications for selected APIs.
         """

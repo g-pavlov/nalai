@@ -3,8 +3,7 @@
 import json
 import logging
 
-from ..core.types.messages import ToolCallDecision
-from ..core.types.streaming import StreamingChunk
+# Lazy imports to avoid circular dependencies
 from ..utils.id_generator import generate_run_id
 
 logger = logging.getLogger("nalai")
@@ -21,9 +20,9 @@ def _is_api_selection_response(content: str) -> bool:
     return '"selected_apis"' in content and len(content.strip()) < 200
 
 
-def print_streaming_chunk(chunk: StreamingChunk, printed_events: set, max_length=4000):
+def print_streaming_chunk(chunk, printed_events: set, max_length=4000):
     """Print streaming chunk to terminal."""
-    from ..core.types.streaming import (
+    from ..core import (
         MessageChunk,
         ToolCallChunk,
         ToolChunk,
@@ -154,11 +153,13 @@ def print_streaming_chunk(chunk: StreamingChunk, printed_events: set, max_length
 
 async def handle_interruption(
     agent,
-    interrupt_chunk: StreamingChunk,
+    interrupt_chunk,
     config: dict,
     conversation_id: str,
 ):
     """Handle human-in-the-loop interruption."""
+    from ..core import ToolCallDecision
+
     # Extract tool call information from interrupt chunk
     interrupt_values = interrupt_chunk.values
     if not interrupt_values:
@@ -248,7 +249,7 @@ async def stream_events_with_interruptions(
     user_input: str,
 ):
     """Stream events from agent with HITL support."""
-    from ..core.types.messages import HumanInputMessage
+    from ..core import HumanInputMessage
 
     # Create input message from user input
     messages = [

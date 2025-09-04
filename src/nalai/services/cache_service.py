@@ -24,6 +24,7 @@ from typing import Any
 from langchain_core.messages import BaseMessage
 
 from ..config import settings
+from ..core.services import CacheService as CacheServiceProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -473,7 +474,7 @@ class TokenSimilarityMatcher:
         return False
 
 
-class CacheService:
+class Cache(CacheServiceProtocol):
     """Manages caching for API assistant requests with token-based similarity search.
 
     Addresses key caching challenges:
@@ -926,7 +927,7 @@ class CacheService:
 
 
 # Global cache instance
-_cache_service: CacheService | None = None
+_cache_service: Cache | None = None
 
 
 def load_fallback_corpus() -> tuple[set[str], set[str], set[str], dict[str, list[str]]]:
@@ -1068,11 +1069,11 @@ def load_nlp_corpus() -> tuple[set[str], set[str], set[str], dict[str, list[str]
     return verbs, nouns, adjectives, antonyms
 
 
-def get_cache_service() -> CacheService:
+def get_cache_service() -> Cache:
     """Get the global cache service instance."""
     if not hasattr(get_cache_service, "_instance"):
         # Initialize with memory backend only
-        get_cache_service._instance = CacheService(
+        get_cache_service._instance = Cache(
             backend="memory",
             config={
                 "max_size": settings.cache_max_size,
@@ -1082,7 +1083,7 @@ def get_cache_service() -> CacheService:
     return get_cache_service._instance
 
 
-def set_cache_service(cache_service: CacheService) -> None:
+def set_cache_service(cache_service: Cache) -> None:
     """Set the global cache service instance."""
     global _cache_service
     _cache_service = cache_service

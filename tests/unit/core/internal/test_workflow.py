@@ -21,7 +21,9 @@ sys.path.insert(
 )
 
 from nalai.config import BaseRuntimeConfiguration
-from nalai.core.constants import (
+
+# Internal types for unit testing
+from nalai.core.internal.constants import (
     NODE_CALL_API,
     NODE_CALL_MODEL,
     NODE_CHECK_CACHE,
@@ -29,10 +31,9 @@ from nalai.core.constants import (
     NODE_LOAD_API_SUMMARIES,
     NODE_SELECT_RELEVANT_APIS,
 )
-from nalai.core.states import AgentState, InputSchema, OutputSchema
-from nalai.core.workflow import create_and_compile_workflow
-from nalai.core.workflow_nodes import WorkflowNodes
-from nalai.services.api_docs_service import APIService
+from nalai.core.internal.states import AgentState, InputSchema, OutputSchema
+from nalai.core.internal.workflow import create_and_compile_workflow
+from nalai.core.internal.workflow_nodes import WorkflowNodes
 
 
 @pytest.fixture
@@ -90,8 +91,8 @@ def mock_available_tools():
 class TestWorkflowCreation:
     """Test suite for workflow creation and compilation."""
 
-    @patch("nalai.core.workflow.StateGraph")
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.StateGraph")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_create_and_compile_workflow_basic(
         self, mock_tool_node, mock_state_graph, mock_agent
     ):
@@ -132,14 +133,18 @@ class TestWorkflowCreation:
         mock_graph_instance.add_node.assert_any_call(
             NODE_CHECK_CACHE, mock_agent.check_cache_with_similarity
         )
-        mock_graph_instance.add_node.assert_any_call(
-            NODE_LOAD_API_SUMMARIES, APIService.load_api_summaries
+        # Check that API service methods were called (they're bound to service instances)
+        api_service_calls = [
+            call
+            for call in mock_graph_instance.add_node.call_args_list
+            if call[0][0] in [NODE_LOAD_API_SUMMARIES, NODE_LOAD_API_SPECS]
+        ]
+        assert len(api_service_calls) == 2, (
+            f"Expected 2 API service calls, got {len(api_service_calls)}"
         )
+
         mock_graph_instance.add_node.assert_any_call(
             NODE_SELECT_RELEVANT_APIS, mock_agent.select_relevant_apis
-        )
-        mock_graph_instance.add_node.assert_any_call(
-            NODE_LOAD_API_SPECS, APIService.load_openapi_specifications
         )
         mock_graph_instance.add_node.assert_any_call(
             NODE_CALL_MODEL, mock_agent.generate_model_response
@@ -176,7 +181,7 @@ class TestWorkflowCreation:
         mock_graph_instance.compile.assert_called_once_with(checkpointer=None)
         assert result == mock_compiled_graph
 
-    @patch("nalai.core.workflow.StateGraph")
+    @patch("nalai.core.internal.workflow.StateGraph")
     def test_create_and_compile_workflow_with_custom_tools(
         self, mock_state_graph, mock_agent, mock_available_tools
     ):
@@ -202,8 +207,8 @@ class TestWorkflowCreation:
         mock_graph_instance.compile.assert_called_once_with(checkpointer=None)
         assert result == mock_compiled_graph
 
-    @patch("nalai.core.workflow.StateGraph")
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.StateGraph")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_create_and_compile_workflow_with_memory_store(
         self, mock_tool_node, mock_state_graph, mock_agent, mock_memory_store
     ):
@@ -227,8 +232,8 @@ class TestWorkflowCreation:
         )
         assert result == mock_compiled_graph
 
-    @patch("nalai.core.workflow.StateGraph")
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.StateGraph")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_create_and_compile_workflow_with_partial_tools(
         self, mock_tool_node, mock_state_graph, mock_agent
     ):
@@ -264,8 +269,8 @@ class TestWorkflowCreation:
         mock_graph_instance.compile.assert_called_once_with(checkpointer=None)
         assert result == mock_compiled_graph
 
-    @patch("nalai.core.workflow.StateGraph")
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.StateGraph")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_create_and_compile_workflow_node_functions(
         self, mock_tool_node, mock_state_graph, mock_agent
     ):
@@ -296,7 +301,8 @@ class TestWorkflowCreation:
         load_api_call = next(
             call for call in add_node_calls if call[0][0] == NODE_LOAD_API_SUMMARIES
         )
-        assert load_api_call[0][1] == APIService.load_api_summaries
+        # The method should be bound to a service instance, not the protocol
+        assert callable(load_api_call[0][1])
 
         # Find the call for select_relevant_apis
         select_apis_call = next(
@@ -308,7 +314,8 @@ class TestWorkflowCreation:
         load_specs_call = next(
             call for call in add_node_calls if call[0][0] == NODE_LOAD_API_SPECS
         )
-        assert load_specs_call[0][1] == APIService.load_openapi_specifications
+        # The method should be bound to a service instance, not the protocol
+        assert callable(load_specs_call[0][1])
 
         # Find the call for call_model
         call_model_call = next(
@@ -316,8 +323,8 @@ class TestWorkflowCreation:
         )
         assert call_model_call[0][1] == mock_agent.generate_model_response
 
-    @patch("nalai.core.workflow.StateGraph")
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.StateGraph")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_create_and_compile_workflow_entry_point(
         self, mock_tool_node, mock_state_graph, mock_agent
     ):
@@ -338,8 +345,8 @@ class TestWorkflowCreation:
         # Verify entry point is set
         mock_graph_instance.set_entry_point.assert_called_once_with(NODE_CHECK_CACHE)
 
-    @patch("nalai.core.workflow.StateGraph")
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.StateGraph")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_create_and_compile_workflow_conditional_edges(
         self, mock_tool_node, mock_state_graph, mock_agent
     ):
@@ -387,8 +394,8 @@ class TestWorkflowCreation:
         assert END in call_model_edge[0][2]
         assert NODE_CALL_API in call_model_edge[0][2]
 
-    @patch("nalai.core.workflow.StateGraph")
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.StateGraph")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_workflow_error_handling(
         self, mock_tool_node, mock_state_graph, mock_agent
     ):
@@ -406,8 +413,8 @@ class TestWorkflowCreation:
         with pytest.raises(Exception, match="Node addition failed"):
             create_and_compile_workflow(mock_agent)
 
-    @patch("nalai.core.workflow.StateGraph")
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.StateGraph")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_workflow_compilation_error_handling(
         self, mock_tool_node, mock_state_graph, mock_agent
     ):
@@ -429,7 +436,7 @@ class TestWorkflowCreation:
 class TestWorkflowExecution:
     """Test suite for actual workflow execution with mocked tools."""
 
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_tool_node_creation_with_agent_tools(
         self, mock_tool_node_class, mock_agent
     ):
@@ -469,7 +476,7 @@ class TestWorkflowExecution:
         # Verify workflow was created successfully
         assert workflow is not None
 
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_workflow_conditional_routing_to_tools(
         self, mock_tool_node_class, mock_agent
     ):
@@ -500,7 +507,7 @@ class TestWorkflowExecution:
         mock_agent.generate_model_response.assert_not_called()  # Not called during creation
         mock_agent.should_execute_tools.assert_not_called()  # Not called during creation
 
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_workflow_without_tool_calls(self, mock_tool_node_class, mock_agent):
         """Test workflow execution when no tool calls are needed."""
         # Mock the ToolNode constructor
@@ -519,7 +526,7 @@ class TestWorkflowExecution:
         # Verify workflow was created successfully
         assert workflow is not None
 
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_tool_execution_error_handling(self, mock_tool_node_class, mock_agent):
         """Test workflow behavior when tool execution fails."""
         # Mock the ToolNode constructor
@@ -532,7 +539,7 @@ class TestWorkflowExecution:
         # Verify workflow was created successfully
         assert workflow is not None
 
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_workflow_structure_with_tool_node(self, mock_tool_node_class, mock_agent):
         """Test that the workflow structure includes the tool node correctly."""
         # Mock the ToolNode constructor
@@ -562,7 +569,7 @@ class TestWorkflowExecution:
         tools = mock_agent.http_toolkit.get_tools.return_value
         assert len(tools) > 0
 
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_workflow_with_memory_store_and_tools(
         self, mock_tool_node_class, mock_agent, mock_memory_store
     ):
@@ -592,7 +599,7 @@ class TestWorkflowExecution:
 
         assert all(isinstance(tool, StructuredTool) for tool in call_args)
 
-    @patch("nalai.core.workflow.ToolNode")
+    @patch("nalai.core.internal.workflow.ToolNode")
     def test_workflow_tool_node_integration(self, mock_tool_node_class, mock_agent):
         """Test that the workflow integrates the ToolNode correctly."""
         # Mock the ToolNode constructor

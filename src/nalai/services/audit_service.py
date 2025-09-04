@@ -13,6 +13,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from ..config import settings
+from ..core.services import AuditService as AuditServiceProtocol
 from ..utils.pii_masking import mask_audit_metadata, mask_pii
 
 logger = logging.getLogger(__name__)
@@ -248,7 +249,7 @@ class ExternalAuditBackend(AuditBackend):
         raise NotImplementedError("External audit backend not implemented")
 
 
-class AuditService:
+class AuditTrail(AuditServiceProtocol):
     """Audit service with backend abstraction."""
 
     def __init__(self, backend: str = "memory", config: dict[str, Any] | None = None):
@@ -493,20 +494,20 @@ class AuditService:
 
 
 # Global audit service instance
-_audit_service: AuditService | None = None
+_audit_service: AuditTrail | None = None
 
 
-def get_audit_service() -> AuditService:
+def get_audit_service() -> AuditTrail:
     """Get the global audit service instance."""
     global _audit_service
     if _audit_service is None:
         # Use concrete default values to avoid MagicMock issues
         config = {"max_entries": 10000, "service_url": None}
-        _audit_service = AuditService(backend="memory", config=config)
+        _audit_service = AuditTrail(backend="memory", config=config)
     return _audit_service
 
 
-def set_audit_service(audit_service: AuditService) -> None:
+def set_audit_service(audit_service: AuditTrail) -> None:
     """Set the global audit service instance."""
     global _audit_service
     _audit_service = audit_service
