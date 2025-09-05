@@ -218,3 +218,80 @@ resume_decision_cases:
         selected_apis: []
         cache_miss: null
       streaming: false
+
+# Test cases for select_relevant_apis functionality
+select_relevant_apis:
+  - name: "single_api_selection"
+    description: "Select a single relevant API"
+    input:
+      messages: [{"content": "I need to get user information", "type": "human", "status": null}]
+      api_summaries: [
+        {"title": "User API", "version": "v1", "description": "Get user information"},
+        {"title": "Product API", "version": "v2", "description": "Manage products"},
+        {"title": "Order API", "version": "v1", "description": "Handle orders"}
+      ]
+    expected:
+      selected_apis: [{"api_title": "User API", "api_version": "v1"}]
+      messages_count: 1
+
+  - name: "no_relevant_apis"
+    description: "No APIs are relevant to the request"
+    input:
+      messages: [{"content": "Hello, how are you?", "type": "human", "status": null}]
+      api_summaries: [
+        {"title": "User API", "version": "v1", "description": "Get user information"},
+        {"title": "Product API", "version": "v2", "description": "Manage products"},
+        {"title": "Order API", "version": "v1", "description": "Handle orders"}
+      ]
+    expected:
+      selected_apis: []
+      messages_count: 1
+
+# Test cases for determine_workflow_action functionality
+determine_workflow_action:
+  - name: "tool_calls_present"
+    description: "Messages contain tool calls"
+    input:
+      messages: [
+        {"content": "Get user info", "type": "human", "status": null},
+        {"content": "I'll get that for you", "type": "ai", "status": null, "tool_calls": [{"name": "get_user", "args": {"id": "123"}, "id": "call_123"}]}
+      ]
+    expected: "call_api"
+
+  - name: "no_tool_calls"
+    description: "Messages contain no tool calls"
+    input:
+      messages: [
+        {"content": "Hello", "type": "human", "status": null},
+        {"content": "Hi there!", "type": "ai", "status": null}
+      ]
+    expected: "__end__"
+
+  - name: "empty_messages"
+    description: "Empty message list"
+    input:
+      messages: []
+    expected: "__end__"
+
+# Test cases for determine_next_step functionality
+determine_next_step:
+  - name: "with_selected_apis"
+    description: "Continue with selected APIs"
+    input:
+      selected_apis: [{"api_title": "User API", "api_version": "v1"}]
+      messages: [{"content": "Get user info", "type": "human", "status": null}]
+    expected: "load_api_specs"
+
+  - name: "no_selected_apis"
+    description: "No APIs selected, continue with model response"
+    input:
+      selected_apis: []
+      messages: [{"content": "Hello", "type": "human", "status": null}]
+    expected: "call_model"
+
+  - name: "none_selected_apis"
+    description: "None value for selected APIs"
+    input:
+      selected_apis: null
+      messages: [{"content": "Hello", "type": "human", "status": null}]
+    expected: "call_model"

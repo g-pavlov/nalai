@@ -55,7 +55,7 @@ def mock_config():
 def test_data():
     """Load test data from YAML file."""
     test_data_path = os.path.join(
-        os.path.dirname(__file__), "..", "test_data", "agent_api_test_cases.yaml"
+        os.path.dirname(__file__), "test_data", "agent_api_test_cases.yaml"
     )
     with open(test_data_path) as f:
         return yaml.safe_load(f)
@@ -103,7 +103,6 @@ class TestWorkflowNodes:
         assert model == mock_model
 
     @patch.object(WorkflowNodes, "create_prompt_and_model")
-    @pytest.mark.skip(reason="Test data not available")
     @pytest.mark.parametrize("test_case", ["single_api_selection", "no_relevant_apis"])
     def test_select_relevant_apis(
         self, mock_create_prompt_and_model, test_case, test_data, assistant, mock_config
@@ -153,7 +152,6 @@ class TestWorkflowNodes:
         assert "messages" in result
         assert len(result["messages"]) == case_data["expected"]["messages_count"]
 
-    @pytest.mark.skip(reason="Test data not available")
     @pytest.mark.parametrize(
         "test_case", ["tool_calls_present", "no_tool_calls", "empty_messages"]
     )
@@ -186,7 +184,6 @@ class TestWorkflowNodes:
             )
             assert result == expected
 
-    @pytest.mark.skip(reason="Test data not available")
     @pytest.mark.parametrize(
         "test_case", ["with_selected_apis", "no_selected_apis", "none_selected_apis"]
     )

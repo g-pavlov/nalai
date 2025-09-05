@@ -22,7 +22,7 @@ from nalai.core.internal.lc_agent import LangGraphAgent
 
 def load_test_cases():
     """Load test cases from YAML file."""
-    test_file = "tests/unit/core/test_data/agent_api_test_cases.yaml"
+    test_file = "tests/unit/core/internal/test_data/agent_api_test_cases.yaml"
     with open(test_file) as f:
         return yaml.safe_load(f)
 
