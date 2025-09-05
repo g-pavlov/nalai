@@ -322,7 +322,7 @@ class BaseOutputMessage(BaseModel, StrictModelMixin):
         ])
     """
 
-    id: str = Field(..., description="Message ID", min_length=1, max_length=100)
+    id: str = Field(..., description="Message ID", max_length=100)
     content: str | list[str | dict] = Field(
         ...,
         description="Message content - string or list of content blocks. Content blocks support: "
@@ -330,7 +330,6 @@ class BaseOutputMessage(BaseModel, StrictModelMixin):
         'images ({"type": "image", "source_type": "url|base64", "url": "...", "mime_type": "..."}), '
         'audio ({"type": "audio", "source_type": "url|base64", "url": "...", "mime_type": "..."}), '
         'files ({"type": "file", "source_type": "url|base64", "url": "...", "name": "...", "size": 123})',
-        min_length=1,
     )
 
     @field_validator("id")
@@ -370,11 +369,8 @@ class BaseOutputMessage(BaseModel, StrictModelMixin):
     def validate_content(cls, content):
         """Validate content using content block validation + custom rules."""
         if isinstance(content, str):
-            if not content.strip():
-                raise ValueError("String content cannot be empty")
-            return content.strip()
-
-        elif isinstance(content, list):
+            return content
+        if isinstance(content, list):
             if not content:
                 raise ValueError("Content blocks list cannot be empty")
             if len(content) > 10:
@@ -409,13 +405,18 @@ class BaseOutputMessage(BaseModel, StrictModelMixin):
     def validate_message_structure(self):
         """Validate complete message structure based on role."""
         # Verify content structure for all message types
-        if not self.content:
+        if self.content is None:
             raise ValueError("Message must have content")
 
-        # Verify at least one content block has text content
+        # For HumanOutputMessage and AssistantOutputMessage, allow empty content
+        # For ToolOutputMessage, content is still required (handled in its own validator)
+        if isinstance(self, HumanOutputMessage | AssistantOutputMessage):
+            return self
+
+        # For other message types (like ToolOutputMessage), verify at least one content block has text content
         has_text_content = False
         if isinstance(self.content, str):
-            has_text_content = bool(self.content.strip())
+            has_text_content = True
         elif isinstance(self.content, list):
             for content_block in self.content:
                 if isinstance(content_block, str) and content_block.strip():
@@ -471,7 +472,10 @@ class AssistantOutputMessage(BaseOutputMessage):
         description="Invalid tool calls",
         max_length=10,  # Limit number of invalid tool calls
     )
-    finish_reason: str | None = Field(None, description="Finish reason", max_length=50)
+    finish_reason: (
+        Literal["stop", "length", "tool_calls", "content_filter", "function_call"]
+        | None
+    ) = Field(None, description="Finish reason")
     usage: dict[str, int] | None = Field(..., description="Token usage information")
 
     @field_validator("usage")
@@ -492,24 +496,6 @@ class AssistantOutputMessage(BaseOutputMessage):
                     f"Usage value for {key} must be a non-negative integer"
                 )
 
-        return v
-
-    @field_validator("finish_reason")
-    @classmethod
-    def validate_finish_reason(cls, v):
-        """Validate finish reason."""
-        if v is not None:
-            valid_reasons = {
-                "stop",
-                "length",
-                "tool_calls",
-                "content_filter",
-                "function_call",
-            }
-            if v not in valid_reasons:
-                raise ValueError(
-                    f"Invalid finish_reason: {v}. Valid reasons: {valid_reasons}"
-                )
         return v
 
 

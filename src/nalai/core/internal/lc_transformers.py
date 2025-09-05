@@ -8,7 +8,7 @@ to internal data models.
 import logging
 from typing import Any
 
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_core.messages.tool import ToolMessage
 
 from ...config import ExecutionContext, ToolCallMetadata
@@ -48,18 +48,6 @@ def content_from_message(message: BaseMessage) -> str | list[str | dict]:
         return str(message.content) if message.content else ""
 
 
-def tool_calls_from_message(
-    message: HumanMessage | AIMessage | ToolMessage,
-) -> list[dict]:
-    """Create tool calls from message."""
-    if hasattr(message, "tool_calls") and getattr(message, "tool_calls", None):
-        return [
-            {"id": tc["id"], "name": tc["name"], "args": tc["args"]}
-            for tc in message.tool_calls
-        ]
-    return []
-
-
 def transform_message(
     message: MessageInput,
     run_id: str | None = None,
@@ -97,11 +85,10 @@ def transform_message(
                 "completion_tokens": 0,
                 "total_tokens": 0,
             }
-        tool_calls = tool_calls_from_message(message)
         return AssistantOutputMessage(
             id=message_id,
             content=content,
-            tool_calls=tool_calls,
+            tool_calls=message.tool_calls,
             invalid_tool_calls=message.invalid_tool_calls,
             finish_reason=finish_reason,
             usage=usage,
@@ -535,29 +522,6 @@ def _handle_regular_message(
         metadata=message_data.get("usage_metadata"),
         usage=message_data.get("usage_metadata"),
     )
-
-
-def _extract_tool_calls(message: BaseMessage) -> list[dict] | None:
-    """Extract tool calls from message."""
-    tool_calls = _safe_getattr(message, "tool_calls")
-    if not tool_calls:
-        return None
-
-    result = []
-    for tc in tool_calls:
-        if isinstance(tc, dict):
-            result.append(tc)
-        else:
-            # Handle tool call objects
-            result.append(
-                {
-                    "id": _safe_getattr(tc, "id"),
-                    "name": _safe_getattr(tc, "name"),
-                    "args": _safe_getattr(tc, "args", {}),
-                }
-            )
-
-    return result if result else None
 
 
 def _safe_getattr(obj: Any, attr: str, default: Any = None) -> Any:

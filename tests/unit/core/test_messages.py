@@ -20,6 +20,7 @@ from nalai.core.messages import (
     HumanOutputMessage,
     ToolCall,
     ToolCallDecision,
+    ToolOutputMessage,
 )
 
 
@@ -319,3 +320,62 @@ class TestTextExtraction:
         )
 
         assert message.text() == "Hello world"
+
+
+class TestEmptyContentSupport:
+    """Test suite for empty content support in OutputMessages."""
+
+    def test_human_output_message_empty_content(self):
+        """Test HumanOutputMessage accepts empty content."""
+        message = HumanOutputMessage(
+            id="msg_123456789ABCDEFGHJKLMNPQRSTUVWXYZ", content=""
+        )
+
+        assert message.content == ""
+        assert message.role == "user"
+        assert message.text() == ""
+
+    def test_assistant_output_message_empty_content(self):
+        """Test AssistantOutputMessage accepts empty content."""
+        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        message = AssistantOutputMessage(
+            id="msg_123456789ABCDEFGHJKLMNPQRSTUVWXYZ", content="", usage=usage
+        )
+
+        assert message.content == ""
+        assert message.role == "assistant"
+        assert message.text() == ""
+
+    def test_tool_output_message_empty_content_rejected(self):
+        """Test ToolOutputMessage still rejects empty content."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="Tool message must have content"):
+            ToolOutputMessage(
+                id="msg_123456789ABCDEFGHJKLMNPQRSTUVWXYZ",
+                content="",
+                tool_call_id="call_123456789ABCDEFGHJKLMNPQRSTUVWXYZ",
+            )
+
+    def test_human_output_message_empty_content_blocks(self):
+        """Test HumanOutputMessage accepts empty content blocks."""
+        content = [{"type": "text", "text": ""}]
+        message = HumanOutputMessage(
+            id="msg_123456789ABCDEFGHJKLMNPQRSTUVWXYZ", content=content
+        )
+
+        assert message.content == content
+        assert message.role == "user"
+        assert message.text() == ""
+
+    def test_assistant_output_message_empty_content_blocks(self):
+        """Test AssistantOutputMessage accepts empty content blocks."""
+        content = [{"type": "text", "text": ""}]
+        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        message = AssistantOutputMessage(
+            id="msg_123456789ABCDEFGHJKLMNPQRSTUVWXYZ", content=content, usage=usage
+        )
+
+        assert message.content == content
+        assert message.role == "assistant"
+        assert message.text() == ""

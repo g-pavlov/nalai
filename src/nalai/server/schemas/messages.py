@@ -391,7 +391,7 @@ class MessageResponse(BaseModel):
             if not message.id:
                 raise ValueError(f"Output message {i} must have an ID")
 
-            if not message.content:
+            if message.content is None:
                 raise ValueError(f"Output message {i} must have content")
 
             if not message.role:
