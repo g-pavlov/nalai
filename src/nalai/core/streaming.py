@@ -76,10 +76,26 @@ class MessageChunk(BaseStreamingChunk):
 
     type: Literal["message"] = "message"
     task: str  # langgraph_node
-    content: str
+    content: str | list[str | dict]
     id: str
     metadata: dict[str, Any] | None = None
     usage: dict[str, Any] | None = None
+
+    def text(self) -> str:
+        """Extract text content from chunk."""
+        if isinstance(self.content, str):
+            return self.content
+
+        # Extract text from content blocks
+        blocks = [
+            block
+            for block in self.content
+            if isinstance(block, str)
+            or (isinstance(block, dict) and block.get("type") == "text")
+        ]
+        return "".join(
+            block if isinstance(block, str) else block["text"] for block in blocks
+        )
 
 
 class ToolCallChunk(BaseStreamingChunk):

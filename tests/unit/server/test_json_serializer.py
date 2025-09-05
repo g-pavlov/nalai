@@ -193,7 +193,11 @@ class TestMessageSerializer:
             human_message, "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9"
         )
         assert isinstance(result, HumanOutputMessage)
-        assert result.content[0].text == "Hello"
+        # Content can be string or list of content blocks
+        if isinstance(result.content, str):
+            assert result.content == "Hello"
+        else:
+            assert result.content[0]["text"] == "Hello"
 
     def test_transform_message_ai(self):
         """Test serializing AI message to output format."""
@@ -211,7 +215,11 @@ class TestMessageSerializer:
 
         result = transform_message(ai_message, "run_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9")
         assert isinstance(result, AssistantOutputMessage)
-        assert result.content[0].text == "Hello there"
+        # Content can be string or list of content blocks
+        if isinstance(result.content, str):
+            assert result.content == "Hello there"
+        else:
+            assert result.content[0]["text"] == "Hello there"
 
     def test_transform_message_tool(self):
         """Test serializing tool message to output format."""
@@ -244,8 +252,16 @@ class TestMessageSerializer:
         )
         assert isinstance(ai_result, AssistantOutputMessage)
         assert isinstance(tool_result, ToolOutputMessage)
-        assert ai_result.content[0].text == "I'll call a tool"
-        assert tool_result.content[0].text == "Tool result"
+        # Content can be string or list of content blocks
+        if isinstance(ai_result.content, str):
+            assert ai_result.content == "I'll call a tool"
+        else:
+            assert ai_result.content[0]["text"] == "I'll call a tool"
+        # Content can be string or list of content blocks
+        if isinstance(tool_result.content, str):
+            assert tool_result.content == "Tool result"
+        else:
+            assert tool_result.content[0]["text"] == "Tool result"
         assert tool_result.tool_call_id == "call_123"
 
     def test_transform_message_multiple(self):
@@ -272,8 +288,16 @@ class TestMessageSerializer:
         )
         assert isinstance(human_result, HumanOutputMessage)
         assert isinstance(ai_result, AssistantOutputMessage)
-        assert human_result.content[0].text == "Hello"
-        assert ai_result.content[0].text == "Hi there"
+        # Content can be string or list of content blocks
+        if isinstance(human_result.content, str):
+            assert human_result.content == "Hello"
+        else:
+            assert human_result.content[0]["text"] == "Hello"
+        # Content can be string or list of content blocks
+        if isinstance(ai_result.content, str):
+            assert ai_result.content == "Hi there"
+        else:
+            assert ai_result.content[0]["text"] == "Hi there"
 
     def test_extract_usage_from_streaming_chunks(self):
         """Test extracting usage from streaming chunks."""

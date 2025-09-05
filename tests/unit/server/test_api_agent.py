@@ -19,7 +19,6 @@ from nalai.core.agent import ConversationInfo
 from nalai.core.messages import (
     AssistantOutputMessage,
     HumanInputMessage,
-    TextContent,
 )
 from nalai.server.api_agent import create_agent_api
 
@@ -60,7 +59,7 @@ class TestAgentResponses:
 
         mock_message = AssistantOutputMessage(
             id="msg_2b1c3d4e5f6g7h8i9j2k3m4n5p6q7r8s9",
-            content=[TextContent(text="Hello!")],
+            content="Hello!",
             usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         )
 
@@ -118,7 +117,7 @@ class TestAgentResponses:
 
         mock_message = AssistantOutputMessage(
             id="msg_abc123def456ghi789jkm2n3p4q5r6s7t8u9",
-            content=[TextContent(text="How can I help?")],
+            content="How can I help?",
             usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         )
 
@@ -176,7 +175,7 @@ class TestAgentResponses:
 
         mock_message = AssistantOutputMessage(
             id="msg_xyz789abc123def456ghi789jkm2n3p4q5r6s7t8u9",
-            content=[TextContent(text="Continuing from previous response")],
+            content="Continuing from previous response",
             usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         )
 

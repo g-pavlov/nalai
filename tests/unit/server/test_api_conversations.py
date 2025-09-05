@@ -208,16 +208,13 @@ class TestAgentAPI:
         from nalai.core.messages import (
             AssistantOutputMessage,
             HumanOutputMessage,
-            TextContent,
         )
 
         mock_messages = [
-            HumanOutputMessage(
-                id="msg_2wkvcCeR82dP3rohyhutYa", content=[TextContent(text="Hello")]
-            ),
+            HumanOutputMessage(id="msg_2wkvcCeR82dP3rohyhutYa", content="Hello"),
             AssistantOutputMessage(
                 id="msg_3xkwcCeR82dP3rohyhutYb",
-                content=[TextContent(text="Hi there!")],
+                content="Hi there!",
                 usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
             ),
         ]
@@ -263,10 +260,12 @@ class TestAgentAPI:
             assert "id" in message
             assert "role" in message
             assert "content" in message
-            assert isinstance(message["content"], list)
-            assert len(message["content"]) > 0
-            assert message["content"][0]["type"] == "text"
-            assert "text" in message["content"][0]
+            # Content can now be either string or list of content blocks
+            assert isinstance(message["content"], str | list)
+            if isinstance(message["content"], list):
+                assert len(message["content"]) > 0
+                assert message["content"][0]["type"] == "text"
+                assert "text" in message["content"][0]
 
             # Only assistant messages have metadata (usage and finish_reason)
             if message["role"] == "assistant":
@@ -300,17 +299,14 @@ class TestAgentAPI:
         from nalai.core.messages import (
             AssistantOutputMessage,
             HumanOutputMessage,
-            TextContent,
             ToolCall,
         )
 
         mock_messages = [
-            HumanOutputMessage(
-                id="msg_2wkvcCeR82dP3rohyhutYa", content=[TextContent(text="Hello")]
-            ),
+            HumanOutputMessage(id="msg_2wkvcCeR82dP3rohyhutYa", content="Hello"),
             AssistantOutputMessage(
                 id="msg_3xkwcCeR82dP3rohyhutYb",
-                content=[TextContent(text="I'll check the weather for you.")],
+                content="I'll check the weather for you.",
                 tool_calls=[
                     ToolCall(
                         id="call_123",
@@ -378,16 +374,13 @@ class TestAgentAPI:
         from nalai.core.messages import (
             AssistantOutputMessage,
             HumanOutputMessage,
-            TextContent,
         )
 
         mock_messages = [
-            HumanOutputMessage(
-                id="msg_2wkvcCeR82dP3rohyhutYa", content=[TextContent(text="Hello")]
-            ),
+            HumanOutputMessage(id="msg_2wkvcCeR82dP3rohyhutYa", content="Hello"),
             AssistantOutputMessage(
                 id="msg_3xkwcCeR82dP3rohyhutYb",
-                content=[TextContent(text="I'll check the weather for you.")],
+                content="I'll check the weather for you.",
                 usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
             ),
         ]
@@ -488,16 +481,13 @@ class TestAgentAPI:
         from nalai.core.messages import (
             AssistantOutputMessage,
             HumanOutputMessage,
-            TextContent,
         )
 
         mock_messages = [
-            HumanOutputMessage(
-                id="msg_2wkvcCeR82dP3rohyhutYa", content=[TextContent(text="Hello")]
-            ),
+            HumanOutputMessage(id="msg_2wkvcCeR82dP3rohyhutYa", content="Hello"),
             AssistantOutputMessage(
                 id="msg_3xkwcCeR82dP3rohyhutYb",
-                content=[TextContent(text="Hi there!")],
+                content="Hi there!",
                 finish_reason="stop",
                 usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
             ),
@@ -765,24 +755,27 @@ class TestAgentAPI:
     @pytest.mark.parametrize(
         "payload,expected_status",
         [
-            ({"input": []}, 422),  # Empty messages
+            ({"input": [], "stream": "off"}, 422),  # Empty messages
             (
                 {
                     "input": [
                         {"role": "user", "content": [{"type": "text", "text": ""}]}
                     ],
+                    "stream": "off",
                 },
                 422,
             ),  # Empty content
-            ({"input": ""}, 422),  # Empty string
-            ({"input": "   "}, 422),  # Whitespace-only string
+            ({"input": "", "stream": "off"}, 422),  # Empty string
+            ({"input": "   ", "stream": "off"}, 422),  # Whitespace-only string
         ],
     )
     def test_agent_responses_validation_failures(
         self, client, payload, expected_status
     ):
         """Critical: Should reject invalid inputs."""
-        response = client.post("/api/v1/messages", json=payload)
+        response = client.post(
+            "/api/v1/messages", json=payload, headers={"Accept": "application/json"}
+        )
         assert response.status_code == expected_status
 
     @patch("nalai.server.runtime_config.get_user_context")
@@ -810,16 +803,13 @@ class TestAgentAPI:
         from nalai.core.messages import (
             AssistantOutputMessage,
             HumanOutputMessage,
-            TextContent,
         )
 
         mock_messages = [
-            HumanOutputMessage(
-                id="msg_2wkvcCeR82dP3rohyhutYa", content=[TextContent(text="Hello")]
-            ),
+            HumanOutputMessage(id="msg_2wkvcCeR82dP3rohyhutYa", content="Hello"),
             AssistantOutputMessage(
                 id="msg_3wkvcCeR82dP3rohyhutYa",
-                content=[TextContent(text="Hi there!")],
+                content="Hi there!",
                 usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
             ),
         ]
@@ -866,10 +856,12 @@ class TestAgentAPI:
             assert "id" in message
             assert "role" in message
             assert "content" in message
-            assert isinstance(message["content"], list)
-            assert len(message["content"]) > 0
-            assert message["content"][0]["type"] == "text"
-            assert "text" in message["content"][0]
+            # Content can now be either string or list of content blocks
+            assert isinstance(message["content"], str | list)
+            if isinstance(message["content"], list):
+                assert len(message["content"]) > 0
+                assert message["content"][0]["type"] == "text"
+                assert "text" in message["content"][0]
 
             # Only assistant messages have metadata (usage and finish_reason)
             if message["role"] == "assistant":
@@ -946,12 +938,13 @@ class TestAgentAPIStreamEvents:
     @pytest.mark.parametrize(
         "payload,expected_status",
         [
-            ({"input": []}, 422),  # Empty messages
+            ({"input": [], "stream": "full"}, 422),  # Empty messages
             (
                 {
                     "input": [
                         {"role": "user", "content": [{"type": "text", "text": ""}]}
                     ],
+                    "stream": "full",
                 },
                 422,
             ),  # Empty content
@@ -1035,17 +1028,14 @@ class TestLoadConversation:
             from nalai.core.messages import (
                 AssistantOutputMessage,
                 HumanOutputMessage,
-                TextContent,
                 ToolOutputMessage,
             )
 
             mock_messages = [
-                HumanOutputMessage(
-                    id="msg_2wkvcCeR82dP3rohyhutYa", content=[TextContent(text="Hello")]
-                ),
+                HumanOutputMessage(id="msg_2wkvcCeR82dP3rohyhutYa", content="Hello"),
                 AssistantOutputMessage(
                     id="msg_3wkvcCeR82dP3rohyhutYa",
-                    content=[TextContent(text="Hi there!")],
+                    content="Hi there!",
                     usage={
                         "prompt_tokens": 10,
                         "completion_tokens": 5,
@@ -1054,7 +1044,7 @@ class TestLoadConversation:
                 ),
                 ToolOutputMessage(
                     id="msg_4wkvcCeR82dP3rohyhutYa",
-                    content=[TextContent(text="API response")],
+                    content="API response",
                     tool_call_id="call_123",
                 ),
             ]
@@ -1097,11 +1087,26 @@ class TestLoadConversation:
             assert data["conversation_id"] == conversation_id
             assert len(data["messages"]) == 3
             assert data["messages"][0]["role"] == "user"
-            assert data["messages"][0]["content"][0]["text"] == "Hello"
+            # Content can now be either string or list of content blocks
+            content = data["messages"][0]["content"]
+            if isinstance(content, str):
+                assert content == "Hello"
+            else:
+                assert content[0]["text"] == "Hello"
             assert data["messages"][1]["role"] == "assistant"
-            assert data["messages"][1]["content"][0]["text"] == "Hi there!"
+            # Check assistant message content
+            assistant_content = data["messages"][1]["content"]
+            if isinstance(assistant_content, str):
+                assert assistant_content == "Hi there!"
+            else:
+                assert assistant_content[0]["text"] == "Hi there!"
             assert data["messages"][2]["role"] == "tool"
-            assert data["messages"][2]["content"][0]["text"] == "API response"
+            # Check tool message content
+            tool_content = data["messages"][2]["content"]
+            if isinstance(tool_content, str):
+                assert tool_content == "API response"
+            else:
+                assert tool_content[0]["text"] == "API response"
             assert data["messages"][2]["tool_call_id"] == "call_123"
             assert data["status"] == "active"
         elif expected_detail_keyword:

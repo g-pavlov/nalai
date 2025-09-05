@@ -369,18 +369,170 @@ async function handleInterrupts(interrupts, stateMachine) {
  * Extract text content from message content array
  */
 function extractTextContent(content) {
+    if (typeof content === 'string') {
+        return content;
+    }
+    
     if (!content || !Array.isArray(content)) {
         return '';
     }
     
     let textContent = '';
     for (const contentBlock of content) {
-        if (contentBlock.type === 'text' && contentBlock.text) {
+        if (typeof contentBlock === 'string') {
+            textContent += contentBlock + '\n';
+        } else if (contentBlock.type === 'text' && contentBlock.text) {
             textContent += contentBlock.text + '\n';
+        } else if (contentBlock.type === 'image') {
+            // Add placeholder text for images
+            const source = contentBlock.source_type === 'url' ? contentBlock.url : 'base64 image';
+            textContent += `[Image: ${source}]\n`;
+        } else if (contentBlock.type === 'audio') {
+            // Add placeholder text for audio
+            const source = contentBlock.source_type === 'url' ? contentBlock.url : 'base64 audio';
+            textContent += `[Audio: ${source}]\n`;
+        } else if (contentBlock.type === 'file') {
+            // Add placeholder text for files
+            const source = contentBlock.source_type === 'url' ? contentBlock.url : 'base64 file';
+            textContent += `[File: ${source}]\n`;
         }
     }
     
     return textContent.trim();
+}
+
+/**
+ * Render rich content blocks as HTML elements
+ * @param {string|Array} content - Message content (string or array of content blocks)
+ * @returns {string} - HTML string with rich content
+ */
+function renderRichContent(content) {
+    if (typeof content === 'string') {
+        return escapeHtml(content);
+    }
+    
+    if (!Array.isArray(content)) {
+        return escapeHtml(String(content));
+    }
+    
+    let htmlContent = '';
+    for (const contentBlock of content) {
+        if (typeof contentBlock === 'string') {
+            htmlContent += escapeHtml(contentBlock);
+        } else if (contentBlock.type === 'text' && contentBlock.text) {
+            htmlContent += escapeHtml(contentBlock.text);
+        } else if (contentBlock.type === 'image') {
+            htmlContent += renderImageBlock(contentBlock);
+        } else if (contentBlock.type === 'audio') {
+            htmlContent += renderAudioBlock(contentBlock);
+        } else if (contentBlock.type === 'file') {
+            htmlContent += renderFileBlock(contentBlock);
+        }
+    }
+    return htmlContent;
+}
+
+/**
+ * Render image content block as HTML
+ * @param {Object} imageBlock - Image content block
+ * @returns {string} - HTML string for image
+ */
+function renderImageBlock(imageBlock) {
+    if (imageBlock.source_type === 'url' && imageBlock.url) {
+        return `<div class="content-block image-block">
+            <img src="${escapeHtml(imageBlock.url)}" alt="Image" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;">
+            <div class="image-caption">Image from URL</div>
+        </div>`;
+    } else if (imageBlock.source_type === 'base64' && imageBlock.data) {
+        const mimeType = imageBlock.mime_type || 'image/jpeg';
+        return `<div class="content-block image-block">
+            <img src="data:${mimeType};base64,${imageBlock.data}" alt="Image" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;">
+            <div class="image-caption">Base64 Image</div>
+        </div>`;
+    }
+    return '<div class="content-block image-block error">[Invalid image block]</div>';
+}
+
+/**
+ * Render audio content block as HTML
+ * @param {Object} audioBlock - Audio content block
+ * @returns {string} - HTML string for audio
+ */
+function renderAudioBlock(audioBlock) {
+    if (audioBlock.source_type === 'url' && audioBlock.url) {
+        return `<div class="content-block audio-block">
+            <audio controls style="width: 100%; margin: 8px 0;">
+                <source src="${escapeHtml(audioBlock.url)}" type="${audioBlock.mime_type || 'audio/mpeg'}">
+                Your browser does not support the audio element.
+            </audio>
+            <div class="audio-caption">Audio from URL</div>
+        </div>`;
+    } else if (audioBlock.source_type === 'base64' && audioBlock.data) {
+        const mimeType = audioBlock.mime_type || 'audio/mpeg';
+        return `<div class="content-block audio-block">
+            <audio controls style="width: 100%; margin: 8px 0;">
+                <source src="data:${mimeType};base64,${audioBlock.data}" type="${mimeType}">
+                Your browser does not support the audio element.
+            </audio>
+            <div class="audio-caption">Base64 Audio</div>
+        </div>`;
+    }
+    return '<div class="content-block audio-block error">[Invalid audio block]</div>';
+}
+
+/**
+ * Render file content block as HTML
+ * @param {Object} fileBlock - File content block
+ * @returns {string} - HTML string for file
+ */
+function renderFileBlock(fileBlock) {
+    const fileName = fileBlock.name || 'Unknown file';
+    const fileSize = fileBlock.size ? ` (${formatFileSize(fileBlock.size)})` : '';
+    
+    if (fileBlock.source_type === 'url' && fileBlock.url) {
+        return `<div class="content-block file-block">
+            <a href="${escapeHtml(fileBlock.url)}" target="_blank" rel="noopener noreferrer" 
+               style="display: inline-flex; align-items: center; padding: 8px 12px; background: #f0f0f0; border-radius: 6px; text-decoration: none; color: #333; margin: 4px 0;">
+                <span style="margin-right: 8px;">📄</span>
+                <span>${escapeHtml(fileName)}${fileSize}</span>
+            </a>
+            <div class="file-caption">File from URL</div>
+        </div>`;
+    } else if (fileBlock.source_type === 'base64' && fileBlock.data) {
+        // For base64 files, we can't directly link to them, so show info
+        return `<div class="content-block file-block">
+            <div style="display: inline-flex; align-items: center; padding: 8px 12px; background: #f0f0f0; border-radius: 6px; margin: 4px 0;">
+                <span style="margin-right: 8px;">📄</span>
+                <span>${escapeHtml(fileName)}${fileSize}</span>
+            </div>
+            <div class="file-caption">Base64 File (${formatFileSize(fileBlock.data.length)})</div>
+        </div>`;
+    }
+    return '<div class="content-block file-block error">[Invalid file block]</div>';
+}
+
+/**
+ * Format file size in human readable format
+ * @param {number} bytes - File size in bytes
+ * @returns {string} - Formatted file size
+ */
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+/**
+ * Escape HTML special characters
+ * @param {string} text - Text to escape
+ * @returns {string} - Escaped text
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 /**

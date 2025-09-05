@@ -19,12 +19,10 @@ from .factory import create_agent
 from .internal.lc_agent import create_user_scoped_conversation_id
 from .messages import (
     AssistantOutputMessage,
-    ContentBlock,
     HumanInputMessage,
     HumanOutputMessage,
     InputMessage,
     OutputMessage,
-    TextContent,
     ToolCall,
     ToolCallDecision,
 )
@@ -57,8 +55,6 @@ __all__ = [
     "ModelConfig",
     "ConfigSchema",
     # I/O types
-    "ContentBlock",
-    "TextContent",
     "InputMessage",
     "HumanInputMessage",
     "ToolCallDecision",

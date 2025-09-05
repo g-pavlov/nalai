@@ -7,6 +7,7 @@ import re
 from typing import Any, Literal
 
 from langchain_core.messages import HumanMessage
+from langchain_core.messages.content_blocks import is_data_content_block
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..utils.id_generator import generate_message_id, validate_domain_id_format
@@ -16,75 +17,100 @@ logger = logging.getLogger("nalai")
 
 
 # ===== Content Block Types =====
-class TextContent(BaseModel, StrictModelMixin):
-    """Text content block for structured messages."""
-
-    type: Literal["text"] = Field("text", description="Content type")
-    text: str = Field(..., description="Text content", max_length=10000, min_length=1)
-
-    @field_validator("text")
-    @classmethod
-    def validate_text(cls, text):
-        """Validate text content."""
-        # if not text or not text.strip():
-        #     raise ValueError("Text content cannot be empty")
-
-        # Check for excessive whitespace
-        if len(text.strip()) != len(text):
-            raise ValueError(
-                "Text content should not have leading or trailing whitespace"
-            )
-
-        # Check for control characters (except newlines and tabs)
-        if re.search(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", text):
-            raise ValueError("Text content contains invalid control characters")
-
-        return text.strip()
-
-
-# Union type for all content blocks
-ContentBlock = TextContent
+# Using content block system with hybrid validation
+#
+# Content blocks support the following types:
+# - Text blocks: {"type": "text", "text": "content"}
+# - Image blocks: {"type": "image", "source_type": "url|base64", "url": "...", "mime_type": "..."}
+# - Audio blocks: {"type": "audio", "source_type": "url|base64", "url": "...", "mime_type": "..."}
+# - File blocks: {"type": "file", "source_type": "url|base64", "url": "...", "name": "...", "size": 123}
 
 
 # ===== Input Message Types =====
 class BaseInputMessage(BaseModel, StrictModelMixin):
-    """Base input message structure."""
+    """Base input message structure.
+
+    Examples:
+        # Simple text message
+        message = HumanInputMessage(content="Hello, world!")
+
+        # Rich content with multiple blocks
+        message = HumanInputMessage(content=[
+            {"type": "text", "text": "Here's an image:"},
+            {"type": "image", "source_type": "url", "url": "https://example.com/image.jpg"},
+            {"type": "text", "text": "And here's a file:"},
+            {"type": "file", "source_type": "url", "url": "https://example.com/doc.pdf", "name": "Document.pdf"}
+        ])
+    """
 
     type: Literal["message"] = Field("message", description="Message type")
-    content: str | list[ContentBlock] = Field(
+    content: str | list[str | dict] = Field(
         ...,
-        description="Message content - string or structured content blocks",
+        description="Message content - string or list of content blocks. Content blocks support: "
+        'text ({"type": "text", "text": "content"}), '
+        'images ({"type": "image", "source_type": "url|base64", "url": "...", "mime_type": "..."}), '
+        'audio ({"type": "audio", "source_type": "url|base64", "url": "...", "mime_type": "..."}), '
+        'files ({"type": "file", "source_type": "url|base64", "url": "...", "name": "...", "size": 123})',
         max_length=50000,  # Total content length limit
     )
 
     @field_validator("content")
     @classmethod
     def validate_content(cls, content):
-        """Validate message content."""
+        """Validate message content using content block validation + custom rules."""
         if isinstance(content, str):
             if not content.strip():
                 raise ValueError("String content cannot be empty")
             if len(content) > 50000:
                 raise ValueError("String content cannot exceed 50KB")
             return content.strip()
+
         elif isinstance(content, list):
             if not content:
                 raise ValueError("Content blocks list cannot be empty")
             if len(content) > 10:
                 raise ValueError("Content blocks list cannot exceed 10 blocks")
 
-            # Validate total content length across all blocks
-            total_length = sum(
-                len(block.text) for block in content if hasattr(block, "text")
-            )
-            if total_length > 50000:
-                raise ValueError(
-                    "Total content length across all blocks cannot exceed 50KB"
-                )
+            # Validate each content block
+            for i, block in enumerate(content):
+                if isinstance(block, str):
+                    if not block.strip():
+                        raise ValueError(f"String block at index {i} cannot be empty")
+                    continue
+
+                elif isinstance(block, dict):
+                    # Validate content blocks - text blocks or data content blocks
+                    if block.get("type") == "text":
+                        if "text" not in block:
+                            raise ValueError(
+                                f"Text content block at index {i} missing 'text' field: {block}"
+                            )
+                    elif not is_data_content_block(block):
+                        raise ValueError(f"Invalid content block at index {i}: {block}")
+                else:
+                    raise ValueError(
+                        f"Content block at index {i} must be string or dict, got {type(block)}"
+                    )
 
             return content
         else:
             raise ValueError("Content must be string or list of content blocks")
+
+    def text(self) -> str:
+        """Extract text content from message content."""
+        if isinstance(self.content, str):
+            return self.content
+
+        # Extract text from content blocks
+        blocks = [
+            block
+            for block in self.content
+            if isinstance(block, str)
+            or (isinstance(block, dict) and block.get("type") == "text")
+        ]
+        return "".join(
+            block if isinstance(block, str) else block["text"] for block in blocks
+        )
 
 
 class HumanInputMessage(BaseInputMessage):
@@ -103,29 +129,32 @@ class HumanInputMessage(BaseInputMessage):
         if isinstance(content, str):
             return content
 
-        # For content blocks, ensure at least one TextContent block exists
+        # For content blocks, ensure at least one non-empty text block exists
         has_text_content = False
         for block in content:
-            if isinstance(block, TextContent):
-                has_text_content = True
-                break
+            if isinstance(block, str):
+                if block.strip():  # Non-empty string
+                    has_text_content = True
+                    break
+            elif isinstance(block, dict) and block.get("type") == "text":
+                if block.get("text", "").strip():  # Non-empty text field
+                    has_text_content = True
+                    break
 
         if not has_text_content:
-            raise ValueError("Message must contain at least one text content block")
+            raise ValueError(
+                "Message must contain at least one non-empty text content block"
+            )
 
         return content
 
     def to_langchain_message(self) -> HumanMessage:
-        """Convert to LangChain HumanMessage."""
+        """Convert to external message format."""
         if isinstance(self.content, str):
             return HumanMessage(content=self.content, id=generate_message_id())
         else:
-            # Extract text content from content blocks
-            text_content = ""
-            for block in self.content:
-                if isinstance(block, TextContent):
-                    text_content += block.text
-            return HumanMessage(content=text_content, id=generate_message_id())
+            # Pass through content blocks directly
+            return HumanMessage(content=self.content, id=generate_message_id())
 
 
 class ToolCallDecision(BaseModel, StrictModelMixin):
@@ -279,11 +308,29 @@ class ToolCall(BaseModel, StrictModelMixin):
 
 
 class BaseOutputMessage(BaseModel, StrictModelMixin):
-    """Base output message structure."""
+    """Base output message structure.
+
+    Examples:
+        # Simple text response
+        message = HumanOutputMessage(id="msg_123", content="Hello, how can I help you?")
+
+        # Rich content response with images and files
+        message = HumanOutputMessage(id="msg_456", content=[
+            {"type": "text", "text": "Here's the analysis:"},
+            {"type": "image", "source_type": "url", "url": "https://example.com/chart.png"},
+            {"type": "file", "source_type": "url", "url": "https://example.com/report.pdf", "name": "Analysis Report"}
+        ])
+    """
 
     id: str = Field(..., description="Message ID", min_length=1, max_length=100)
-    content: list[ContentBlock] = Field(
-        ..., description="Message content blocks", min_length=1
+    content: str | list[str | dict] = Field(
+        ...,
+        description="Message content - string or list of content blocks. Content blocks support: "
+        'text ({"type": "text", "text": "content"}), '
+        'images ({"type": "image", "source_type": "url|base64", "url": "...", "mime_type": "..."}), '
+        'audio ({"type": "audio", "source_type": "url|base64", "url": "...", "mime_type": "..."}), '
+        'files ({"type": "file", "source_type": "url|base64", "url": "...", "name": "...", "size": 123})',
+        min_length=1,
     )
 
     @field_validator("id")
@@ -320,37 +367,88 @@ class BaseOutputMessage(BaseModel, StrictModelMixin):
 
     @field_validator("content")
     @classmethod
-    def validate_content(cls, v):
-        """Validate content blocks."""
-        if not isinstance(v, list):
-            raise ValueError("Content must be a list of content blocks")
+    def validate_content(cls, content):
+        """Validate content using content block validation + custom rules."""
+        if isinstance(content, str):
+            if not content.strip():
+                raise ValueError("String content cannot be empty")
+            return content.strip()
 
-        if not v:
-            raise ValueError("Content blocks list cannot be empty")
+        elif isinstance(content, list):
+            if not content:
+                raise ValueError("Content blocks list cannot be empty")
+            if len(content) > 10:
+                raise ValueError("Content blocks list cannot exceed 10 blocks")
 
-        if len(v) > 10:
-            raise ValueError("Content blocks list cannot exceed 10 blocks")
+            # Validate each content block
+            for i, block in enumerate(content):
+                if isinstance(block, str):
+                    if not block.strip():
+                        raise ValueError(f"String block at index {i} cannot be empty")
+                    continue
 
-        return v
+                elif isinstance(block, dict):
+                    # Validate content blocks - text blocks or data content blocks
+                    if block.get("type") == "text":
+                        if "text" not in block:
+                            raise ValueError(
+                                f"Text content block at index {i} missing 'text' field: {block}"
+                            )
+                    elif not is_data_content_block(block):
+                        raise ValueError(f"Invalid content block at index {i}: {block}")
+                else:
+                    raise ValueError(
+                        f"Content block at index {i} must be string or dict, got {type(block)}"
+                    )
+
+            return content
+        else:
+            raise ValueError("Content must be string or list of content blocks")
 
     @model_validator(mode="after")
     def validate_message_structure(self):
         """Validate complete message structure based on role."""
         # Verify content structure for all message types
         if not self.content:
-            raise ValueError("Message must have content blocks")
+            raise ValueError("Message must have content")
 
         # Verify at least one content block has text content
         has_text_content = False
-        for content_block in self.content:
-            if hasattr(content_block, "text") and content_block.text:
-                has_text_content = True
-                break
+        if isinstance(self.content, str):
+            has_text_content = bool(self.content.strip())
+        elif isinstance(self.content, list):
+            for content_block in self.content:
+                if isinstance(content_block, str) and content_block.strip():
+                    has_text_content = True
+                    break
+                elif (
+                    isinstance(content_block, dict)
+                    and content_block.get("type") == "text"
+                    and content_block.get("text")
+                ):
+                    has_text_content = True
+                    break
 
         if not has_text_content:
             raise ValueError("Message must contain at least one text content block")
 
         return self
+
+    def text(self) -> str:
+        """Extract text content from message content."""
+        if isinstance(self.content, str):
+            return self.content
+
+        # Extract text from content blocks
+        blocks = [
+            block
+            for block in self.content
+            if isinstance(block, str)
+            or (isinstance(block, dict) and block.get("type") == "text")
+        ]
+        return "".join(
+            block if isinstance(block, str) else block["text"] for block in blocks
+        )
 
 
 class HumanOutputMessage(BaseOutputMessage):
@@ -453,9 +551,17 @@ class ToolOutputMessage(BaseOutputMessage):
 
         # Verify tool message content contains result
         content_text = ""
-        for content_block in self.content:
-            if hasattr(content_block, "text"):
-                content_text += content_block.text
+        if isinstance(self.content, str):
+            content_text = self.content
+        elif isinstance(self.content, list):
+            for content_block in self.content:
+                if isinstance(content_block, str):
+                    content_text += content_block
+                elif (
+                    isinstance(content_block, dict)
+                    and content_block.get("type") == "text"
+                ):
+                    content_text += content_block.get("text", "")
 
         if not content_text.strip():
             raise ValueError("Tool message must contain result content")
@@ -469,14 +575,11 @@ OutputMessage = HumanOutputMessage | AssistantOutputMessage | ToolOutputMessage
 
 # Public API
 __all__ = [
-    # Common types
-    "ContentBlock",
-    "TextContent",
     # Input messages
     "InputMessage",
     "HumanInputMessage",
     "ToolCallDecision",
-    # Output messgaes
+    # Output messages
     "AssistantOutputMessage",
     "OutputMessage",
     "HumanOutputMessage",

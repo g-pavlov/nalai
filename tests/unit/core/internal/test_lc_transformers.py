@@ -64,7 +64,11 @@ class TestLCTransformers:
 
         result = transform_message(mock_message, conversation_id="conv_123")
         assert result.role == expected_role
-        assert result.content[0].text == content
+        # Content can now be either string or list of content blocks
+        if isinstance(result.content, str):
+            assert result.content == content
+        else:
+            assert result.content[0]["text"] == content
 
     def test_transform_streaming_chunk_function_exists(self):
         """Test that transform_streaming_chunk function exists."""

@@ -11,6 +11,9 @@ import { addToolCallsIndicatorToMessage } from './toolCalls.js';
 
 import { ResponseStateMachine } from './responses.js';
 
+// Import rich content rendering functions
+import { renderRichContent, escapeHtml } from './conversations.js';
+
 export function createAssistantMessageElement() {
             // Reset state for new message
         Logger.info('Creating new assistant message element');
@@ -67,9 +70,8 @@ export function addMessage(content, type, options = {}) {
         messageDiv.className = `message ${type}-message fade-in`;
         
         if (type === 'assistant') {
-            // For assistant messages, content is handled by the state machine
-            // Just add the message to the container
-            messageDiv.textContent = content;
+            // For assistant messages, render rich content
+            messageDiv.innerHTML = renderRichContent(content);
             
             // Add tool calls indicator if tool calls are provided
             if (options.toolCalls && options.toolCalls.length > 0) {
@@ -90,11 +92,12 @@ export function addMessage(content, type, options = {}) {
                         <span class="tool-name">${toolName}</span>
                         ${toolCallId ? `<span class="tool-call-id">${toolCallId}</span>` : ''}
                     </div>
-                    <div class="tool-content">${content}</div>
+                    <div class="tool-content">${renderRichContent(content)}</div>
                 </div>
             `;
         } else {
-            messageDiv.textContent = content;
+            // For human messages, render rich content
+            messageDiv.innerHTML = renderRichContent(content);
         }
         
         DOM.chatContainer.appendChild(messageDiv);

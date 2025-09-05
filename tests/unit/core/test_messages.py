@@ -18,58 +18,75 @@ from nalai.core.messages import (
     AssistantOutputMessage,
     HumanInputMessage,
     HumanOutputMessage,
-    InputMessage,
-    OutputMessage,
-    TextContent,
     ToolCall,
     ToolCallDecision,
 )
 
 
-class TestTextContent:
-    """Test suite for TextContent."""
+class TestContentBlocks:
+    """Test suite for content block validation."""
 
-    def test_text_content_creation(self):
-        """Test TextContent creation with valid data."""
-        content = TextContent(text="Hello, world!")
+    def test_text_content_block_creation(self):
+        """Test text content block creation."""
+        content = {"type": "text", "text": "Hello, world!"}
 
-        assert content.type == "text"
-        assert content.text == "Hello, world!"
+        # Text content blocks are valid but not validated by is_data_content_block
+        # (that function only validates data content blocks like images, audio, files)
+        assert content["type"] == "text"
+        assert content["text"] == "Hello, world!"
 
-    def test_text_content_validation(self):
-        """Test TextContent validation."""
-        # Should not raise any errors
-        content = TextContent(text="Valid text content")
+    def test_image_url_content_block_creation(self):
+        """Test image URL content block creation."""
+        content = {
+            "type": "image",
+            "source_type": "url",
+            "url": "https://example.com/image.jpg",
+        }
 
-        assert content.text == "Valid text content"
+        from langchain_core.messages.content_blocks import is_data_content_block
 
-    def test_text_content_empty_string(self):
-        """Test TextContent with empty string."""
-        from pydantic import ValidationError
+        assert is_data_content_block(content)
 
-        with pytest.raises(ValidationError):
-            TextContent(text="")
+    def test_image_base64_content_block_creation(self):
+        """Test image base64 content block creation."""
+        content = {
+            "type": "image",
+            "source_type": "base64",
+            "mime_type": "image/jpeg",
+            "data": "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=",
+        }
 
-    def test_text_content_whitespace_validation(self):
-        """Test TextContent whitespace validation."""
-        from pydantic import ValidationError
+        from langchain_core.messages.content_blocks import is_data_content_block
 
-        with pytest.raises(ValidationError):
-            TextContent(text="  Leading whitespace")
-
-        with pytest.raises(ValidationError):
-            TextContent(text="Trailing whitespace  ")
+        assert is_data_content_block(content)
 
 
 class TestHumanInputMessage:
     """Test suite for HumanInputMessage."""
 
-    def test_human_input_message_creation(self):
-        """Test HumanInputMessage creation with valid data."""
+    def test_human_input_message_string_content(self):
+        """Test HumanInputMessage creation with string content."""
         message = HumanInputMessage(content="Hello, how can you help me?")
 
         assert message.content == "Hello, how can you help me?"
         assert message.role == "user"
+        assert message.text() == "Hello, how can you help me?"
+
+    def test_human_input_message_content_blocks(self):
+        """Test HumanInputMessage creation with content blocks."""
+        content = [
+            {"type": "text", "text": "Hello, how can you help me?"},
+            {
+                "type": "image",
+                "source_type": "url",
+                "url": "https://example.com/image.jpg",
+            },
+        ]
+        message = HumanInputMessage(content=content)
+
+        assert message.content == content
+        assert message.role == "user"
+        assert message.text() == "Hello, how can you help me?"
 
     def test_human_input_message_validation(self):
         """Test HumanInputMessage validation."""
@@ -78,65 +95,160 @@ class TestHumanInputMessage:
 
         assert message.content == "Valid message content"
 
+    def test_human_input_message_empty_content(self):
+        """Test HumanInputMessage with empty content."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            HumanInputMessage(content="")
+
+    def test_human_input_message_invalid_content_block(self):
+        """Test HumanInputMessage with invalid content block."""
+        from pydantic import ValidationError
+
+        content = [{"type": "invalid", "data": "test"}]
+        with pytest.raises(ValidationError):
+            HumanInputMessage(content=content)
+
 
 class TestHumanOutputMessage:
     """Test suite for HumanOutputMessage."""
 
-    def test_human_output_message_creation(self):
-        """Test HumanOutputMessage creation with valid data."""
-        content_blocks = [TextContent(text="I can help you with that!")]
+    def test_human_output_message_string_content(self):
+        """Test HumanOutputMessage creation with string content."""
         message = HumanOutputMessage(
-            id="msg_123456789ABCDEFGHJKLMNPQRSTUVWXYZ", content=content_blocks
+            id="msg_123456789ABCDEFGHJKLMNPQRSTUVWXYZ",
+            content="I can help you with that!",
         )
 
-        assert message.content == content_blocks
+        assert message.content == "I can help you with that!"
         assert message.role == "user"
         assert message.id == "msg_123456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+        assert message.text() == "I can help you with that!"
 
-    def test_human_output_message_validation(self):
-        """Test HumanOutputMessage validation."""
-        content_blocks = [TextContent(text="Response")]
+    def test_human_output_message_content_blocks(self):
+        """Test HumanOutputMessage creation with content blocks."""
+        content = [{"type": "text", "text": "I can help you with that!"}]
         message = HumanOutputMessage(
-            id="msg_456789ABCDEFGHJKLMNPQRSTUVWXYZabcdef", content=content_blocks
+            id="msg_456789ABCDEFGHJKLMNPQRSTUVWXYZabcdef", content=content
         )
 
-        assert message.content == content_blocks
+        assert message.content == content
+        assert message.role == "user"
         assert message.id == "msg_456789ABCDEFGHJKLMNPQRSTUVWXYZabcdef"
+        assert message.text() == "I can help you with that!"
 
 
 class TestAssistantOutputMessage:
     """Test suite for AssistantOutputMessage."""
 
-    def test_assistant_output_message_creation(self):
-        """Test AssistantOutputMessage creation with valid data."""
-        content_blocks = [TextContent(text="I'll help you with that!")]
+    def test_assistant_output_message_string_content(self):
+        """Test AssistantOutputMessage creation with string content."""
         usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
         message = AssistantOutputMessage(
             id="msg_789ABCDEFGHJKLMNPQRSTUVWXYZabcdefgh",
-            content=content_blocks,
+            content="I'll help you with that!",
             usage=usage,
         )
 
-        assert message.content == content_blocks
+        assert message.content == "I'll help you with that!"
         assert message.role == "assistant"
         assert message.id == "msg_789ABCDEFGHJKLMNPQRSTUVWXYZabcdefgh"
         assert message.usage == usage
+        assert message.text() == "I'll help you with that!"
 
-    def test_assistant_output_message_with_tool_calls(self):
-        """Test AssistantOutputMessage with tool calls."""
-        content_blocks = [TextContent(text="I'll search for that")]
+    def test_assistant_output_message_content_blocks(self):
+        """Test AssistantOutputMessage creation with content blocks."""
+        content = [{"type": "text", "text": "I'll help you with that!"}]
         usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
-        tool_calls = [ToolCall(id="call_1", name="search_api", args={"query": "test"})]
         message = AssistantOutputMessage(
-            id="msg_123456789abcdefghijk",
-            content=content_blocks,
-            tool_calls=tool_calls,
+            id="msg_789ABCDEFGHJKLMNPQRSTUVWXYZabcdefgh",
+            content=content,
             usage=usage,
         )
 
-        assert len(message.tool_calls) == 1
-        assert message.tool_calls[0].name == "search_api"
-        assert message.id == "msg_123456789abcdefghijk"
+        assert message.content == content
+        assert message.role == "assistant"
+        assert message.id == "msg_789ABCDEFGHJKLMNPQRSTUVWXYZabcdefgh"
+        assert message.usage == usage
+        assert message.text() == "I'll help you with that!"
+
+    def test_assistant_output_message_with_tool_calls(self):
+        """Test AssistantOutputMessage with tool calls."""
+        content = [{"type": "text", "text": "I'll search for that"}]
+        usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+        tool_calls = [
+            ToolCall(
+                id="call_123",
+                name="search",
+                args={"query": "test query"},
+            )
+        ]
+        message = AssistantOutputMessage(
+            id="msg_123456789ABCDEFGHJKLMNPQRSTUVWXYZ",
+            content=content,
+            usage=usage,
+            tool_calls=tool_calls,
+        )
+
+        assert message.content == content
+        assert message.tool_calls == tool_calls
+        assert message.text() == "I'll search for that"
+
+
+class TestToolCallDecision:
+    """Test suite for ToolCallDecision."""
+
+    def test_tool_call_decision_accept(self):
+        """Test ToolCallDecision with accept decision."""
+        decision = ToolCallDecision(
+            tool_call_id="call_123",
+            decision="accept",
+        )
+
+        assert decision.tool_call_id == "call_123"
+        assert decision.decision == "accept"
+        assert decision.args is None
+        assert decision.message is None
+
+    def test_tool_call_decision_feedback(self):
+        """Test ToolCallDecision with feedback decision."""
+        decision = ToolCallDecision(
+            tool_call_id="call_123",
+            decision="feedback",
+            message="Please provide more details",
+        )
+
+        assert decision.tool_call_id == "call_123"
+        assert decision.decision == "feedback"
+        assert decision.message == "Please provide more details"
+        assert decision.args is None
+
+    def test_tool_call_decision_edit(self):
+        """Test ToolCallDecision with edit decision."""
+        decision = ToolCallDecision(
+            tool_call_id="call_123",
+            decision="edit",
+            args={"query": "updated query"},
+        )
+
+        assert decision.tool_call_id == "call_123"
+        assert decision.decision == "edit"
+        assert decision.args == {"query": "updated query"}
+        assert decision.message is None
+
+    def test_tool_call_decision_reject(self):
+        """Test ToolCallDecision with reject decision."""
+        decision = ToolCallDecision(
+            tool_call_id="call_123",
+            decision="reject",
+            message="This tool call is not appropriate",
+        )
+
+        assert decision.tool_call_id == "call_123"
+        assert decision.decision == "reject"
+        assert decision.message == "This tool call is not appropriate"
+        assert decision.args is None
 
 
 class TestToolCall:
@@ -145,75 +257,65 @@ class TestToolCall:
     def test_tool_call_creation(self):
         """Test ToolCall creation with valid data."""
         tool_call = ToolCall(
-            id="call_123", name="search_function", args={"query": "test query"}
+            id="call_123",
+            name="search",
+            args={"query": "test query"},
         )
 
         assert tool_call.id == "call_123"
-        assert tool_call.name == "search_function"
+        assert tool_call.name == "search"
         assert tool_call.args == {"query": "test query"}
 
     def test_tool_call_validation(self):
         """Test ToolCall validation."""
         # Should not raise any errors
         tool_call = ToolCall(
-            id="call_456", name="another_function", args={"param": "value"}
+            id="call_456",
+            name="get_weather",
+            args={"location": "New York"},
         )
 
         assert tool_call.id == "call_456"
-        assert tool_call.name == "another_function"
-        assert tool_call.args == {"param": "value"}
+        assert tool_call.name == "get_weather"
+        assert tool_call.args == {"location": "New York"}
 
 
-class TestToolCallDecision:
-    """Test suite for ToolCallDecision."""
+class TestTextExtraction:
+    """Test suite for text extraction functionality."""
 
-    def test_tool_call_decision_creation(self):
-        """Test ToolCallDecision creation with valid data."""
-        decision = ToolCallDecision(tool_call_id="call_123", decision="accept")
-
-        assert decision.tool_call_id == "call_123"
-        assert decision.decision == "accept"
-
-    def test_tool_call_decision_validation(self):
-        """Test ToolCallDecision validation."""
-        # Should not raise any errors
-        decision = ToolCallDecision(
-            tool_call_id="call_456",
-            decision="reject",
-            message="This operation is not allowed",
+    def test_text_extraction_string_content(self):
+        """Test text extraction from string content."""
+        message = HumanOutputMessage(
+            id="msg_123456789ABCDEFGHJKLMNPQRSTUVWXYZ", content="Hello world"
         )
 
-        assert decision.tool_call_id == "call_456"
-        assert decision.decision == "reject"
-        assert decision.message == "This operation is not allowed"
+        assert message.text() == "Hello world"
 
-
-class TestMessageIntegration:
-    """Test suite for message integration."""
-
-    def test_message_type_hierarchy(self):
-        """Test that message types follow proper hierarchy."""
-        # Input messages
-        human_input = HumanInputMessage(content="Hello")
-        assert isinstance(human_input, InputMessage)
-
-        # Output messages
-        content_blocks = [TextContent(text="Hi")]
-        usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
-        human_output = HumanOutputMessage(
-            id="msg_hierarchy123456789abcdef", content=content_blocks
-        )
-        assistant_output = AssistantOutputMessage(
-            id="msg_assistant123456789abcdef", content=content_blocks, usage=usage
+    def test_text_extraction_content_blocks(self):
+        """Test text extraction from content blocks."""
+        content = [
+            {"type": "text", "text": "Hello "},
+            {"type": "text", "text": "world"},
+        ]
+        message = HumanOutputMessage(
+            id="msg_123456789ABCDEFGHJKLMNPQRSTUVWXYZ", content=content
         )
 
-        assert isinstance(human_output, OutputMessage)
-        assert isinstance(assistant_output, OutputMessage)
+        assert message.text() == "Hello world"
 
-    def test_content_block_integration(self):
-        """Test content block integration with messages."""
-        content = TextContent(text="Test content")
-        message = HumanInputMessage(content="Test content")
+    def test_text_extraction_mixed_content(self):
+        """Test text extraction from mixed content blocks."""
+        content = [
+            "Hello ",
+            {"type": "text", "text": "world"},
+            {
+                "type": "image",
+                "source_type": "url",
+                "url": "https://example.com/image.jpg",
+            },
+        ]
+        message = HumanOutputMessage(
+            id="msg_123456789ABCDEFGHJKLMNPQRSTUVWXYZ", content=content
+        )
 
-        # Both should work with the same content
-        assert content.text == message.content
+        assert message.text() == "Hello world"

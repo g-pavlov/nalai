@@ -688,29 +688,41 @@ export class ResponseStateMachine {
     updateContentProgressive(newContent) {
         const content = this.elements[RESPONSE_ELEMENTS.CONTENT];
         
-        // Accumulate content for markdown parsing
-        if (this.accumulatedContent) {
-            this.accumulatedContent += newContent;
-        } else {
-            this.accumulatedContent = newContent;
-        }
-        
-        // Parse markdown and update content if we have content
-        if (this.accumulatedContent && this.accumulatedContent.trim().length > 0) {
+        // Check if newContent is rich content blocks (array) or plain text
+        if (Array.isArray(newContent)) {
+            // Rich content blocks - render directly without accumulation
             try {
-                content.innerHTML = marked.parse(this.accumulatedContent);
+                content.innerHTML = this.renderRichContent(newContent);
             } catch (error) {
-                Logger.error('Markdown parsing error', { error, content: this.accumulatedContent });
-                content.textContent = this.accumulatedContent; // Fallback to plain text
+                Logger.error('Rich content rendering error', { error, content: newContent });
+                content.textContent = this.extractTextContent(newContent); // Fallback to text
+            }
+        } else {
+            // Plain text content - accumulate for markdown parsing
+            if (this.accumulatedContent) {
+                this.accumulatedContent += newContent;
+            } else {
+                this.accumulatedContent = newContent;
+            }
+            
+            // Parse markdown and update content if we have content
+            if (this.accumulatedContent && this.accumulatedContent.trim().length > 0) {
+                try {
+                    content.innerHTML = marked.parse(this.accumulatedContent);
+                } catch (error) {
+                    Logger.error('Markdown parsing error', { error, content: this.accumulatedContent });
+                    content.textContent = this.accumulatedContent; // Fallback to plain text
+                }
             }
         }
         
         // Update content visibility
         this.updateContentVisibility();
         
-        Logger.info('📝 Content Updated Progressively with Markdown', {
-            newContentLength: newContent.length,
-            totalContentLength: this.accumulatedContent.length,
+        Logger.info('📝 Content Updated Progressively', {
+            newContentLength: Array.isArray(newContent) ? newContent.length : newContent.length,
+            totalContentLength: Array.isArray(newContent) ? newContent.length : this.accumulatedContent.length,
+            isRichContent: Array.isArray(newContent),
             messageId: this.assistantMessageDiv.dataset.messageId
         });
     }
@@ -1099,6 +1111,165 @@ export class ResponseStateMachine {
      */
     getToolCalls() {
         return Array.from(this.toolCalls.values());
+    }
+
+    /**
+     * Render rich content blocks as HTML elements
+     * @param {Array} contentBlocks - Array of content blocks
+     * @returns {string} - HTML string with rich content
+     */
+    renderRichContent(contentBlocks) {
+        if (!Array.isArray(contentBlocks)) {
+            return this.escapeHtml(String(contentBlocks));
+        }
+        
+        let htmlContent = '';
+        for (const contentBlock of contentBlocks) {
+            if (typeof contentBlock === 'string') {
+                htmlContent += this.escapeHtml(contentBlock);
+            } else if (contentBlock.type === 'text' && contentBlock.text) {
+                htmlContent += this.escapeHtml(contentBlock.text);
+            } else if (contentBlock.type === 'image') {
+                htmlContent += this.renderImageBlock(contentBlock);
+            } else if (contentBlock.type === 'audio') {
+                htmlContent += this.renderAudioBlock(contentBlock);
+            } else if (contentBlock.type === 'file') {
+                htmlContent += this.renderFileBlock(contentBlock);
+            }
+        }
+        return htmlContent;
+    }
+
+    /**
+     * Extract text content from content blocks
+     * @param {Array} contentBlocks - Array of content blocks
+     * @returns {string} - Extracted text content
+     */
+    extractTextContent(contentBlocks) {
+        if (!Array.isArray(contentBlocks)) {
+            return String(contentBlocks);
+        }
+        
+        let textContent = '';
+        for (const contentBlock of contentBlocks) {
+            if (typeof contentBlock === 'string') {
+                textContent += contentBlock;
+            } else if (contentBlock.type === 'text' && contentBlock.text) {
+                textContent += contentBlock.text;
+            } else if (contentBlock.type === 'image') {
+                const source = contentBlock.source_type === 'url' ? contentBlock.url : 'base64 image';
+                textContent += `[Image: ${source}]`;
+            } else if (contentBlock.type === 'audio') {
+                const source = contentBlock.source_type === 'url' ? contentBlock.url : 'base64 audio';
+                textContent += `[Audio: ${source}]`;
+            } else if (contentBlock.type === 'file') {
+                const source = contentBlock.source_type === 'url' ? contentBlock.url : 'base64 file';
+                textContent += `[File: ${source}]`;
+            }
+        }
+        return textContent;
+    }
+
+    /**
+     * Render image content block as HTML
+     * @param {Object} imageBlock - Image content block
+     * @returns {string} - HTML string for image
+     */
+    renderImageBlock(imageBlock) {
+        if (imageBlock.source_type === 'url' && imageBlock.url) {
+            return `<div class="content-block image-block">
+                <img src="${this.escapeHtml(imageBlock.url)}" alt="Image" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;">
+                <div class="image-caption">Image from URL</div>
+            </div>`;
+        } else if (imageBlock.source_type === 'base64' && imageBlock.data) {
+            const mimeType = imageBlock.mime_type || 'image/jpeg';
+            return `<div class="content-block image-block">
+                <img src="data:${mimeType};base64,${imageBlock.data}" alt="Image" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;">
+                <div class="image-caption">Base64 Image</div>
+            </div>`;
+        }
+        return '<div class="content-block image-block error">[Invalid image block]</div>';
+    }
+
+    /**
+     * Render audio content block as HTML
+     * @param {Object} audioBlock - Audio content block
+     * @returns {string} - HTML string for audio
+     */
+    renderAudioBlock(audioBlock) {
+        if (audioBlock.source_type === 'url' && audioBlock.url) {
+            return `<div class="content-block audio-block">
+                <audio controls style="width: 100%; margin: 8px 0;">
+                    <source src="${this.escapeHtml(audioBlock.url)}" type="${audioBlock.mime_type || 'audio/mpeg'}">
+                    Your browser does not support the audio element.
+                </audio>
+                <div class="audio-caption">Audio from URL</div>
+            </div>`;
+        } else if (audioBlock.source_type === 'base64' && audioBlock.data) {
+            const mimeType = audioBlock.mime_type || 'audio/mpeg';
+            return `<div class="content-block audio-block">
+                <audio controls style="width: 100%; margin: 8px 0;">
+                    <source src="data:${mimeType};base64,${audioBlock.data}" type="${mimeType}">
+                    Your browser does not support the audio element.
+                </audio>
+                <div class="audio-caption">Base64 Audio</div>
+            </div>`;
+        }
+        return '<div class="content-block audio-block error">[Invalid audio block]</div>';
+    }
+
+    /**
+     * Render file content block as HTML
+     * @param {Object} fileBlock - File content block
+     * @returns {string} - HTML string for file
+     */
+    renderFileBlock(fileBlock) {
+        const fileName = fileBlock.name || 'Unknown file';
+        const fileSize = fileBlock.size ? ` (${this.formatFileSize(fileBlock.size)})` : '';
+        
+        if (fileBlock.source_type === 'url' && fileBlock.url) {
+            return `<div class="content-block file-block">
+                <a href="${this.escapeHtml(fileBlock.url)}" target="_blank" rel="noopener noreferrer" 
+                   style="display: inline-flex; align-items: center; padding: 8px 12px; background: #f0f0f0; border-radius: 6px; text-decoration: none; color: #333; margin: 4px 0;">
+                    <span style="margin-right: 8px;">📄</span>
+                    <span>${this.escapeHtml(fileName)}${fileSize}</span>
+                </a>
+                <div class="file-caption">File from URL</div>
+            </div>`;
+        } else if (fileBlock.source_type === 'base64' && fileBlock.data) {
+            return `<div class="content-block file-block">
+                <div style="display: inline-flex; align-items: center; padding: 8px 12px; background: #f0f0f0; border-radius: 6px; margin: 4px 0;">
+                    <span style="margin-right: 8px;">📄</span>
+                    <span>${this.escapeHtml(fileName)}${fileSize}</span>
+                </div>
+                <div class="file-caption">Base64 File (${this.formatFileSize(fileBlock.data.length)})</div>
+            </div>`;
+        }
+        return '<div class="content-block file-block error">[Invalid file block]</div>';
+    }
+
+    /**
+     * Format file size in human readable format
+     * @param {number} bytes - File size in bytes
+     * @returns {string} - Formatted file size
+     */
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    /**
+     * Escape HTML special characters
+     * @param {string} text - Text to escape
+     * @returns {string} - Escaped text
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     /**

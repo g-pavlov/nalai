@@ -16,9 +16,7 @@ from ...utils.id_generator import generate_message_id, generate_run_id
 from ..messages import (
     AssistantOutputMessage,
     BaseOutputMessage,
-    ContentBlock,
     HumanOutputMessage,
-    TextContent,
     ToolOutputMessage,
 )
 from ..streaming import (
@@ -38,16 +36,16 @@ MessageInput = BaseMessage | dict  # Can be LangChain message or dict
 StreamingChunkInput = tuple[str, BaseMessage | dict]
 
 
-def content_blocks_from_message(message: BaseMessage) -> list[ContentBlock]:
-    """Create content blocks from message."""
-    if message.content and message.content.strip():
-        return [TextContent(text=message.content)]
-    elif message.type == "ai" and message.tool_calls:
-        return [TextContent(text="I'll help you with that request.")]
-    elif message.type == "tool":
-        return [TextContent(text=message.content or "Tool execution completed.")]
+def content_from_message(message: BaseMessage) -> str | list[str | dict]:
+    """Convert LangChain message content to our format."""
+    if isinstance(message.content, str):
+        return message.content
+    elif isinstance(message.content, list):
+        # Pass through LangChain content blocks as-is
+        return message.content
     else:
-        return [TextContent(text="Message processed.")]
+        # Fallback
+        return str(message.content) if message.content else ""
 
 
 def tool_calls_from_message(
@@ -81,13 +79,13 @@ def transform_message(
         else:
             message_id = _determine_message_id(message, None, run_id)
 
-    content_blocks = content_blocks_from_message(message)
+    content = content_from_message(message)
 
     # Create appropriate output message based on type
     if message.type == "human":
         return HumanOutputMessage(
             id=message_id,
-            content=content_blocks,
+            content=content,
         )
     elif message.type == "ai":
         finish_reason = _extract_finish_reason(message)
@@ -102,7 +100,7 @@ def transform_message(
         tool_calls = tool_calls_from_message(message)
         return AssistantOutputMessage(
             id=message_id,
-            content=content_blocks,
+            content=content,
             tool_calls=tool_calls,
             invalid_tool_calls=message.invalid_tool_calls,
             finish_reason=finish_reason,
@@ -115,7 +113,7 @@ def transform_message(
 
         return ToolOutputMessage(
             id=message_id,
-            content=content_blocks,
+            content=content,
             tool_call_id=tool_chunk.tool_call_id,
             tool_name=tool_chunk.tool_name,
             status=message.status,
