@@ -14,22 +14,6 @@ from .messages import InputMessage, OutputMessage, ToolCallDecision
 from .streaming import StreamingChunk
 
 
-class SelectApi(BaseModel):
-    """A selected API"""
-
-    api_title: str = Field(description="The title of a selected API")
-    api_version: str = Field(description="The version of a selected API")
-
-
-class SelectedApis(BaseModel):
-    """List of APIs selected by the LLM"""
-
-    selected_apis: list[SelectApi] = Field(
-        default_factory=list,
-        description="List of selected APIs. May be empty if no relevant APIs are found.",
-    )
-
-
 class ConversationInfo(BaseModel):
     """Conversation metadata and information."""
 

@@ -1,3 +1,5 @@
+from langgraph.graph import StateGraph
+
 from .agent import Agent
 from .services import (
     APIService,
@@ -9,6 +11,7 @@ from .services import (
 
 
 def create_agent(
+    workflow: StateGraph,
     checkpointing_service: CheckpointingService | None = None,
     cache_service: CacheService | None = None,
     model_service: ModelService | None = None,
@@ -30,8 +33,6 @@ def create_agent(
     """
     # Import implementation details only when needed
     from .internal.lc_agent import LangGraphAgent
-    from .internal.workflow import create_and_compile_workflow
-    from .internal.workflow_nodes import WorkflowNodes
 
     # Resolve dependencies with fallback to default services
     if checkpointing_service is None:
@@ -59,16 +60,11 @@ def create_agent(
 
         audit_service = get_audit_service()
 
-    # Create workflow nodes with injected services
-    workflow_nodes = WorkflowNodes()
-
     # Get memory store from checkpointing service
     memory_store = checkpointing_service.get_checkpointer()
 
     # Create and compile workflow
-    workflow = create_and_compile_workflow(
-        workflow_nodes=workflow_nodes, memory_store=memory_store
-    )
+    workflow = workflow.compile(checkpointer=memory_store)
 
     # Create and return the agent
     return LangGraphAgent(workflow_graph=workflow, audit_service=audit_service)

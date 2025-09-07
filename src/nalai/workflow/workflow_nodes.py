@@ -16,12 +16,11 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableConfig
 from langgraph.constants import END
 
-from ...config import settings
-from ...prompts.prompts import format_template_with_variables, load_prompt_template
-from ...services.factory import get_cache_service, get_model_service
-from ...tools.http_requests import HttpRequestsToolkit
-from ...utils.chat_history import compress_conversation_history_if_needed
-from ..agent import SelectedApis
+from ..config import settings
+from ..prompts.prompts import format_template_with_variables, load_prompt_template
+from ..services.factory import get_cache_service, get_model_service
+from ..tools.http_requests import HttpRequestsToolkit
+from ..utils.chat_history import compress_conversation_history_if_needed
 from .constants import (
     NODE_CALL_API,
     NODE_CALL_MODEL,
@@ -29,7 +28,7 @@ from .constants import (
     NODE_LOAD_API_SUMMARIES,
     NODE_SELECT_RELEVANT_APIS,
 )
-from .states import AgentState
+from .states import AgentState, SelectedApis
 
 logger = logging.getLogger(__name__)
 

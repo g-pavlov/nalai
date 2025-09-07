@@ -14,7 +14,7 @@ sys.path.insert(
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from nalai.core.internal.states import AgentState
+from nalai.workflow.states import AgentState
 
 
 class TestInputSchema:

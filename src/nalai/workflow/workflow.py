@@ -7,14 +7,14 @@ workflow using LangGraph's StateGraph.
 
 from typing import Any
 
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import END
 from langgraph.graph import StateGraph
-from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 
-from ...config import BaseRuntimeConfiguration
-from ...services.factory import get_api_service
+from ..config import BaseRuntimeConfiguration
+from ..core.internal.interrupts import add_human_in_the_loop
+from ..core.internal.tools import add_execution_context
+from ..services.factory import get_api_service
 from .constants import (
     NODE_CALL_API,
     NODE_CALL_MODEL,
@@ -23,17 +23,14 @@ from .constants import (
     NODE_LOAD_API_SUMMARIES,
     NODE_SELECT_RELEVANT_APIS,
 )
-from .interrupts import add_human_in_the_loop
 from .states import AgentState, InputSchema, OutputSchema
-from .tools import add_execution_context
 from .workflow_nodes import WorkflowNodes
 
 
-def create_and_compile_workflow(
+def create_workflow(
     workflow_nodes: WorkflowNodes,
-    memory_store: MemorySaver = None,
     available_tools: dict[str, Any] = None,
-) -> CompiledStateGraph:
+) -> StateGraph:
     """
     Creates and compiles the agent workflow using LangGraph's StateGraph.
 
@@ -98,4 +95,4 @@ def create_and_compile_workflow(
         [NODE_CALL_API, END],
     )
 
-    return workflow_graph.compile(checkpointer=memory_store)
+    return workflow_graph

@@ -5,7 +5,7 @@ Tests the service factory pattern implementation and demonstrates
 how to use it for testing with proper dependency injection.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -28,6 +28,7 @@ class TestServiceFactoryPattern:
         workflow = AsyncMock()
         workflow.ainvoke = AsyncMock()
         workflow.astream = AsyncMock()
+        workflow.compile = MagicMock(return_value=workflow)
         return workflow
 
     @pytest.fixture
@@ -63,15 +64,12 @@ class TestServiceFactoryPattern:
     ):
         """Test creating agent with direct service injection."""
         # Arrange
-        with patch(
-            "nalai.core.internal.workflow.create_and_compile_workflow",
-            return_value=mock_workflow,
-        ):
-            agent = create_agent(
-                audit_service=mock_audit_service,
-                cache_service=mock_cache_service,
-                model_service=mock_model_service,
-            )
+        agent = create_agent(
+            workflow=mock_workflow,
+            audit_service=mock_audit_service,
+            cache_service=mock_cache_service,
+            model_service=mock_model_service,
+        )
 
         # Act
         from nalai.core import HumanInputMessage
@@ -91,11 +89,7 @@ class TestServiceFactoryPattern:
     ):
         """Test creating agent with only some services injected."""
         # Arrange
-        with patch(
-            "nalai.core.internal.workflow.create_and_compile_workflow",
-            return_value=mock_workflow,
-        ):
-            agent = create_agent(audit_service=mock_audit_service)
+        agent = create_agent(workflow=mock_workflow, audit_service=mock_audit_service)
 
         # Act
         from nalai.core import HumanInputMessage
@@ -116,14 +110,11 @@ class TestServiceFactoryPattern:
         mock_cache_service = AsyncMock(spec=CacheService)
         mock_cache_service.get.side_effect = Exception("Cache service unavailable")
 
-        with patch(
-            "nalai.core.internal.workflow.create_and_compile_workflow",
-            return_value=mock_workflow,
-        ):
-            agent = create_agent(
-                audit_service=mock_audit_service,
-                cache_service=mock_cache_service,
-            )
+        agent = create_agent(
+            workflow=mock_workflow,
+            audit_service=mock_audit_service,
+            cache_service=mock_cache_service,
+        )
 
         # Act & Assert - Agent should handle service failure gracefully
         from nalai.core import HumanInputMessage
@@ -140,11 +131,7 @@ class TestServiceFactoryPattern:
     ):
         """Test that audit service is properly called with correct parameters."""
         # Arrange
-        with patch(
-            "nalai.core.internal.workflow.create_and_compile_workflow",
-            return_value=mock_workflow,
-        ):
-            agent = create_agent(audit_service=mock_audit_service)
+        agent = create_agent(workflow=mock_workflow, audit_service=mock_audit_service)
 
         # Act
         from nalai.core import HumanInputMessage
@@ -171,11 +158,7 @@ class TestServiceFactoryPattern:
             "custom_audit_result"
         )
 
-        with patch(
-            "nalai.core.internal.workflow.create_and_compile_workflow",
-            return_value=mock_workflow,
-        ):
-            agent = create_agent(audit_service=mock_audit_service)
+        agent = create_agent(workflow=mock_workflow, audit_service=mock_audit_service)
 
         # Act
         from nalai.core import HumanInputMessage
@@ -206,11 +189,7 @@ class TestServiceFactoryPattern:
     ):
         """Test agent with mix of real and mock services (integration test pattern)."""
         # Arrange - Use real services for most functionality, mock only audit
-        with patch(
-            "nalai.core.internal.workflow.create_and_compile_workflow",
-            return_value=mock_workflow,
-        ):
-            agent = create_agent(audit_service=mock_audit_service)
+        agent = create_agent(workflow=mock_workflow, audit_service=mock_audit_service)
 
         # Act
         from nalai.core import HumanInputMessage
@@ -230,15 +209,12 @@ class TestServiceFactoryPattern:
     ):
         """Test that injected services comply with Protocol interfaces."""
         # Arrange
-        with patch(
-            "nalai.core.internal.workflow.create_and_compile_workflow",
-            return_value=mock_workflow,
-        ):
-            agent = create_agent(
-                audit_service=mock_audit_service,
-                cache_service=mock_cache_service,
-                model_service=mock_model_service,
-            )
+        agent = create_agent(
+            workflow=mock_workflow,
+            audit_service=mock_audit_service,
+            cache_service=mock_cache_service,
+            model_service=mock_model_service,
+        )
 
         # Act
         from nalai.core import HumanInputMessage
@@ -259,17 +235,13 @@ class TestServiceFactoryPattern:
     ):
         """Test agent using service factory mocking pattern."""
         # Arrange - Mock the service factory functions
-        with (
-            patch(
-                "nalai.services.factory.get_audit_service",
-                return_value=mock_audit_service,
-            ),
-            patch(
-                "nalai.core.internal.workflow.create_and_compile_workflow",
-                return_value=mock_workflow,
-            ),
+        with patch(
+            "nalai.services.factory.get_audit_service",
+            return_value=mock_audit_service,
         ):
-            agent = create_agent()  # Uses mocked services from factory
+            agent = create_agent(
+                workflow=mock_workflow
+            )  # Uses mocked services from factory
 
         # Act
         from nalai.core import HumanInputMessage
@@ -293,11 +265,7 @@ class TestServiceFactoryPattern:
             "Audit service failed"
         )
 
-        with patch(
-            "nalai.core.internal.workflow.create_and_compile_workflow",
-            return_value=mock_workflow,
-        ):
-            agent = create_agent(audit_service=mock_audit_service)
+        agent = create_agent(workflow=mock_workflow, audit_service=mock_audit_service)
 
         # Act & Assert - Agent should handle service exceptions gracefully
         # (This depends on your error handling strategy)

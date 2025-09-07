@@ -36,6 +36,7 @@ class TestLangGraphAgent:
         agent = AsyncMock()
         agent.ainvoke = AsyncMock()
         agent.astream = AsyncMock()
+        agent.compile = MagicMock(return_value=agent)
         return agent
 
     @pytest.fixture
@@ -785,16 +786,13 @@ class TestLangGraphAgent:
         # Arrange - Create agent with direct service injection
         from nalai.core import create_agent
 
-        # Mock the workflow creation
-        with patch(
-            "nalai.core.internal.workflow.create_and_compile_workflow",
-            return_value=mock_agent,
-        ):
-            agent = create_agent(
-                audit_service=mock_audit_service,
-                cache_service=mock_cache_service,
-                model_service=mock_model_service,
-            )
+        # Create agent with mock workflow
+        agent = create_agent(
+            workflow=mock_agent,
+            audit_service=mock_audit_service,
+            cache_service=mock_cache_service,
+            model_service=mock_model_service,
+        )
 
         # Act
         from nalai.core import HumanInputMessage
@@ -820,13 +818,11 @@ class TestLangGraphAgent:
 
         from nalai.core import create_agent
 
-        with patch(
-            "nalai.core.internal.workflow.create_and_compile_workflow",
-            return_value=mock_agent,
-        ):
-            agent = create_agent(
-                audit_service=mock_audit_service, cache_service=mock_cache_service
-            )
+        agent = create_agent(
+            workflow=mock_agent,
+            audit_service=mock_audit_service,
+            cache_service=mock_cache_service,
+        )
 
         # Act & Assert - Agent should handle cache failure gracefully
         # (This depends on your error handling strategy)
@@ -846,11 +842,7 @@ class TestLangGraphAgent:
         # Arrange
         from nalai.core import create_agent
 
-        with patch(
-            "nalai.core.internal.workflow.create_and_compile_workflow",
-            return_value=mock_agent,
-        ):
-            agent = create_agent(audit_service=mock_audit_service)
+        agent = create_agent(workflow=mock_agent, audit_service=mock_audit_service)
 
         # Act
         from nalai.core import HumanInputMessage

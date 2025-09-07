@@ -16,7 +16,8 @@ from nalai.core import (
 )
 
 # Internal types for unit testing
-from nalai.core.agent import Error, SelectApi, SelectedApis
+from nalai.core.agent import Error
+from nalai.workflow.states import SelectApi, SelectedApis
 
 
 class TestAgentModels:

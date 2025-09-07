@@ -11,18 +11,12 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from langgraph.graph import StateGraph
 
 from ..config import settings
-from ..core import create_agent
 from ..utils.logging import setup_logging
-from .api_agent import create_agent_api
-from .api_conversations import (
-    APP_DESCRIPTION,
-    APP_TITLE,
-    APP_VERSION,
-    OPENAPI_TAGS,
-    create_conversations_api,
-)
+from .agent_routes import create_agent_routes
+from .api_conversations import APP_DESCRIPTION, APP_TITLE, APP_VERSION, OPENAPI_TAGS
 from .api_system import create_server_api
 from .middleware import (
     create_audit_middleware,
@@ -126,6 +120,17 @@ async def audit_middleware_wrapper(request: Request, call_next):
 _initialized = False
 
 
+def create_agent_workflow() -> StateGraph:
+    # Initialize agent and create conversation routes
+    from ..workflow.workflow import create_workflow
+    from ..workflow.workflow_nodes import WorkflowNodes
+
+    nodes = WorkflowNodes()
+    logger.info("Creating workflow")
+    workflow = create_workflow(nodes)
+    return workflow
+
+
 def initialize_app():
     """Initialize the application components."""
     global _initialized
@@ -147,16 +152,9 @@ def initialize_app():
         create_server_api(app)
         logger.info("System API endpoint enabled")
 
-    # Initialize agent and create conversation routes
-    agent = create_agent()
-
-    if settings.conversations_endpoint_enabled:
-        create_conversations_api(app, agent)
-        logger.info("Conversations API endpoint enabled")
-
-    # Create agent message exchange routes
-    create_agent_api(app, agent)
-    logger.info("Agent API endpoint enabled")
+    # Initialize agent and create routes for it
+    workflow = create_agent_workflow()
+    create_agent_routes(app, workflow)
 
     logger.info("Application routes initialized")
     _initialized = True

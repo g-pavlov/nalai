@@ -22,14 +22,13 @@ sys.path.insert(
 )
 
 # Internal types for unit testing
-from nalai.core.agent import SelectApi, SelectedApis
-from nalai.core.internal.constants import (
+from nalai.prompts.prompts import format_template_with_variables
+from nalai.workflow.constants import (
     NODE_CALL_MODEL,
     NODE_SELECT_RELEVANT_APIS,
 )
-from nalai.core.internal.states import AgentState
-from nalai.core.internal.workflow_nodes import WorkflowNodes
-from nalai.prompts.prompts import format_template_with_variables
+from nalai.workflow.states import AgentState, SelectApi, SelectedApis
+from nalai.workflow.workflow_nodes import WorkflowNodes
 
 
 @pytest.fixture
@@ -75,8 +74,8 @@ class TestWorkflowNodes:
         result = format_template_with_variables(template, name="Alice", count=5)
         assert result == "Hello Alice, you have 5 messages."
 
-    @patch("nalai.core.internal.workflow_nodes.get_model_service")
-    @patch("nalai.core.internal.workflow_nodes.load_prompt_template")
+    @patch("nalai.workflow.workflow_nodes.get_model_service")
+    @patch("nalai.workflow.workflow_nodes.load_prompt_template")
     def test_create_prompt_and_model(
         self,
         mock_load_prompt,
@@ -176,7 +175,7 @@ class TestWorkflowNodes:
         state = AgentState(messages=messages)
 
         # Mock settings for tool recognition
-        with patch("nalai.core.internal.workflow_nodes.settings") as mock_settings:
+        with patch("nalai.workflow.workflow_nodes.settings") as mock_settings:
             mock_settings.api_calls_enabled = True
             result = assistant.should_execute_tools(state)
             expected = (
@@ -203,8 +202,8 @@ class TestWorkflowNodes:
         assert result == case_data["expected"]
 
     @patch.object(WorkflowNodes, "create_prompt_and_model")
-    @patch("nalai.core.internal.workflow_nodes.compress_conversation_history_if_needed")
-    @patch("nalai.core.internal.workflow_nodes.settings")
+    @patch("nalai.workflow.workflow_nodes.compress_conversation_history_if_needed")
+    @patch("nalai.workflow.workflow_nodes.settings")
     def test_generate_model_response_api_call_disabled(
         self,
         mock_settings,
@@ -250,8 +249,8 @@ class TestWorkflowNodes:
         assert result["messages"][1].content == "This is the AI response"
 
     @patch.object(WorkflowNodes, "create_prompt_and_model")
-    @patch("nalai.core.internal.workflow_nodes.compress_conversation_history_if_needed")
-    @patch("nalai.core.internal.workflow_nodes.settings")
+    @patch("nalai.workflow.workflow_nodes.compress_conversation_history_if_needed")
+    @patch("nalai.workflow.workflow_nodes.settings")
     def test_generate_model_response_api_call_enabled(
         self,
         mock_settings,
@@ -291,7 +290,7 @@ class TestWorkflowNodes:
         mock_model.bind_tools.assert_called_once()
 
     @patch.object(WorkflowNodes, "_handle_cached_model_response")
-    @patch("nalai.core.internal.workflow_nodes.settings")
+    @patch("nalai.workflow.workflow_nodes.settings")
     def test_generate_model_response_cache_hit(
         self, mock_settings, mock_handle_cached, assistant, mock_config
     ):
@@ -331,7 +330,7 @@ class TestWorkflowNodes:
         assert state["api_specs"] == api_specs
         assert state["api_summaries"] == api_summaries
 
-    @patch("nalai.core.internal.workflow_nodes.settings")
+    @patch("nalai.workflow.workflow_nodes.settings")
     def test_handle_cached_model_response(self, mock_settings, assistant, mock_config):
         """Test handling of cached model responses."""
         mock_settings.cache_enabled = True
@@ -347,7 +346,7 @@ class TestWorkflowNodes:
         assert len(result["messages"]) == 3  # Original 2 + 1 new response
         assert result["messages"][-1].content == "This is a cached response"
 
-    @patch("nalai.core.internal.workflow_nodes.settings")
+    @patch("nalai.workflow.workflow_nodes.settings")
     def test_handle_cached_model_response_no_ai_message(
         self, mock_settings, assistant, mock_config
     ):
@@ -364,8 +363,8 @@ class TestWorkflowNodes:
         assert len(result["messages"]) == 1
         assert result["messages"][0].content == "Test question"
 
-    @patch("nalai.core.internal.workflow_nodes.get_cache_service")
-    @patch("nalai.core.internal.workflow_nodes.settings")
+    @patch("nalai.workflow.workflow_nodes.get_cache_service")
+    @patch("nalai.workflow.workflow_nodes.settings")
     def test_cache_model_response_enabled(
         self, mock_settings, mock_get_cache_service, assistant, mock_config
     ):
@@ -390,7 +389,7 @@ class TestWorkflowNodes:
             user_id="test-user",
         )
 
-    @patch("nalai.core.internal.workflow_nodes.settings")
+    @patch("nalai.workflow.workflow_nodes.settings")
     def test_cache_model_response_disabled_globally(
         self, mock_settings, assistant, mock_config
     ):
@@ -403,7 +402,7 @@ class TestWorkflowNodes:
         # Should not raise any exceptions and should not call cache service
         assistant._cache_model_response(messages, response, mock_config)
 
-    @patch("nalai.core.internal.workflow_nodes.settings")
+    @patch("nalai.workflow.workflow_nodes.settings")
     def test_cache_model_response_disabled_per_request(
         self, mock_settings, assistant, mock_config
     ):
@@ -419,7 +418,7 @@ class TestWorkflowNodes:
         # Should not raise any exceptions and should not call cache service
         assistant._cache_model_response(messages, response, mock_config)
 
-    @patch("nalai.core.internal.workflow_nodes.settings")
+    @patch("nalai.workflow.workflow_nodes.settings")
     def test_cache_model_response_empty_content(
         self, mock_settings, assistant, mock_config
     ):
