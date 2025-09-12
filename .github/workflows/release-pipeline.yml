@@ -285,6 +285,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -296,7 +297,7 @@ jobs:
       - name: Verify image
         run: |
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
-          docker run --rm -d --name test-verify --platform linux/amd64 -p 8080:8080 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
+          docker run --rm -d --name test-verify -p 8080:8080 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
           
           # Wait for application to be ready with retry logic
           echo "Waiting for application to start..."
@@ -419,7 +420,21 @@ jobs:
         id: changelog
         run: |
           # Generate changelog from git commits
-          CHANGELOG=$(git log --oneline --no-merges $(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)..HEAD | head -20)
+          # Get the previous tag (not the current one being released)
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | sed -n '2p')
+          
+          if [ -n "$PREVIOUS_TAG" ]; then
+            # Previous tag exists, show changes since previous tag
+            CHANGELOG=$(git log --oneline --no-merges $PREVIOUS_TAG..HEAD)
+          else
+            # First release, show all commits
+            CHANGELOG=$(git log --oneline --no-merges)
+          fi
+          
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="No changes since previous release"
+          fi
+          
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
