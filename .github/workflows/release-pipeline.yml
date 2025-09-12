@@ -296,7 +296,7 @@ jobs:
       - name: Verify image
         run: |
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
-          docker run --rm -d --name test-verify -p 8080:8080 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
+          docker run --rm -d --name test-verify --platform linux/amd64 -p 8080:8080 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version-management.outputs.version }}
           
           # Wait for application to be ready with retry logic
           echo "Waiting for application to start..."
