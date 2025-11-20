@@ -22,7 +22,7 @@ nalai = "nalai.cli:main"
 python = "^3.12"
 # Core framework dependencies
 langchain = "^0.3.1"
-langchain-core = "^0.3.7"
+langchain-core = "^0.3.80"
 langgraph = "^0.6.6"
 langgraph-prebuilt = "^0.6.4"
 langgraph-checkpoint = "^2.1.1"
